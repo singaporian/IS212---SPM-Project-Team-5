@@ -1,0 +1,29 @@
+.root { --brand-1: #6c63ff; --brand-2: #00c2ff; --muted: #6c757d; --card-bg: #ffffff }
+:root { --brand-1: #6c63ff; --brand-2: #00c2ff; --muted: #6c757d; --card-bg: #ffffff }
+body { font-family: Inter, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial; background: linear-gradient(180deg,#f4f6fb 0%, #ffffff 40%); color: #212529 }
+.lead { color: #495057 }
+.badge { font-size: .85rem }
+
+.hero {
+	background: linear-gradient(90deg, rgba(108,99,255,0.12), rgba(0,194,255,0.06));
+	border-radius: 12px;
+	padding: 36px;
+	margin-bottom: 24px;
+}
+.hero h1 { color: #0f1724; font-weight: 700 }
+.hero p { color: var(--muted) }
+
+.stat-card { border-radius: 12px; padding: 18px; background: var(--card-bg); box-shadow: 0 10px 30px rgba(25, 35, 60, 0.06); }
+.card .card-body { padding: 1.25rem }
+
+.list-group-item { border: none; border-radius: 8px; margin-bottom: 8px; box-shadow: 0 6px 18px rgba(25,35,60,0.03) }
+
+.btn-accent {
+	background: linear-gradient(90deg,var(--brand-1),var(--brand-2));
+	border: none; color: white; box-shadow: 0 6px 18px rgba(108,99,255,0.12);
+}
+
+.quick-actions .btn { border-radius: 10px }
+
+.footer { color: var(--muted); font-size: .9rem; padding: 36px 0 }
+
