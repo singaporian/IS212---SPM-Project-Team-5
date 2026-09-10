@@ -54,7 +54,7 @@ npm run dev
 
 The application uses email/password authentication. Passwords are hashed with bcrypt and the backend returns an expiring JWT. Protected API requests require an `Authorization: Bearer <token>` header. The frontend stores the session locally and redirects unauthenticated users to `/login`.
 
-Public registration creates an `attendee` account only. Privileged roles must be provisioned by an administrator or by the local demo seed command. For local testing, after `npm run init-db`, run `npm run seed-demo` in `backend`:
+Public registration creates either an `attendee` or `event_organiser` account. This matches the customer briefing: Event Organisers are external client representatives who need to submit their own event requests. Internal roles must be provisioned by an administrator or by the local demo seed command. For local testing, after `npm run init-db`, run `npm run seed-demo` in `backend`:
 
 | Role | Demo email |
 | --- | --- |
@@ -67,6 +67,10 @@ Public registration creates an `attendee` account only. Privileged roles must be
 All demo accounts use the password `Password123!`. These accounts are for local development only and must not be used in a deployed environment.
 
 The current venue endpoint is restricted to Event Coordinators and Venue Staff as an example of role-based authorization. Other feature endpoints will apply the same middleware as they are implemented.
+
+The `/requests/new` frontend route is restricted to Event Organisers. The dashboard also hides its request-creation actions for every other role. A user who manually enters `/requests/new` while logged in as another role is redirected to the dashboard.
+
+The home dashboard uses one shared layout with role-aware copy and actions for now. Separate role-specific pages should be added when the corresponding workflows are implemented; duplicating five mostly empty homepages at this stage would create unnecessary maintenance overhead.
 
 Notes:
 - The backend expects Postgres on the host port `55432` by default (mapped to container 5432). See `backend/.env` if you need to change it.

@@ -20,9 +20,14 @@ function signToken(user) {
   return jwt.sign({ sub: user.id, role: user.role }, jwtSecret, { expiresIn: '8h' });
 }
 
-async function register({ name, email, password }) {
+async function register({ name, email, password, role = 'attendee' }) {
   if (!name || !email || !password || password.length < 8) {
     const error = new Error('Name, email, and a password of at least 8 characters are required');
+    error.status = 400;
+    throw error;
+  }
+  if (!['attendee', 'event_organiser'].includes(role)) {
+    const error = new Error('Public registration is available for Attendees and Event Organisers only');
     error.status = 400;
     throw error;
   }
@@ -31,9 +36,9 @@ async function register({ name, email, password }) {
   try {
     const result = await db.query(
       `INSERT INTO users (name, email, password_hash, role)
-       VALUES ($1, lower($2), $3, 'attendee')
+      VALUES ($1, lower($2), $3, $4)
        RETURNING id, name, email, role`,
-      [name.trim(), email.trim(), passwordHash]
+          [name.trim(), email.trim(), passwordHash, role]
     );
     const user = result.rows[0];
     return { user: publicUser(user), token: signToken(user) };

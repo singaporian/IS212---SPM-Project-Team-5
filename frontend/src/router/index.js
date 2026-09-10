@@ -2,12 +2,12 @@ import { createRouter, createWebHistory } from 'vue-router'
 import HomePage from '../views/HomePage.vue'
 import NewEventRequestView from '../views/NewEventRequestView.vue'
 import LoginView from '../views/LoginView.vue'
-import { isAuthenticated } from '../services/auth'
+import { getUser, isAuthenticated } from '../services/auth'
 
 const routes = [
   { path: '/login', name: 'login', component: LoginView, meta: { guestOnly: true } },
   { path: '/', name: 'home', component: HomePage, meta: { requiresAuth: true } },
-  { path: '/requests/new', name: 'new-event-request', component: NewEventRequestView, meta: { requiresAuth: true } }
+  { path: '/requests/new', name: 'new-event-request', component: NewEventRequestView, meta: { requiresAuth: true, roles: ['event_organiser'] } }
 ]
 
 const router = createRouter({
@@ -18,6 +18,7 @@ const router = createRouter({
 router.beforeEach((to) => {
   if (to.meta.requiresAuth && !isAuthenticated()) return { name: 'login' }
   if (to.meta.guestOnly && isAuthenticated()) return { name: 'home' }
+  if (to.meta.roles && !to.meta.roles.includes(getUser()?.role)) return { name: 'home' }
   return true
 })
 

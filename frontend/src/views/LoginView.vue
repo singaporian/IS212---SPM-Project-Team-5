@@ -4,10 +4,16 @@
       <div class="auth-mark"><i class="bi bi-globe2"></i></div>
       <p class="eyebrow">ConnectSphere access</p>
       <h1>{{ registering ? 'Create your account' : 'Welcome back' }}</h1>
-      <p class="text-muted">{{ registering ? 'Attendee accounts can be created here.' : 'Sign in to continue to your workspace.' }}</p>
+      <p class="text-muted">{{ registering ? 'Create an Attendee or Event Organiser account.' : 'Sign in to continue to your workspace.' }}</p>
 
       <form @submit.prevent="submit">
         <label v-if="registering" class="form-label">Full name<input v-model="name" class="form-control" required /></label>
+        <label v-if="registering" class="form-label">Account type
+          <select v-model="role" class="form-select">
+            <option value="attendee">Attendee</option>
+            <option value="event_organiser">Event Organiser</option>
+          </select>
+        </label>
         <label class="form-label">Email<input v-model="email" class="form-control" type="email" required /></label>
         <label class="form-label">Password<input v-model="password" class="form-control" type="password" minlength="8" required /></label>
         <div v-if="error" class="alert alert-danger py-2">{{ error }}</div>
@@ -17,7 +23,7 @@
       </form>
 
       <button class="auth-toggle" @click="registering = !registering">
-        {{ registering ? 'Already have an account? Sign in' : 'New here? Create an attendee account' }}
+        {{ registering ? 'Already have an account? Sign in' : 'New here? Create an event organiser or attendee account' }}
       </button>
 
       <details class="demo-login mt-4">
@@ -35,14 +41,14 @@ import { login, register } from '../services/auth'
 export default {
   name: 'LoginView',
   data() {
-    return { registering: false, name: '', email: '', password: '', error: '', loading: false }
+    return { registering: false, name: '', email: '', password: '', role: 'attendee', error: '', loading: false }
   },
   methods: {
     async submit() {
       this.loading = true
       this.error = ''
       try {
-        if (this.registering) await register(this.name, this.email, this.password)
+        if (this.registering) await register(this.name, this.email, this.password, this.role)
         else await login(this.email, this.password)
         this.$router.push('/')
       } catch (error) {
