@@ -40,10 +40,78 @@ app.get('/api/auth/me', auth.authenticate, async (req, res) => {
   res.json({ user: result.rows[0] });
 });
 
-// Simple endpoint to list venues (for UI scaffold)
 app.get('/api/venues', auth.authenticate, auth.requireRoles('event_coordinator', 'venue_staff'), async (req, res) => {
   try {
-    const result = await db.query('SELECT id, name, location, capacity, facilities FROM venues ORDER BY name LIMIT 100');
+    const {
+      search,
+      date,
+      startTime,
+      endTime,
+      attendance,
+      layout,
+      facility,
+      accessibility,
+      setupMinutes = '30',
+      turnaroundMinutes = '30'
+    } = req.query;
+    const filters = [];
+    const params = [];
+
+    if (search) {
+      params.push(`%${search}%`);
+      filters.push(`(v.name ILIKE $${params.length} OR v.location ILIKE $${params.length})`);
+    }
+    if (attendance) {
+      params.push(Number(attendance));
+      filters.push(`v.capacity >= $${params.length}`);
+    }
+    if (layout) {
+      params.push(JSON.stringify([layout]));
+      filters.push(`v.supported_layouts @> $${params.length}::jsonb`);
+    }
+    if (facility) {
+      params.push(JSON.stringify([facility]));
+      filters.push(`v.facilities @> $${params.length}::jsonb`);
+    }
+    if (accessibility) {
+      params.push(`%${accessibility}%`);
+      filters.push(`v.accessibility::text ILIKE $${params.length}`);
+    }
+
+    const hasDate = Boolean(date);
+    const hasTime = Boolean(startTime || endTime);
+    if (hasDate && hasTime && (!startTime || !endTime)) {
+      return res.status(400).json({ error: 'Both startTime and endTime are required when filtering by time' });
+    }
+    if (hasTime && !hasDate) {
+      return res.status(400).json({ error: 'Date is required when filtering by time' });
+    }
+    if (hasTime && endTime <= startTime) {
+      return res.status(400).json({ error: 'End time must be later than start time' });
+    }
+    if (hasDate) {
+      const startExpression = hasTime ? `${date} ${startTime}` : `${date} 00:00`;
+      const endExpression = hasTime ? `${date} ${endTime}` : `${date} 24:00`;
+      params.push(startExpression, endExpression, Number(setupMinutes), Number(turnaroundMinutes));
+      const startParam = params.length - 3;
+      const endParam = params.length - 2;
+      const setupParam = params.length - 1;
+      const turnaroundParam = params.length;
+      filters.push(`NOT EXISTS (
+        SELECT 1 FROM bookings b
+        WHERE b.venue_id = v.id
+          AND b.status = 'confirmed'
+          AND b.start_time - (b.setup_minutes * interval '1 minute') < ($${endParam}::timestamptz + ($${turnaroundParam} * interval '1 minute'))
+          AND b.end_time + (b.turnaround_minutes * interval '1 minute') > ($${startParam}::timestamptz - ($${setupParam} * interval '1 minute'))
+      )`);
+    }
+
+    const where = filters.length ? `WHERE ${filters.join(' AND ')}` : '';
+    const result = await db.query(
+      `SELECT id, name, location, capacity, facilities, accessibility, supported_layouts
+       FROM venues v ${where} ORDER BY name LIMIT 100`,
+      params
+    );
     res.json(result.rows);
   } catch (err) {
     console.error(err);

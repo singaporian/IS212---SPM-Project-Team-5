@@ -28,13 +28,13 @@
               </div>
               <div>
                 <button class="btn btn-sm btn-outline-primary me-2" @click="loadVenues"><i class="bi bi-arrow-clockwise"></i> Refresh</button>
-                  <button v-if="canSearchVenues" class="btn btn-sm btn-accent" @click="loadVenues"><i class="bi bi-search"></i> Find Venues</button>
+                  <router-link v-if="canSearchVenues" class="btn btn-sm btn-accent" to="/venues"><i class="bi bi-search"></i> Find Venues</router-link>
               </div>
             </div>
 
             <div class="mt-3">
               <ul class="list-unstyled">
-                  <li v-if="!venues.length && canSearchVenues" class="text-muted">No venues loaded — click Find Venues.</li>
+                  <li v-if="!venues.length && canSearchVenues" class="text-muted">Use Find Venues to search the venue directory.</li>
                   <li v-if="!canSearchVenues" class="text-muted">Your role workspace is ready. More tools will appear as features are added.</li>
                 <li v-for="v in venues" :key="v.id" class="list-group-item d-flex justify-content-between align-items-center">
                   <div>
