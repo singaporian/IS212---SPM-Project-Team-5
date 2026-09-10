@@ -34,6 +34,8 @@ cd backend
 npm install
 # run the SQL schema against the running Postgres container
 npm run init-db
+# optional: create local demo accounts for all five roles
+npm run seed-demo
 # start the backend dev server
 npm run dev
 ```
@@ -48,9 +50,28 @@ npm run dev
 
 5. Open the app in your browser: http://localhost:5173
 
+### Authentication
+
+The application uses email/password authentication. Passwords are hashed with bcrypt and the backend returns an expiring JWT. Protected API requests require an `Authorization: Bearer <token>` header. The frontend stores the session locally and redirects unauthenticated users to `/login`.
+
+Public registration creates an `attendee` account only. Privileged roles must be provisioned by an administrator or by the local demo seed command. For local testing, after `npm run init-db`, run `npm run seed-demo` in `backend`:
+
+| Role | Demo email |
+| --- | --- |
+| Event Organiser | organiser@connectsphere.local |
+| Event Coordinator | coordinator@connectsphere.local |
+| Venue Staff | venue@connectsphere.local |
+| Technical Support Staff | tech@connectsphere.local |
+| Attendee | attendee@connectsphere.local |
+
+All demo accounts use the password `Password123!`. These accounts are for local development only and must not be used in a deployed environment.
+
+The current venue endpoint is restricted to Event Coordinators and Venue Staff as an example of role-based authorization. Other feature endpoints will apply the same middleware as they are implemented.
+
 Notes:
 - The backend expects Postgres on the host port `55432` by default (mapped to container 5432). See `backend/.env` if you need to change it.
 - Frontend dev server proxies `/api` to `http://localhost:3000` so API calls work without CORS changes.
+
 
 ## Useful commands & troubleshooting
 
@@ -73,4 +94,3 @@ docker-compose up -d db
 
 - If the backend connects to the wrong Postgres instance (e.g., local Postgres on 5432), change `backend/.env` `DB_HOST` to `127.0.0.1` and `DB_PORT` to `55432` to explicitly target the project container.
 
-If you want, I can also add a small `Makefile` with these commands or a profile-based compose to toggle services; tell me which you prefer.

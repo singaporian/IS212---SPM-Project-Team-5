@@ -80,6 +80,8 @@
 </template>
 
 <script>
+import { authHeaders, clearSession } from '../services/auth'
+
 export default {
   name: 'HomePage',
   data() {
@@ -91,7 +93,12 @@ export default {
   methods: {
     async loadVenues() {
       try {
-        const res = await fetch('/api/venues');
+        const res = await fetch('/api/venues', { headers: authHeaders() });
+        if (res.status === 401) {
+          clearSession();
+          this.$router.push('/login');
+          return;
+        }
         if (!res.ok) throw new Error('network');
         this.venues = await res.json();
       } catch (e) {

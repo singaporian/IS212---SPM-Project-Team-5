@@ -27,3 +27,14 @@ body { font-family: Inter, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvet
 
 .footer { color: var(--muted); font-size: .9rem; padding: 36px 0 }
 
+.auth-shell { min-height: 80vh; display: grid; place-items: center; padding: 3rem 1rem; }
+.auth-panel { width: min(100%, 440px); background: white; padding: 2.5rem; border-radius: 16px; box-shadow: 0 18px 55px rgba(25,35,60,.10); }
+.auth-mark { width: 48px; height: 48px; display: grid; place-items: center; border-radius: 14px; color: white; background: linear-gradient(135deg,var(--brand-1),var(--brand-2)); font-size: 1.4rem; margin-bottom: 1.5rem; }
+.eyebrow { color: var(--brand-1); text-transform: uppercase; letter-spacing: .08em; font-size: .75rem; font-weight: 700; margin-bottom: .5rem; }
+.auth-panel h1 { font-size: 2rem; font-weight: 700; }
+.auth-panel form { margin-top: 1.5rem; }
+.auth-panel label { display: block; margin-bottom: 1rem; font-weight: 600; }
+.auth-panel input { margin-top: .4rem; font-weight: 400; }
+.auth-toggle { border: 0; background: none; color: var(--brand-1); width: 100%; margin-top: 1rem; font-size: .9rem; }
+.demo-login summary { cursor: pointer; color: var(--muted); font-size: .85rem; }
+

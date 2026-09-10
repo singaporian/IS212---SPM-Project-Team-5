@@ -1,6 +1,6 @@
 <template>
   <div class="app-root">
-    <Header />
+    <Header v-if="$route.name !== 'login'" />
     <main class="container py-5">
       <router-view />
       <footer class="footer text-center mt-5">

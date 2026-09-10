@@ -18,7 +18,7 @@
       <div class="profile-area d-flex align-items-center ms-3" @click="toggleMenu" tabindex="0" @keydown.enter="toggleMenu">
         <div class="avatar">{{ initials }}</div>
         <div class="profile-info d-none d-md-block ms-2 text-white">
-          <div class="fw-bold small">{{ user.name }}</div>
+            <div class="fw-bold small">{{ user.name }}</div>
           <div class="small text-light-50">{{ user.role }}</div>
         </div>
 
@@ -26,7 +26,7 @@
           <a class="menu-item" href="#">Profile</a>
           <a class="menu-item" href="#">Switch Role</a>
           <div class="menu-sep"></div>
-          <a class="menu-item text-danger" href="#">Logout</a>
+          <button class="menu-item text-danger" @click="logout">Logout</button>
         </div>
       </div>
     </div>
@@ -34,15 +34,14 @@
 </template>
 
 <script>
+import { clearSession, getUser } from '../services/auth'
+
 export default {
   name: 'Header',
   data() {
     return {
       menuOpen: false,
-      user: {
-        name: 'Guest',
-        role: 'Attendee'
-      }
+      user: getUser() || { name: 'Guest', role: 'Attendee' }
     }
   },
   computed: {
@@ -54,6 +53,10 @@ export default {
   methods: {
     toggleMenu() {
       this.menuOpen = !this.menuOpen
+    },
+    logout() {
+      clearSession()
+      this.$router.push('/login')
     }
   }
 }
@@ -87,9 +90,14 @@ export default {
 }
 .menu-item {
   display: block;
+  width: 100%;
   padding: 10px 14px;
   color: #333;
   text-decoration: none;
+  background: white;
+  border: 0;
+  text-align: left;
+  font: inherit;
 }
 .menu-item:hover { background: #f6f7fb }
 .menu-sep { height: 1px; background: #eef0f6; margin: 6px 0 }
