@@ -1,5 +1,5 @@
-## Related Jira Issue
-- [JIRA-XXX](https://your-domain.atlassian.net/browse/JIRA-XXX)
+## User Story Description
+- [US-XXX]
 
 ## Description of Changes
 - (Provide a brief overview of what this PR does)
