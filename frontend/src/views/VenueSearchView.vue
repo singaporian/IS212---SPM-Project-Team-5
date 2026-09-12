@@ -70,13 +70,16 @@
     <div v-else class="row g-4">
       <div v-for="venue in venues" :key="venue.id" class="col-lg-6">
         <article class="card venue-card h-100">
-          <div class="card-body">
-            <div class="d-flex justify-content-between gap-3 mb-3">
+          <div v-if="venue.images && venue.images.length" class="venue-image-panel">
+            <img class="venue-image" :src="venue.images[0].url" :alt="venue.images[0].alt_text || `${venue.name} venue`">
+          </div>
+          <div class="card-body venue-content">
+            <div class="venue-heading mb-3">
               <div>
                 <h2 class="h5 mb-1">{{ venue.name }}</h2>
                 <p class="text-muted mb-0"><i class="bi bi-geo-alt me-1"></i>{{ venue.location || 'Location not provided' }}</p>
+                <span class="capacity-badge">{{ venue.capacity }} seats</span>
               </div>
-              <span class="capacity-badge">{{ venue.capacity }} seats</span>
             </div>
             <div class="venue-details">
               <div>
@@ -85,7 +88,7 @@
               </div>
               <div>
                 <span class="detail-label">Accessibility</span>
-                <span>{{ objectValue(venue.accessibility) }}</span>
+                <span>{{ listValue(venue.accessibility) }}</span>
               </div>
               <div>
                 <span class="detail-label">Facilities</span>
@@ -175,11 +178,6 @@ export default {
       if (Array.isArray(value)) return value.length ? value.join(', ') : 'Not listed'
       return value || 'Not listed'
     },
-    objectValue(value) {
-      if (!value || typeof value !== 'object') return 'Not listed'
-      const entries = Object.entries(value).map(([key, item]) => `${key}: ${Array.isArray(item) ? item.join(', ') : item}`)
-      return entries.length ? entries.join('; ') : 'Not listed'
-    }
   },
   mounted() {
     this.searchVenues()
@@ -189,9 +187,19 @@ export default {
 
 <style scoped>
 .search-panel { border: 0; box-shadow: 0 14px 35px rgba(25, 35, 60, .08) }
-.venue-card { border: 1px solid #e9edf3; border-radius: .75rem }
-.capacity-badge { color: #176b55; background: #e3f5ed; border-radius: 999px; padding: .35rem .65rem; white-space: nowrap; font-size: .8rem; font-weight: 700 }
+.venue-card { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); overflow: hidden; border: 1px solid #e9edf3; border-radius: .75rem }
+.venue-image-panel { min-height: 100%; background: #eef2f5 }
+.venue-image { width: 100%; height: 100%; min-height: 240px; object-fit: cover }
+.venue-content { min-width: 0 }
+.venue-heading { min-width: 0 }
+.venue-heading > div:first-child { min-width: 0 }
+.capacity-badge { display: block; margin-top: .45rem; color: #0d6efd; white-space: nowrap; font-size: .95rem; font-weight: 700 }
 .venue-details { display: grid; gap: .85rem; color: #495057; font-size: .92rem }
 .detail-label { display: block; color: #6c757d; font-size: .75rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; margin-bottom: .15rem }
 .empty-state { border: 1px dashed #cbd5e1; border-radius: .75rem; padding: 3rem 1rem; color: #52606d }
+
+@media (max-width: 575.98px) {
+  .venue-card { grid-template-columns: 1fr }
+  .venue-image { height: 200px; min-height: 0 }
+}
 </style>

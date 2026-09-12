@@ -16,13 +16,26 @@ CREATE TABLE IF NOT EXISTS users (
 -- Venues
 CREATE TABLE IF NOT EXISTS venues (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  name text NOT NULL,
+  name text NOT NULL UNIQUE,
   location text,
-  capacity integer NOT NULL DEFAULT 0,
+  capacity integer NOT NULL DEFAULT 0 CHECK (capacity >= 0),
   facilities jsonb DEFAULT '[]'::jsonb,
   accessibility jsonb DEFAULT '{}',
   supported_layouts jsonb DEFAULT '[]'::jsonb,
   notes text,
+  created_at timestamptz DEFAULT now()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS venues_name_unique ON venues (name);
+
+-- Venue gallery images are stored as URLs so the database does not contain binary media.
+CREATE TABLE IF NOT EXISTS venue_images (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  venue_id uuid NOT NULL REFERENCES venues(id) ON DELETE CASCADE,
+  image_url text NOT NULL,
+  alt_text text,
+  sort_order integer NOT NULL DEFAULT 0 CHECK (sort_order >= 0),
+  is_primary boolean NOT NULL DEFAULT false,
   created_at timestamptz DEFAULT now()
 );
 
@@ -55,8 +68,9 @@ CREATE TABLE IF NOT EXISTS bookings (
   start_time timestamptz NOT NULL,
   end_time timestamptz NOT NULL,
   status text NOT NULL DEFAULT 'pending',
-  setup_minutes integer DEFAULT 30,
-  turnaround_minutes integer DEFAULT 30,
+  setup_minutes integer NOT NULL DEFAULT 30 CHECK (setup_minutes >= 0),
+  turnaround_minutes integer NOT NULL DEFAULT 30 CHECK (turnaround_minutes >= 0),
+  CHECK (end_time > start_time),
   created_at timestamptz DEFAULT now()
 );
 

@@ -104,11 +104,24 @@ app.get('/api/venues', auth.authenticate, auth.requireRoles('event_coordinator',
           AND b.start_time - (b.setup_minutes * interval '1 minute') < ($${endParam}::timestamptz + ($${turnaroundParam} * interval '1 minute'))
           AND b.end_time + (b.turnaround_minutes * interval '1 minute') > ($${startParam}::timestamptz - ($${setupParam} * interval '1 minute'))
       )`);
+      filters.push(`NOT EXISTS (
+        SELECT 1 FROM venue_unavailabilities vu
+        WHERE vu.venue_id = v.id
+          AND vu.start_time < ($${endParam}::timestamptz + ($${turnaroundParam} * interval '1 minute'))
+          AND vu.end_time > ($${startParam}::timestamptz - ($${setupParam} * interval '1 minute'))
+      )`);
     }
 
     const where = filters.length ? `WHERE ${filters.join(' AND ')}` : '';
     const result = await db.query(
-      `SELECT id, name, location, capacity, facilities, accessibility, supported_layouts
+      `SELECT id, name, location, capacity, facilities, accessibility, supported_layouts,
+        (SELECT COALESCE(jsonb_agg(jsonb_build_object(
+          'id', vi.id,
+          'url', vi.image_url,
+          'alt_text', vi.alt_text,
+          'is_primary', vi.is_primary
+        ) ORDER BY vi.is_primary DESC, vi.sort_order, vi.created_at), '[]'::jsonb)
+         FROM venue_images vi WHERE vi.venue_id = v.id) AS images
        FROM venues v ${where} ORDER BY name LIMIT 100`,
       params
     );
