@@ -57,7 +57,8 @@
           <div class="card-body">
               <h6>Quick Actions</h6>
               <router-link v-if="canCreateRequest" class="btn btn-outline-primary btn-sm w-100 mb-2" to="/requests/new">Start Draft</router-link>
-              <button class="btn btn-outline-secondary btn-sm w-100 mb-2">{{ primaryRoleAction }}</button>
+              <router-link v-if="canCreateRequest" class="btn btn-outline-secondary btn-sm w-100 mb-2" to="/requests/drafts">My Drafts</router-link>
+              <button v-else class="btn btn-outline-secondary btn-sm w-100 mb-2">{{ primaryRoleAction }}</button>
               <button v-if="canSearchVenues" class="btn btn-outline-success btn-sm w-100">Create Booking</button>
           </div>
         </div>

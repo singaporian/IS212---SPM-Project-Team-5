@@ -98,3 +98,45 @@ docker-compose up -d db
 
 - If the backend connects to the wrong Postgres instance (e.g., local Postgres on 5432), change `backend/.env` `DB_HOST` to `127.0.0.1` and `DB_PORT` to `55432` to explicitly target the project container.
 
+
+## Save Draft Progress (US-004)
+
+Event Organisers can select **Save Draft** on the request form, then reopen it
+from **Dashboard > My Drafts**. Incomplete fields are allowed; populated fields
+are validated. Successful saves keep the request in Draft status.
+
+After pulling this change, run `npm run init-db` from `backend` once to add the
+`events.draft_data` column to an existing database, then restart the backend.
+The migration preserves existing records.
+
+The draft API requires an Event Organiser JWT:
+- `GET /api/drafts`: list the signed-in organiser's drafts.
+- `GET /api/drafts/:id`: retrieve an owned draft.
+- `PUT /api/drafts/:id`: save the complete current form using a stable UUID.
+
+Draft form values are stored in `draft_data` exactly as entered, including
+separate date/time fields, attendance placeholders and registration choices.
+The event title is also updated for listing. Future submission code should
+validate and map these draft values into the structured event fields.
+Ownership and Draft status are enforced in the atomic write statement.
+Missing and inaccessible draft IDs return the same generic response.
+
+Run `npm test` in both `backend` and `frontend`. Backend tests require the
+configured PostgreSQL database with the schema initialized; they use temporary
+tables and roll back their fixtures. Frontend tests cover the form's save/load
+logic; run `npm run build` in `frontend` to check template compilation.
+
+Manual check:
+1. Sign in as an Event Organiser and save only a purpose or start time.
+2. Open My Drafts, reopen it, change values and save again.
+3. Confirm the list still contains one request and its status is Draft.
+4. Stop the backend, edit a field and try saving. The error should keep the
+   input available. Restart the backend and retry.
+5. Sign in as a different organiser and open the saved draft URL. Its contents
+   must not be shown.
+
+Draft scope clarification: US-004 uses the nine Week 4 field groups. Incomplete
+values are allowed, and valid historical dates are allowed; no past-date
+restriction is applied. Date formats, time formats and start/end ordering are
+still validated. Event Type, Programme/Agenda and Special Arrangements are
+outside this agreed draft scope.
