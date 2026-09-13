@@ -22,11 +22,30 @@ CREATE TABLE IF NOT EXISTS venues (
   facilities jsonb DEFAULT '[]'::jsonb,
   accessibility jsonb DEFAULT '{}',
   supported_layouts jsonb DEFAULT '[]'::jsonb,
+  available_from date NOT NULL DEFAULT '2026-09-13',
+  available_until date NOT NULL DEFAULT '2027-01-31',
+  CHECK (available_until >= available_from),
   notes text,
   created_at timestamptz DEFAULT now()
 );
 
+ALTER TABLE venues ADD COLUMN IF NOT EXISTS available_from date NOT NULL DEFAULT '2026-09-13';
+ALTER TABLE venues ADD COLUMN IF NOT EXISTS available_until date NOT NULL DEFAULT '2027-01-31';
+ALTER TABLE venues DROP CONSTRAINT IF EXISTS venues_available_dates_check;
+ALTER TABLE venues ADD CONSTRAINT venues_available_dates_check CHECK (available_until >= available_from);
+
 CREATE UNIQUE INDEX IF NOT EXISTS venues_name_unique ON venues (name);
+
+-- Recurring venue operating hours. day_of_week follows PostgreSQL EXTRACT(DOW): Sunday = 0.
+CREATE TABLE IF NOT EXISTS venue_operating_hours (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  venue_id uuid NOT NULL REFERENCES venues(id) ON DELETE CASCADE,
+  day_of_week smallint NOT NULL CHECK (day_of_week BETWEEN 0 AND 6),
+  opens_at time NOT NULL,
+  closes_at time NOT NULL,
+  CHECK (closes_at > opens_at),
+  UNIQUE (venue_id, day_of_week)
+);
 
 -- Venue gallery images are stored as URLs so the database does not contain binary media.
 CREATE TABLE IF NOT EXISTS venue_images (

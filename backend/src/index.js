@@ -65,17 +65,27 @@ app.get('/api/venues', auth.authenticate, auth.requireRoles('event_coordinator',
       params.push(Number(attendance));
       filters.push(`v.capacity >= $${params.length}`);
     }
-    if (layout) {
-      params.push(JSON.stringify([layout]));
-      filters.push(`v.supported_layouts @> $${params.length}::jsonb`);
+    const layouts = (Array.isArray(layout) ? layout : layout ? [layout] : []).filter(Boolean);
+    if (layouts.length) {
+      params.push(layouts);
+      filters.push(`v.supported_layouts ?| $${params.length}::text[]`);
     }
-    if (facility) {
-      params.push(JSON.stringify([facility]));
-      filters.push(`v.facilities @> $${params.length}::jsonb`);
+    const facilities = (Array.isArray(facility) ? facility : facility ? [facility] : []).filter(Boolean);
+    if (facilities.length) {
+      params.push(facilities);
+      filters.push(`v.facilities ?| $${params.length}::text[]`);
     }
-    if (accessibility) {
-      params.push(`%${accessibility}%`);
-      filters.push(`v.accessibility::text ILIKE $${params.length}`);
+    const accessibilityNeeds = (Array.isArray(accessibility) ? accessibility : accessibility ? [accessibility] : []).filter(Boolean);
+    if (accessibilityNeeds.length) {
+      params.push(accessibilityNeeds);
+      filters.push(`v.accessibility ?| $${params.length}::text[]`);
+    }
+
+    let dateParam;
+    if (date) {
+      params.push(date);
+      dateParam = params.length;
+      filters.push(`$${dateParam}::date BETWEEN v.available_from AND v.available_until`);
     }
 
     const hasDate = Boolean(date);
@@ -89,14 +99,21 @@ app.get('/api/venues', auth.authenticate, auth.requireRoles('event_coordinator',
     if (hasTime && endTime <= startTime) {
       return res.status(400).json({ error: 'End time must be later than start time' });
     }
-    if (hasDate) {
-      const startExpression = hasTime ? `${date} ${startTime}` : `${date} 00:00`;
-      const endExpression = hasTime ? `${date} ${endTime}` : `${date} 24:00`;
+    if (hasDate && hasTime) {
+      const startExpression = hasTime ? `${date} ${startTime}+08:00` : `${date} 00:00+08:00`;
+      const endExpression = hasTime ? `${date} ${endTime}+08:00` : `${date} 24:00+08:00`;
       params.push(startExpression, endExpression, Number(setupMinutes), Number(turnaroundMinutes));
       const startParam = params.length - 3;
       const endParam = params.length - 2;
       const setupParam = params.length - 1;
       const turnaroundParam = params.length;
+      filters.push(`EXISTS (
+        SELECT 1 FROM venue_operating_hours voh
+        WHERE voh.venue_id = v.id
+          AND voh.day_of_week = EXTRACT(DOW FROM ($${startParam}::timestamptz AT TIME ZONE 'Asia/Singapore'))
+          AND voh.opens_at <= (($${startParam}::timestamptz AT TIME ZONE 'Asia/Singapore')::time)
+          AND voh.closes_at >= (($${endParam}::timestamptz AT TIME ZONE 'Asia/Singapore')::time)
+      )`);
       filters.push(`NOT EXISTS (
         SELECT 1 FROM bookings b
         WHERE b.venue_id = v.id
@@ -113,8 +130,20 @@ app.get('/api/venues', auth.authenticate, auth.requireRoles('event_coordinator',
     }
 
     const where = filters.length ? `WHERE ${filters.join(' AND ')}` : '';
+    const unavailablePeriods = hasDate ? `(
+        SELECT COALESCE(jsonb_agg(jsonb_build_object(
+          'start_time', vu.start_time,
+          'end_time', vu.end_time,
+          'reason', vu.reason
+        ) ORDER BY vu.start_time), '[]'::jsonb)
+        FROM venue_unavailabilities vu
+        WHERE vu.venue_id = v.id
+          AND vu.start_time < (($${dateParam}::date::text || ' 00:00:00+08:00')::timestamptz + interval '1 day')
+          AND vu.end_time > ($${dateParam}::date::text || ' 00:00:00+08:00')::timestamptz
+      ) AS unavailable_periods,` : "'[]'::jsonb AS unavailable_periods,";
     const result = await db.query(
       `SELECT id, name, location, capacity, facilities, accessibility, supported_layouts,
+        ${unavailablePeriods}
         (SELECT COALESCE(jsonb_agg(jsonb_build_object(
           'id', vi.id,
           'url', vi.image_url,
