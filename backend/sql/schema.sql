@@ -79,6 +79,9 @@ CREATE TABLE IF NOT EXISTS events (
   updated_at timestamptz DEFAULT now()
 );
 
+-- Coordinator assignment for event requests (added for US-011 / US-012)
+ALTER TABLE events ADD COLUMN IF NOT EXISTS assigned_coordinator_id uuid REFERENCES users(id) ON DELETE SET NULL;
+
 -- Venue bookings
 CREATE TABLE IF NOT EXISTS bookings (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
