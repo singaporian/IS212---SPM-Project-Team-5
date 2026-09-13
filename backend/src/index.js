@@ -161,6 +161,94 @@ app.get('/api/venues', auth.authenticate, auth.requireRoles('event_coordinator',
   }
 });
 
+// US-011: unassigned queue (submitted, no coordinator yet), oldest first
+app.get('/api/events/unassigned', auth.authenticate, auth.requireRoles('event_coordinator'), async (req, res) => {
+  try {
+    const result = await db.query(
+      `SELECT id, title, event_type, preferred_start, preferred_end, expected_attendance, status, created_at
+       FROM events
+       WHERE status = 'submitted' AND assigned_coordinator_id IS NULL
+       ORDER BY created_at ASC`
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to fetch unassigned requests' });
+  }
+});
+
+// US-012: requests currently assigned to the logged-in coordinator
+app.get('/api/events/assigned', auth.authenticate, auth.requireRoles('event_coordinator'), async (req, res) => {
+  try {
+    const result = await db.query(
+      `SELECT id, title, event_type, preferred_start, preferred_end, expected_attendance, status, created_at
+       FROM events
+       WHERE assigned_coordinator_id = $1
+       ORDER BY created_at DESC`,
+      [req.auth.sub]
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to fetch assigned requests' });
+  }
+});
+
+// US-011: assign an unassigned request to self (fails gracefully if already taken)
+app.patch('/api/events/:id/assign', auth.authenticate, auth.requireRoles('event_coordinator'), async (req, res) => {
+  try {
+    const result = await db.query(
+      `UPDATE events SET assigned_coordinator_id = $1
+       WHERE id = $2 AND status = 'submitted' AND assigned_coordinator_id IS NULL
+       RETURNING id, title, assigned_coordinator_id`,
+      [req.auth.sub, req.params.id]
+    );
+    if (!result.rows[0]) {
+      return res.status(409).json({ error: 'This request has already been assigned' });
+    }
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to assign request' });
+  }
+});
+
+// US-011: release a request back to the unassigned queue
+app.patch('/api/events/:id/unassign', auth.authenticate, auth.requireRoles('event_coordinator'), async (req, res) => {
+  try {
+    const result = await db.query(
+      `UPDATE events SET assigned_coordinator_id = NULL
+       WHERE id = $1 AND assigned_coordinator_id = $2
+       RETURNING id, title`,
+      [req.params.id, req.auth.sub]
+    );
+    if (!result.rows[0]) {
+      return res.status(404).json({ error: 'Request not found or not assigned to you' });
+    }
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to unassign request' });
+  }
+});
+
+// US-012: full read-only detail, only visible if assigned to this coordinator
+app.get('/api/events/:id', auth.authenticate, auth.requireRoles('event_coordinator'), async (req, res) => {
+  try {
+    const result = await db.query(
+      `SELECT * FROM events WHERE id = $1 AND assigned_coordinator_id = $2`,
+      [req.params.id, req.auth.sub]
+    );
+    if (!result.rows[0]) {
+      return res.status(403).json({ error: 'Not authorised to view this request' });
+    }
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to fetch request details' });
+  }
+});
+
 // dev-only: run schema SQL via HTTP (idempotent if schema includes IF NOT EXISTS)
 app.post('/api/init', async (req, res) => {
   try {
