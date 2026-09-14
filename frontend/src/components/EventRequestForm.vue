@@ -1,13 +1,18 @@
 <template>
   <div class="card">
     <div class="card-body">
-      <h5 class="card-title">New Event Request</h5>
+      <h5 class="card-title">{{ $route.params.id ? "Edit Event Draft" : "New Event Request" }} <span class="badge bg-secondary">Draft</span></h5>
       <p class="text-muted small">
         Fill in what you know now. Leave anything blank, or type "not decided", "none",
         or "not required" where it doesn't apply yet — nothing here is required at this stage.
       </p>
 
-      <form @submit.prevent>
+      <div v-if="loading" role="status">Loading draft…</div>
+      <div v-if="loadError" class="alert alert-danger" role="alert">
+        {{ loadError }} <button class="btn btn-sm btn-outline-danger" @click="loadDraft">Retry</button>
+      </div>
+      <form v-if="!loading && !loadError" @submit.prevent="saveDraft">
+        <fieldset :disabled="saving">
         <div class="row g-3">
           <div class="col-12">
             <label class="form-label small">Event Name</label>
@@ -37,8 +42,7 @@
             </select>
           </div>
 
-          <div v-if="startError || endError" class="col-12">
-            <div v-if="startError" class="text-danger small">{{ startError }}</div>
+          <div v-if="endError" class="col-12">
             <div v-if="endError" class="text-danger small">{{ endError }}</div>
           </div>
           <div v-if="duration" class="col-12">
@@ -90,39 +94,20 @@
             </select>
           </div>
         </div>
+        <div class="mt-4 d-flex gap-2 align-items-center">
+          <button type="submit" class="btn btn-primary" :disabled="saving">{{ saving ? 'Saving…' : 'Save Draft' }}</button>
+          <router-link to="/requests/drafts">My Drafts</router-link>
+        </div>
+        </fieldset>
+        <p v-if="saveError" class="text-danger mt-3" role="alert">{{ saveError }}</p>
+        <p v-if="saveMessage" class="text-success mt-3" role="status">{{ saveMessage }}</p>
       </form>
     </div>
   </div>
 </template>
 
 <script>
-//US-001： "Start a Draft Event Request" only.
-//   AC1 (matches customer briefing field list): Event Name, Purpose,
-//        Description, Proposed Date and Time, Expected Attendance, Venue
-//        Requirements, Accessibility Needs, Equipment Requirements,
-//        Registration Needs (where relevant).
-//   AC2: every field may be left blank  — nothing is validated as required here (that's
-//        the later "Submit a Completed Draft" story). Expected Attendance
-//        is the one field with an actual data-type constraint (must be a
-//        whole number) — see attendanceError below, which still allows
-//        the AC2 placeholder phrases through untouched.
-//   AC3: if a date/time is entered, invalid timing is flagged: a start in
-//        the past, or an end not later than the start.
-//
-// Date/time collection: separate Date (native <input type="date">) + Time
-// (custom <select>) per side, rather than a single datetime-local picker.
-//   - Kept as separate Start/End dates (not one shared date) to support
-//     multi-day events.
-//   - Time is a <select> of fixed 5-minute-interval options, NOT a native
-//     time input — datetime-local/time inputs only *suggest* a step via
-//     their spinner arrows, but users can still type any minute directly
-//     (e.g. typing "59" bypasses step="300" entirely). A <select> with a
-//     fixed option list is the only way to truly restrict what's
-//     selectable.
-//
-// Deliberately out of scope for this story: saving/persistence, a submit
-// button, backend calls. Those belong to "Save Draft Progress" and
-// "Submit a Completed Draft for Review".
+import { draftRequest } from '../services/drafts'
 
 // Built once at module load: 288 options covering 24h in 5-minute steps,
 // e.g. { value: '00:00', label: '12:00 AM' }, { value: '00:05', label: '12:05 AM' }, ...
@@ -149,6 +134,12 @@ export default {
   data() {
     return {
       TIME_OPTIONS,
+      draftId: this.$route.params.id || crypto.randomUUID(),
+      loading: false,
+      loadError: '',
+      saving: false,
+      saveError: '',
+      saveMessage: '',
       form: {
         eventName: '',
         startDate: '',
@@ -162,6 +153,51 @@ export default {
         accessibilityNeeds: '',
         equipmentRequirements: '',
         registrationNeeds: 'not_decided'
+      }
+    }
+  },
+  mounted() {
+    if (this.$route.params.id) this.loadDraft()
+  },
+  watch: {
+    '$route.params.id'(id) {
+      if (id === this.draftId) return
+      Object.assign(this, this.$options.data.call(this))
+      if (id) this.loadDraft()
+    },
+    form: { deep: true, handler() { this.saveMessage = '' } }
+  },
+  methods: {
+    async loadDraft() {
+      const id = this.draftId
+      this.loading = true
+      this.loadError = ''
+      try {
+        const draft = await draftRequest('/' + id)
+        if (this.draftId !== id) return
+        this.form = { ...this.form, ...draft.draft_data }
+      } catch (error) {
+        if (this.draftId === id) this.loadError = error.message || 'Unable to load draft. Please retry.'
+      } finally {
+        if (this.draftId === id) this.loading = false
+      }
+    },
+    async saveDraft() {
+      if (this.saving) return
+      this.saveMessage = ''
+      this.saveError = this.attendanceError || this.endError
+      if (this.saveError) return
+      this.saving = true
+      try {
+        await draftRequest('/' + this.draftId, { method: 'PUT', body: JSON.stringify(this.form) })
+        this.saveMessage = 'Draft saved successfully. Your request has not been submitted.'
+        if (!this.$route.params.id) {
+          await this.$router.replace({ name: 'edit-event-draft', params: { id: this.draftId } })
+        }
+      } catch (error) {
+        this.saveError = (error.message || 'Unable to save draft.') + ' Your input has been kept; please retry.'
+      } finally {
+        this.saving = false
       }
     }
   },
@@ -186,11 +222,6 @@ export default {
       const d = new Date(`${this.form.endDate}T${this.form.endTime}`)
       return isNaN(d.getTime()) ? null : d
     },
-    startError() {
-      if (!this.startDateTime) return ''
-      if (this.startDateTime.getTime() < Date.now()) return 'Start date/time cannot be in the past.'
-      return ''
-    },
     endError() {
       if (!this.endDateTime || !this.startDateTime) return ''
       if (this.endDateTime.getTime() <= this.startDateTime.getTime()) {
@@ -199,7 +230,7 @@ export default {
       return ''
     },
     duration() {
-      if (!this.startDateTime || !this.endDateTime || this.startError || this.endError) return ''
+      if (!this.startDateTime || !this.endDateTime || this.endError) return ''
       let minutes = Math.round((this.endDateTime.getTime() - this.startDateTime.getTime()) / 60000)
       const days = Math.floor(minutes / 1440)
       minutes -= days * 1440
