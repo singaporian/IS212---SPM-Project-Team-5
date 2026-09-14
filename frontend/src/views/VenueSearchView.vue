@@ -51,7 +51,7 @@
             </div>
             <div class="col-md-3">
               <label class="form-label" for="venue-attendance">Expected attendance</label>
-              <input id="venue-attendance" v-model.number="filters.attendance" @input="searchVenues" class="form-control" type="number" min="1" placeholder="Any capacity">
+              <input id="venue-attendance" v-model.number="filters.attendance" @input="searchVenues" class="form-control" type="number" min="1" step="1" placeholder="Any capacity">
             </div>
             <div class="col-md-4">
               <label class="form-label" for="venue-layout">Room layout</label>
@@ -154,12 +154,6 @@
       </div>
     </div>
   </div>
-  <div v-if="showDateRequiredModal" class="date-required-backdrop" role="presentation">
-    <div class="date-required-modal" role="alertdialog" aria-modal="true" aria-labelledby="date-required-title">
-      <button class="date-required-close" type="button" aria-label="Close message" @click="showDateRequiredModal = false">X</button>
-      <h2 id="date-required-title" class="h5 mb-2">A date must be selected first</h2>
-    </div>
-  </div>
 </template>
 
 <script>
@@ -173,7 +167,6 @@ export default {
       loading: false,
       error: '',
       formError: '',
-      showDateRequiredModal: false,
       layoutDropdownOpen: false,
       facilityDropdownOpen: false,
       accessibilityDropdownOpen: false,
@@ -181,7 +174,7 @@ export default {
       minutes: ['00', '05', '10', '15', '20', '25', '30', '35', '40', '45', '50', '55'],
       layouts: ['Theater', 'Classroom', 'Banquet', 'Boardroom'],
       facilities: ['acoustic partition walls', 'modular stages', 'integrated sound system', 'programmable smart lighting', 'projectors', 'projector screens', 'Wi-Fi'],
-      accessibilityNeeds: ['wheelchair ramps'],
+      accessibilityNeeds: ['wheelchair ramps', 'accessible parking'],
       filters: {
         search: '',
         date: '',
@@ -219,6 +212,16 @@ export default {
     async searchVenues() {
       this.formError = ''
       this.error = ''
+      const today = new Date()
+      const todayString = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
+      if (this.filters.date && this.filters.date < todayString) {
+        this.formError = 'No past dates are allowed.'
+        return
+      }
+      if (this.filters.attendance !== '' && this.filters.attendance !== null && this.filters.attendance !== undefined && (!Number.isInteger(Number(this.filters.attendance)) || Number(this.filters.attendance) <= 0)) {
+        this.formError = 'Expected attendance must be a positive whole number.'
+        return
+      }
       if ((this.filters.startTime || this.filters.endTime) && !this.filters.date) {
         this.formError = 'Select a date when filtering by time.'
         return
@@ -260,13 +263,12 @@ export default {
     },
     handleTimeInput() {
       if ((this.filters.startTime || this.filters.endTime) && !this.filters.date) {
-        this.showDateRequiredModal = true
+        this.formError = 'Select a date when filtering by time.'
         return
       }
       this.searchVenues()
     },
     handleDateChange() {
-      this.showDateRequiredModal = false
       this.formError = ''
       this.searchVenues()
     },
@@ -340,10 +342,6 @@ export default {
 .layout-option:hover { background: #f8f9fa }
 .layout-clear { padding: .25rem .5rem }
 .time-selectors { display: grid; grid-template-columns: 1fr 1fr; gap: .5rem }
-.date-required-backdrop { position: fixed; z-index: 1050; inset: 0; display: grid; place-items: center; padding: 1rem; background: rgba(15, 23, 36, .45) }
-.date-required-modal { position: relative; width: min(100%, 400px); padding: 2rem 2.5rem 1.5rem 1.5rem; border-radius: .5rem; background: #fff; box-shadow: 0 1rem 3rem rgba(0, 0, 0, .2) }
-.date-required-close { position: absolute; top: .5rem; right: .6rem; border: 0; background: transparent; color: #6c757d; font-size: 1.1rem; font-weight: 700; line-height: 1; cursor: pointer }
-.date-required-close:hover { color: #212529 }
 
 @media (max-width: 575.98px) {
   .venue-card { grid-template-columns: 1fr }
