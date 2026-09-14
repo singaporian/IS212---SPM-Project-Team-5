@@ -15,7 +15,7 @@ const demoVenues = [
     location: 'Marina Bay Sands Hotel, Singapore',
     capacity: 100,
     facilities: ['acoustic partition walls', 'modular stages', 'integrated sound system', 'programmable smart lighting', 'projectors', 'projector screens', 'Wi-Fi'],
-    accessibility: ['wheelchair ramps'],
+    accessibility: ['wheelchair ramps', 'accessible parking'],
     supportedLayouts: ['Theater', 'Classroom', 'Banquet', 'Boardroom'],
     unavailablePeriods: [
       { start: '2026-09-15T10:00:00+08:00', end: '2026-09-15T14:00:00+08:00', reason: 'Scheduled maintenance' },
