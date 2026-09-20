@@ -82,6 +82,9 @@ CREATE TABLE IF NOT EXISTS events (
 -- Coordinator assignment for event requests (added for US-011 / US-012)
 ALTER TABLE events ADD COLUMN IF NOT EXISTS assigned_coordinator_id uuid REFERENCES users(id) ON DELETE SET NULL;
 
+-- Preserve incomplete draft fields without coercing dates, placeholders or tri-state choices.
+ALTER TABLE events ADD COLUMN IF NOT EXISTS draft_data jsonb NOT NULL DEFAULT '{}'::jsonb;
+
 -- Venue bookings
 CREATE TABLE IF NOT EXISTS bookings (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),

@@ -1,0 +1,96 @@
+US-004 execution evidence after scope clarification
+Date: 2026-09-13 (Asia/Singapore)
+Scope: nine Week 4 field groups; incomplete drafts allowed; valid historical dates allowed.
+Supersedes earlier audit assumptions about three additional fields and past-date restrictions.
+
+Backend npm test
+
+> connectsphere-backend@0.1.0 test
+> node --test
+
+✔ draft validation accepts incomplete values and rejects invalid populated fields (3.7294ms)
+▶ draft API persists atomically and enforces ownership in PostgreSQL
+  ✔ partial input saves and round-trips exactly, including blanks and placeholders (87.1725ms)
+  ✔ repeated saves update the same draft, including clearing fields (27.8148ms)
+  ✔ other organisers cannot read, list or overwrite the draft (23.9458ms)
+  ✔ missing authentication and every other role are rejected (24.5695ms)
+  ✔ invalid values do not partially update a saved draft (12.5411ms)
+error: new row for relation "events" violates check constraint "test_write_failure"
+    at C:\Users\Yu Hui\OneDrive - Singapore Management University\Documents\GitHub\SPM Proj\IS212---SPM-Project-Team-5\backend\node_modules\pg\lib\client.js:694:17
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at async C:\Users\Yu Hui\OneDrive - Singapore Management University\Documents\GitHub\SPM Proj\IS212---SPM-Project-Team-5\backend\src\drafts.js:71:20 {
+  length: 496,
+  severity: 'ERROR',
+  code: '23514',
+  detail: 'Failing row contains (bd03b512-317f-4956-b57b-3ad2b092e647, 7f196e41-d280-42d0-9d63-4e6e4851ac84, null, force failure, null, null, null, null, null, null, {}, [], null, f, null, draft, 2026-09-12 17:11:38.554199+00, 2026-09-12 17:11:38.554199+00, {"endDate": "", "endTime": "", "purpose": "changed", "eventName"...).',
+  hint: undefined,
+  position: undefined,
+  internalPosition: undefined,
+  internalQuery: undefined,
+  where: undefined,
+  schema: 'pg_temp_3',
+  table: 'events',
+  column: undefined,
+  dataType: undefined,
+  constraint: 'test_write_failure',
+  file: 'execMain.c',
+  line: '2074',
+  routine: 'ExecConstraints'
+}
+  ✔ a database write failure preserves the entire previous save and permits retry (30.2308ms)
+  ✔ blank drafts and all registration choices round-trip without requiring a title (29.6437ms)
+  ✔ date-only and time-only drafts preserve incomplete date/time pairs (22.9583ms)
+  ✔ expired tokens and missing tokens cannot read, list or save (18.5198ms)
+  ✔ malformed and inaccessible draft IDs return generic errors without contents (11.6283ms)
+  ✔ clients cannot inject an owner or submitted status into a save (11.8754ms)
+  ✔ all nine Week 4 field groups round-trip, including valid historical dates (24.9314ms)
+  ✔ saving cannot revert a submitted request to draft (15.3642ms)
+✔ draft API persists atomically and enforces ownership in PostgreSQL (407.5284ms)
+ℹ tests 15
+ℹ suites 0
+ℹ pass 15
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 820.9538
+
+Frontend npm test
+
+> connectsphere-frontend@0.1.0 test
+> node --test
+
+✔ save failures retain all input and retry uses the same draft ID (39.901ms)
+✔ reopening a draft restores every corresponding field (1.3267ms)
+✔ invalid attendance blocks save and retains input (0.8633ms)
+✔ concurrent clicks cannot send duplicate saves (0.8355ms)
+✔ denied draft load does not expose an editable empty form (0.8224ms)
+✔ a late response from another draft cannot replace the current form (0.7507ms)
+✔ loading can be retried after a temporary failure (0.9814ms)
+✔ expired-session save error keeps unsaved input available (0.9585ms)
+✔ valid complete future date/time pairs save while reversed times are rejected (2.099ms)
+✔ valid historical dates can be saved with or without a time (3.517ms)
+ℹ tests 10
+ℹ suites 0
+ℹ pass 10
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 365.925
+
+Frontend npm run build
+
+> connectsphere-frontend@0.1.0 build
+> vite build
+
+The CJS build of Vite's Node API is deprecated. See https://vite.dev/guide/troubleshooting.html#vite-cjs-node-api-deprecated for more details.
+vite v5.4.21 building for production...
+transforming...
+✓ 38 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                   0.63 kB │ gzip:  0.35 kB
+dist/assets/index-DIQFTeCa.css    2.85 kB │ gzip:  1.09 kB
+dist/assets/index-C0vIc1m7.js   117.08 kB │ gzip: 43.81 kB
+✓ built in 1.12s
