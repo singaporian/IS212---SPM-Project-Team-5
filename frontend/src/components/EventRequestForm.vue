@@ -139,6 +139,8 @@ export default {
       loadError: '',
       saving: false,
       saveError: '',
+      saveFieldError: '',   // US005
+      saveMessage: '',      //US005
       saveMessage: '',
       form: {
         eventName: '',
@@ -195,7 +197,8 @@ export default {
           await this.$router.replace({ name: 'edit-event-draft', params: { id: this.draftId } })
         }
       } catch (error) {
-        this.saveError = (error.message || 'Unable to save draft.') + ' Your input has been kept; please retry.'
+          this.saveError = (error.message || 'Unable to save draft.') + ' Your input has been kept; please retry.'
+          this.saveFieldError = error.field || ''   // NEW — server errors now include res.body.field
       } finally {
         this.saving = false
       }
