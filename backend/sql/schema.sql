@@ -109,6 +109,9 @@ CREATE TABLE IF NOT EXISTS equipment (
   created_at timestamptz DEFAULT now()
 );
 
+-- Equipment category (added for the "add equipment to inventory" story)
+ALTER TABLE equipment ADD COLUMN IF NOT EXISTS equipment_type text;
+
 -- Equipment reservations per event
 CREATE TABLE IF NOT EXISTS equipment_reservations (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),

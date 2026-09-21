@@ -35,7 +35,8 @@
             <div class="mt-3">
               <ul class="list-unstyled">
                   <li v-if="!venues.length && canSearchVenues" class="text-muted">Use Find Venues to search the venue directory.</li>
-                  <li v-if="!canSearchVenues" class="text-muted">Your role workspace is ready. More tools will appear as features are added.</li>
+                  <li v-if="canManageEquipment"><router-link class="btn btn-accent" to="/equipment/new"><i class="bi bi-plus-lg"></i> Add Equipment</router-link></li>
+                  <li v-else-if="!canSearchVenues" class="text-muted">Your role workspace is ready. More tools will appear as features are added.</li>
                 <li v-for="v in venues" :key="v.id" class="list-group-item d-flex justify-content-between align-items-center">
                   <div>
                     <div class="fw-semibold">{{ v.name }}</div>
@@ -57,6 +58,7 @@
           <div class="card-body">
               <h6>Quick Actions</h6>
               <router-link v-if="canCreateRequest" class="btn btn-outline-primary btn-sm w-100 mb-2" to="/requests/new">Start Draft</router-link>
+              <router-link v-if="canManageEquipment" class="btn btn-outline-primary btn-sm w-100 mb-2" to="/equipment/new">Add Equipment</router-link>
               <router-link v-if="role === 'event_coordinator'" class="btn btn-outline-secondary btn-sm w-100 mb-2" to="/coordinator/requests">{{ primaryRoleAction }}</router-link>
               <router-link v-else-if="canCreateRequest" class="btn btn-outline-secondary btn-sm w-100 mb-2" to="/requests/drafts">My Drafts</router-link>
               <button v-else class="btn btn-outline-secondary btn-sm w-100 mb-2">{{ primaryRoleAction }}</button>
@@ -99,6 +101,7 @@ export default {
     role() { return this.user.role || 'attendee' },
     canSearchVenues() { return ['event_coordinator', 'venue_staff'].includes(this.role) },
     canCreateRequest() { return ['event_organiser'].includes(this.role) },
+    canManageEquipment() { return this.role === 'technical_support_staff' },
     greeting() { return `Welcome, ${this.user.name || 'there'}` },
     roleDescription() {
       const descriptions = {
