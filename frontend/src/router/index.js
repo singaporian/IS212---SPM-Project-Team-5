@@ -5,6 +5,7 @@ import DraftsView from '../views/DraftsView.vue'
 import LoginView from '../views/LoginView.vue'
 import VenueSearchView from '../views/VenueSearchView.vue'
 import CoordinatorRequestsView from '../views/CoordinatorRequestsView.vue'
+import AddEquipmentView from '../views/AddEquipmentView.vue'
 import { getUser, isAuthenticated } from '../services/auth'
 
 const routes = [
@@ -14,7 +15,8 @@ const routes = [
   { path: '/', name: 'home', component: HomePage, meta: { requiresAuth: true } },
   { path: '/venues', name: 'venue-search', component: VenueSearchView, meta: { requiresAuth: true, roles: ['event_coordinator', 'venue_staff'] } },
   { path: '/coordinator/requests', name: 'coordinator-requests', component: CoordinatorRequestsView, meta: { requiresAuth: true, roles: ['event_coordinator'] } },
-  { path: '/requests/new', name: 'new-event-request', component: NewEventRequestView, meta: { requiresAuth: true, roles: ['event_organiser'] } }
+  { path: '/requests/new', name: 'new-event-request', component: NewEventRequestView, meta: { requiresAuth: true, roles: ['event_organiser'] } },
+  { path: '/equipment/new', name: 'add-equipment', component: AddEquipmentView, meta: { requiresAuth: true, roles: ['technical_support_staff'] } }
 ]
 
 const router = createRouter({
