@@ -10,7 +10,7 @@
         <ul class="navbar-nav ms-auto">
           <li class="nav-item"><router-link class="nav-link" to="/">Dashboard</router-link></li>
           <li class="nav-item"><router-link class="nav-link" to="/events">Events</router-link></li>
-          <li class="nav-item"><router-link class="nav-link" to="/venues">Venues</router-link></li>
+          <li v-if="canViewVenues" class="nav-item"><router-link class="nav-link" to="/venues">Venues</router-link></li>
         </ul>
       </div>
 
@@ -45,6 +45,9 @@ export default {
     }
   },
   computed: {
+    canViewVenues() {
+      return ['event_coordinator', 'venue_staff'].includes(this.user.role)
+    },
     initials() {
       if (!this.user.name) return 'U'
       return this.user.name.split(' ').map(n => n[0]).slice(0,2).join('').toUpperCase()
