@@ -61,7 +61,10 @@ export default {
     },
     toggleDetails(id) { this.selectedId = this.selectedId === id ? null : id },
     formatDate(value) { return value ? new Date(value).toLocaleString() : 'Time not provided' },
-    statusLabel(status) { return status === 'pending' ? 'Pending Review' : status.replaceAll('_', ' ') },
+    statusLabel(status) {
+      const labels = { pending: 'Pending Review', alternative_suggested: 'Alternative Suggested' }
+      return labels[status] || (status ? status.replaceAll('_', ' ') : 'Unknown Status')
+    },
     statusClass(status) {
       return { 'bg-warning text-dark': status === 'pending', 'bg-success': status === 'approved' || status === 'confirmed', 'bg-danger': status === 'rejected', 'bg-info text-dark': status === 'alternative_suggested' }
     }
