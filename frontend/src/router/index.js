@@ -6,17 +6,27 @@ import LoginView from '../views/LoginView.vue'
 import VenueSearchView from '../views/VenueSearchView.vue'
 import CoordinatorRequestsView from '../views/CoordinatorRequestsView.vue'
 import AddEquipmentView from '../views/AddEquipmentView.vue'
+import BookingRequestView from '../views/BookingRequestView.vue'
+import PendingBookingRequestsView from '../views/PendingBookingRequestsView.vue'
+import EventsView from '../views/EventsView.vue'
+import AccessDeniedView from '../views/AccessDeniedView.vue'
 import { getUser, isAuthenticated } from '../services/auth'
+import BookingRequestsView from '../views/BookingRequestsView.vue'
 
 const routes = [
   { path: '/requests/drafts', name: 'event-drafts', component: DraftsView, meta: { requiresAuth: true, roles: ['event_organiser'] } },
   { path: '/requests/drafts/:id', name: 'edit-event-draft', component: NewEventRequestView, meta: { requiresAuth: true, roles: ['event_organiser'] } },
   { path: '/login', name: 'login', component: LoginView, meta: { guestOnly: true } },
   { path: '/', name: 'home', component: HomePage, meta: { requiresAuth: true } },
-  { path: '/venues', name: 'venue-search', component: VenueSearchView, meta: { requiresAuth: true, roles: ['event_coordinator', 'venue_staff'] } },
+  { path: '/events', name: 'events', component: EventsView, meta: { requiresAuth: true } },
+  { path: '/access-denied', name: 'access-denied', component: AccessDeniedView, meta: { requiresAuth: true } },
+  { path: '/venues', name: 'venue-search', component: VenueSearchView, meta: { requiresAuth: true, roles: ['event_coordinator', 'venue_staff'], resource: 'the venue workspace' } },
   { path: '/coordinator/requests', name: 'coordinator-requests', component: CoordinatorRequestsView, meta: { requiresAuth: true, roles: ['event_coordinator'] } },
   { path: '/requests/new', name: 'new-event-request', component: NewEventRequestView, meta: { requiresAuth: true, roles: ['event_organiser'] } },
-  { path: '/equipment/new', name: 'add-equipment', component: AddEquipmentView, meta: { requiresAuth: true, roles: ['technical_support_staff'] } }
+  { path: '/equipment/new', name: 'add-equipment', component: AddEquipmentView, meta: { requiresAuth: true, roles: ['technical_support_staff'] } },
+  { path: '/bookings/new', name: 'new-booking-request', component: BookingRequestView, meta: { requiresAuth: true, roles: ['event_coordinator'] } },
+  { path: '/bookings', name: 'booking-requests', component: BookingRequestsView, meta: { requiresAuth: true, roles: ['event_coordinator'] } },
+  { path: '/bookings/pending', name: 'pending-booking-requests', component: PendingBookingRequestsView, meta: { requiresAuth: true, roles: ['venue_staff'] } }
 ]
 
 const router = createRouter({
@@ -27,7 +37,7 @@ const router = createRouter({
 router.beforeEach((to) => {
   if (to.meta.requiresAuth && !isAuthenticated()) return { name: 'login' }
   if (to.meta.guestOnly && isAuthenticated()) return { name: 'home' }
-  if (to.meta.roles && !to.meta.roles.includes(getUser()?.role)) return { name: 'home' }
+  if (to.meta.roles && !to.meta.roles.includes(getUser()?.role)) return { name: 'access-denied', query: { resource: to.meta.resource || to.path } }
   return true
 })
 

@@ -72,6 +72,17 @@ The `/requests/new` frontend route is restricted to Event Organisers. The dashbo
 
 The home dashboard uses one shared layout with role-aware copy and actions for now. Separate role-specific pages should be added when the corresponding workflows are implemented; duplicating five mostly empty homepages at this stage would create unnecessary maintenance overhead.
 
+### Object-oriented domain model
+
+The backend contains four domain classes in `backend/src/domain/index.js`:
+
+- `User` encapsulates role decisions such as whether a user can create event requests or access venue data.
+- `EventRequest` encapsulates draft/submitted state and coordinator assignment decisions.
+- `Venue` encapsulates suitability checks for capacity, facilities, layouts, and accessibility.
+- `Booking` encapsulates booking status and overlap checks, including setup and turnaround buffers.
+
+Routes continue to use the existing PostgreSQL/API response shapes. The classes provide domain behavior without replacing the current persistence layer. Their behavior is covered by `backend/test/domain.test.js`.
+
 Notes:
 - The backend expects Postgres on the host port `55432` by default (mapped to container 5432). See `backend/.env` if you need to change it.
 - Frontend dev server proxies `/api` to `http://localhost:3000` so API calls work without CORS changes.
@@ -140,3 +151,4 @@ values are allowed, and valid historical dates are allowed; no past-date
 restriction is applied. Date formats, time formats and start/end ordering are
 still validated. Event Type, Programme/Agenda and Special Arrangements are
 outside this agreed draft scope.
+

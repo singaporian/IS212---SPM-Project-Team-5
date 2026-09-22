@@ -1,6 +1,7 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const db = require('./db');
+const { User } = require('./domain');
 
 const ROLES = Object.freeze([
   'event_organiser',
@@ -13,7 +14,7 @@ const ROLES = Object.freeze([
 const jwtSecret = process.env.JWT_SECRET || 'local-development-secret-change-me';
 
 function publicUser(user) {
-  return { id: user.id, name: user.name, email: user.email, role: user.role };
+  return User.fromRow(user).toPublicJSON();
 }
 
 function signToken(user) {

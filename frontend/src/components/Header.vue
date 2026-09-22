@@ -8,9 +8,9 @@
 
       <div class="collapse navbar-collapse" id="nav">
         <ul class="navbar-nav ms-auto">
-          <li class="nav-item"><a class="nav-link" href="#">Dashboard</a></li>
-          <li class="nav-item"><a class="nav-link" href="#">Events</a></li>
-          <li class="nav-item"><a class="nav-link" href="#">Venues</a></li>
+          <li class="nav-item"><router-link class="nav-link" to="/">Dashboard</router-link></li>
+          <li class="nav-item"><router-link class="nav-link" to="/events">Events</router-link></li>
+          <li class="nav-item"><router-link class="nav-link" to="/venues">Venues</router-link></li>
         </ul>
       </div>
 

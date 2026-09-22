@@ -6,6 +6,7 @@ const fs = require('fs');
 const path = require('path');
 const db = require('./db');
 const auth = require('./auth');
+const { EventRequest, Venue, Booking } = require('./domain');
 
 dotenv.config();
 const app = express();
@@ -40,6 +41,17 @@ app.get('/api/auth/me', auth.authenticate, async (req, res) => {
   const result = await db.query('SELECT id, name, email, role FROM users WHERE id = $1', [req.auth.sub]);
   if (!result.rows[0]) return res.status(401).json({ error: 'User no longer exists' });
   res.json({ user: result.rows[0] });
+});
+
+// Aggregate venue count is safe to show on authenticated dashboards; venue details remain role-restricted below.
+app.get('/api/venues/count', auth.authenticate, async (req, res) => {
+  try {
+    const result = await db.query('SELECT COUNT(*)::int AS count FROM venues');
+    res.json({ count: result.rows[0].count });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Failed to count venues' });
+  }
 });
 
 app.get('/api/venues', auth.authenticate, auth.requireRoles('event_coordinator', 'venue_staff'), async (req, res) => {
@@ -156,7 +168,11 @@ app.get('/api/venues', auth.authenticate, auth.requireRoles('event_coordinator',
        FROM venues v ${where} ORDER BY name LIMIT 100`,
       params
     );
-    res.json(result.rows);
+    res.json(result.rows.map((row) => new Venue({
+      ...row,
+      supportedLayouts: row.supported_layouts,
+      unavailablePeriods: row.unavailable_periods
+    }).toJSON()));
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Failed to fetch venues' });
@@ -208,7 +224,8 @@ app.patch('/api/events/:id/assign', auth.authenticate, auth.requireRoles('event_
     if (!result.rows[0]) {
       return res.status(409).json({ error: 'This request has already been assigned' });
     }
-    res.json(result.rows[0]);
+    const request = EventRequest.fromRow(result.rows[0]);
+    res.json({ id: request.id, title: request.title, assigned_coordinator_id: request.assignedCoordinatorId });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Failed to assign request' });
@@ -248,6 +265,128 @@ app.get('/api/events/:id', auth.authenticate, auth.requireRoles('event_coordinat
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Failed to fetch request details' });
+  }
+});
+
+const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function parseBookingInput(body) {
+  const startTime = new Date(body.startTime);
+  const endTime = new Date(body.endTime);
+  const setupMinutes = Number(body.setupMinutes ?? 30);
+  const turnaroundMinutes = Number(body.turnaroundMinutes ?? 30);
+  if (!uuidPattern.test(body.eventId || '') || !uuidPattern.test(body.venueId || '')) throw Object.assign(new Error('A valid event and venue are required'), { status: 400 });
+  if (!Number.isFinite(startTime.getTime()) || !Number.isFinite(endTime.getTime()) || endTime <= startTime) throw Object.assign(new Error('End time must be later than start time'), { status: 400 });
+  if (!Number.isInteger(setupMinutes) || setupMinutes < 0 || !Number.isInteger(turnaroundMinutes) || turnaroundMinutes < 0) throw Object.assign(new Error('Setup and turnaround times must be non-negative whole minutes'), { status: 400 });
+  const venueRequirements = body.venueRequirements && typeof body.venueRequirements === 'object' && !Array.isArray(body.venueRequirements) ? body.venueRequirements : {};
+  return { startTime, endTime, setupMinutes, turnaroundMinutes, venueRequirements, acknowledgeConflict: body.acknowledgeConflict === true };
+}
+
+// US-015: create a pending venue booking request for an event assigned to this coordinator.
+app.post('/api/bookings/requests', auth.authenticate, auth.requireRoles('event_coordinator'), async (req, res) => {
+  let input;
+  try { input = parseBookingInput(req.body); } catch (error) { return res.status(error.status || 400).json({ error: error.message }); }
+  try {
+    const eventResult = await db.query(
+      `SELECT id, title FROM events WHERE id = $1 AND assigned_coordinator_id = $2 AND status = 'submitted'`,
+      [req.body.eventId, req.auth.sub]
+    );
+    if (!eventResult.rows[0]) return res.status(404).json({ error: 'Event not found or not assigned to you' });
+    const venueResult = await db.query('SELECT id, name FROM venues WHERE id = $1', [req.body.venueId]);
+    if (!venueResult.rows[0]) return res.status(404).json({ error: 'Venue not found' });
+
+    const conflicts = await db.query(
+      `SELECT b.id, b.start_time, b.end_time, b.status, b.setup_minutes, b.turnaround_minutes,
+              v.name AS venue_name, e.title AS event_title
+       FROM bookings b
+       JOIN venues v ON v.id = b.venue_id
+       LEFT JOIN events e ON e.id = b.event_id
+       WHERE b.venue_id = $1
+         AND b.status IN ('pending', 'approved', 'confirmed')
+         AND b.start_time - (b.setup_minutes * interval '1 minute') < $3::timestamptz + ($5 * interval '1 minute')
+         AND b.end_time + (b.turnaround_minutes * interval '1 minute') > $2::timestamptz - ($4 * interval '1 minute')
+       ORDER BY b.start_time ASC`,
+      [req.body.venueId, input.startTime.toISOString(), input.endTime.toISOString(), input.setupMinutes, input.turnaroundMinutes]
+    );
+    const conflictDetails = conflicts.rows.map((conflict) => ({
+      booking_id: conflict.id,
+      event_title: conflict.event_title || 'Existing booking',
+      venue_name: conflict.venue_name,
+      start_time: conflict.start_time,
+      end_time: conflict.end_time,
+      status: conflict.status
+    }));
+    if (conflictDetails.length && !input.acknowledgeConflict) {
+      return res.status(409).json({ error: 'Booking conflict requires acknowledgement', conflicts: conflictDetails });
+    }
+
+    const bookingResult = await db.query(
+      `INSERT INTO bookings (event_id, venue_id, requested_by, start_time, end_time, status,
+                            setup_minutes, turnaround_minutes, venue_requirements,
+                            conflict_warning, conflict_details)
+       VALUES ($1, $2, $3, $4, $5, 'pending', $6, $7, $8::jsonb, $9, $10::jsonb)
+       RETURNING id, event_id, venue_id, start_time, end_time, status, setup_minutes,
+                 turnaround_minutes, venue_requirements, conflict_warning, conflict_details, created_at`,
+      [req.body.eventId, req.body.venueId, req.auth.sub, input.startTime.toISOString(), input.endTime.toISOString(), input.setupMinutes, input.turnaroundMinutes, JSON.stringify(input.venueRequirements), conflictDetails.length > 0, JSON.stringify(conflictDetails)]
+    );
+    await db.query(
+      `INSERT INTO notifications (user_id, event_id, message)
+       SELECT id, $1, $2 FROM users WHERE role = 'venue_staff'`,
+      [req.body.eventId, `New venue booking request for ${eventResult.rows[0].title} at ${venueResult.rows[0].name}`]
+    );
+    res.status(201).json(bookingResult.rows[0]);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Unable to submit booking request. Your fields are still available; please retry.' });
+  }
+});
+
+// Coordinator view of their submitted venue booking requests.
+app.get('/api/bookings/mine', auth.authenticate, auth.requireRoles('event_coordinator'), async (req, res) => {
+  const result = await db.query(
+    `SELECT b.*, v.name AS venue_name, e.title AS event_title
+     FROM bookings b JOIN venues v ON v.id = b.venue_id JOIN events e ON e.id = b.event_id
+     WHERE b.requested_by = $1 ORDER BY b.created_at DESC`,
+    [req.auth.sub]
+  );
+  res.json(result.rows);
+});
+
+// Venue Staff review queue and decision endpoint.
+app.get('/api/bookings/pending', auth.authenticate, auth.requireRoles('venue_staff'), async (req, res) => {
+  const result = await db.query(
+    `SELECT b.*, v.name AS venue_name, e.title AS event_title, u.name AS coordinator_name, u.email AS coordinator_email
+     FROM bookings b JOIN venues v ON v.id = b.venue_id JOIN events e ON e.id = b.event_id
+     LEFT JOIN users u ON u.id = b.requested_by
+     WHERE b.status = 'pending' ORDER BY b.created_at ASC`
+  );
+  res.json(result.rows);
+});
+
+app.patch('/api/bookings/:id/decision', auth.authenticate, auth.requireRoles('venue_staff'), async (req, res) => {
+  const { decision, reason = '', comment = '', alternativeStartTime, alternativeEndTime } = req.body;
+  if (!['approved', 'rejected', 'alternative_suggested'].includes(decision)) return res.status(400).json({ error: 'Invalid booking decision' });
+  if (decision === 'rejected' && !reason.trim()) return res.status(400).json({ error: 'A rejection reason is required' });
+  if (decision === 'alternative_suggested' && (!alternativeStartTime || !alternativeEndTime)) return res.status(400).json({ error: 'An alternative start and end time are required' });
+  try {
+    const result = await db.query(
+      `UPDATE bookings SET status = $1, decision_reason = $2, decision_comment = $3,
+             alternative_start_time = $4, alternative_end_time = $5, decided_by = $6, decided_at = now()
+       WHERE id = $7 AND status = 'pending'
+       RETURNING id, event_id, status, decision_reason, decision_comment, alternative_start_time, alternative_end_time, decided_at`,
+      [decision, reason.trim() || null, comment.trim() || null, alternativeStartTime || null, alternativeEndTime || null, req.auth.sub, req.params.id]
+    );
+    if (!result.rows[0]) return res.status(404).json({ error: 'Pending booking request not found' });
+    const resultRow = result.rows[0];
+    await db.query(
+      `INSERT INTO notifications (user_id, event_id, message)
+       SELECT requested_by, event_id, $1 FROM bookings WHERE id = $2`,
+      [`Venue booking request ${decision.replace('_', ' ')}${reason ? `: ${reason}` : ''}`, req.params.id]
+    );
+    res.json(resultRow);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Unable to save booking decision. Please retry.' });
   }
 });
 
