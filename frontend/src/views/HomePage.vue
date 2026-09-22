@@ -203,7 +203,8 @@ export default {
       this.selectedBookingId = this.selectedBookingId === id ? null : id
     },
     bookingStatusLabel(status) {
-      return status === 'pending' ? 'Pending Review' : status.replaceAll('_', ' ')
+      const labels = { pending: 'Pending Review', alternative_suggested: 'Alternative Suggested' }
+      return labels[status] || (status ? status.replaceAll('_', ' ') : 'Unknown Status')
     },
     bookingStatusClass(status) {
       return {
