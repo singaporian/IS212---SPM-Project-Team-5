@@ -63,6 +63,10 @@ class EventRequest {
     return this.status === 'submitted' && !this.assignedCoordinatorId;
   }
 
+  canRequestChanges() {
+    return this.status !== 'draft'; // AC-008-001: only a submitted event can receive a change request
+  }
+
   assignTo(coordinatorId) {
     if (!this.canBeAssigned()) throw new Error('This request has already been assigned');
     this.assignedCoordinatorId = coordinatorId;
@@ -167,4 +171,39 @@ class Booking {
   }
 }
 
-module.exports = { User, EventRequest, Venue, Booking };
+class ChangeRequest {
+  constructor({ id, eventId, organiserId, proposedChanges = {}, status = 'pending', createdAt = null }) {
+    this.id = id;
+    this.eventId = eventId;
+    this.organiserId = organiserId;
+    this.proposedChanges = proposedChanges;
+    this.status = status;
+    this.createdAt = createdAt;
+  }
+
+  static fromRow(row) {
+    return new ChangeRequest({
+      id: row.id,
+      eventId: row.event_id,
+      organiserId: row.organiser_id,
+      proposedChanges: row.proposed_changes,
+      status: row.status,
+      createdAt: row.created_at
+    });
+  }
+
+  isPending() {
+    return this.status === 'pending';
+  }
+
+  toJSON() {
+    return {
+      id: this.id,
+      event_id: this.eventId,
+      proposed_changes: this.proposedChanges,
+      status: this.status,
+      created_at: this.createdAt
+    };
+  }
+}
+module.exports = { User, EventRequest, Venue, Booking, ChangeRequest }; //changed for Us-008
