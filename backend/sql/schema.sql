@@ -182,3 +182,14 @@ CREATE TABLE IF NOT EXISTS event_changes (
   change_summary text,
   created_at timestamptz DEFAULT now()
 );
+
+-- Organiser-submitted proposed changes to an already-submitted event
+CREATE TABLE IF NOT EXISTS event_change_requests (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  event_id uuid NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+  organiser_id uuid NOT NULL REFERENCES users(id) ON DELETE SET NULL,
+  proposed_changes jsonb NOT NULL,
+  status text NOT NULL DEFAULT 'pending',
+  created_at timestamptz DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS event_change_requests_event_idx ON event_change_requests (event_id);

@@ -12,6 +12,7 @@ import EventsView from '../views/EventsView.vue'
 import AccessDeniedView from '../views/AccessDeniedView.vue'
 import { getUser, isAuthenticated } from '../services/auth'
 import BookingRequestsView from '../views/BookingRequestsView.vue'
+import EventChangeRequestView from '../views/EventChangeRequestView.vue'
 
 const routes = [
   { path: '/requests/drafts', name: 'event-drafts', component: DraftsView, meta: { requiresAuth: true, roles: ['event_organiser'] } },
@@ -26,7 +27,9 @@ const routes = [
   { path: '/equipment/new', name: 'add-equipment', component: AddEquipmentView, meta: { requiresAuth: true, roles: ['technical_support_staff'] } },
   { path: '/bookings/new', name: 'new-booking-request', component: BookingRequestView, meta: { requiresAuth: true, roles: ['event_coordinator'] } },
   { path: '/bookings', name: 'booking-requests', component: BookingRequestsView, meta: { requiresAuth: true, roles: ['event_coordinator'] } },
-  { path: '/bookings/pending', name: 'pending-booking-requests', component: PendingBookingRequestsView, meta: { requiresAuth: true, roles: ['venue_staff'] } }
+  { path: '/bookings/pending', name: 'pending-booking-requests', component: PendingBookingRequestsView, meta: { requiresAuth: true, roles: ['venue_staff'] } },
+  { path: '/events/:id/change-request', name: 'event-change-request', component: EventChangeRequestView, meta: { requiresAuth: true, roles: ['event_organiser'] } },
+  
 ]
 
 const router = createRouter({
