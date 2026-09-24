@@ -51,7 +51,7 @@
           <div v-if="conflicts.length" class="alert alert-warning">
             <strong>Potential booking conflict detected.</strong>
             <p class="small mb-2">You must acknowledge this warning before submitting. Venue Staff will see the conflict flag.</p>
-            <ul class="small mb-2"><li v-for="conflict in conflicts" :key="conflict.booking_id">{{ conflict.event_title }}: {{ formatDate(conflict.start_time) }} to {{ formatDate(conflict.end_time) }} ({{ conflict.status }})</li></ul>
+            <ul class="small mb-2"><li v-for="conflict in conflicts" :key="conflict.booking_id">{{ conflict.event_title }} at {{ conflict.venue_name }}: {{ formatDate(conflict.start_time) }} to {{ formatDate(conflict.end_time) }} ({{ conflictStatusLabel(conflict.status) }})</li></ul>
           </div>
           <div v-if="error" class="alert alert-danger">{{ error }}</div>
           <div class="d-flex gap-2">
@@ -87,6 +87,12 @@ export default {
   },
   methods: {
     formatDate(value) { return value ? new Date(value).toLocaleString() : '—' },
+    conflictStatusLabel(status) {
+      if (status === 'pending') return 'Pending booking confirmation'
+      if (status === 'approved') return 'Approved booking'
+      if (status === 'confirmed') return 'Confirmed booking'
+      return status ? status.replaceAll('_', ' ') : 'Existing booking'
+    },
     async loadOptions() {
       const headers = authHeaders()
       const [eventsResponse, venuesResponse] = await Promise.all([
