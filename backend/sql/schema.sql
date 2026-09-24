@@ -85,6 +85,20 @@ ALTER TABLE events ADD COLUMN IF NOT EXISTS assigned_coordinator_id uuid REFEREN
 -- Preserve incomplete draft fields without coercing dates, placeholders or tri-state choices.
 ALTER TABLE events ADD COLUMN IF NOT EXISTS draft_data jsonb NOT NULL DEFAULT '{}'::jsonb;
 
+-- Latest technical support requirements for each event (US-016).
+CREATE TABLE IF NOT EXISTS technical_support_requirements (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  event_id uuid NOT NULL UNIQUE REFERENCES events(id) ON DELETE CASCADE,
+  equipment_requirements jsonb NOT NULL DEFAULT '[]'::jsonb,
+  staff_required integer NOT NULL DEFAULT 0 CHECK (staff_required >= 0),
+  late_request boolean NOT NULL DEFAULT false,
+  update_count integer NOT NULL DEFAULT 0 CHECK (update_count >= 0),
+  updated_by uuid REFERENCES users(id) ON DELETE SET NULL,
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+ALTER TABLE technical_support_requirements ADD COLUMN IF NOT EXISTS update_count integer NOT NULL DEFAULT 0;
+
 -- Venue bookings
 CREATE TABLE IF NOT EXISTS bookings (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),

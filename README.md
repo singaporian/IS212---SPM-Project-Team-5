@@ -152,3 +152,20 @@ restriction is applied. Date formats, time formats and start/end ordering are
 still validated. Event Type, Programme/Agenda and Special Arrangements are
 outside this agreed draft scope.
 
+## Technical Support Requirements (US-016)
+
+Event Coordinators can open `/technical-support/requirements` from the dashboard to select an assigned event, choose multiple equipment types with quantities, and specify the number of technical support staff required. Saving replaces the previous requirements version for that event and notifies Technical Support Staff.
+
+The equipment type `Other` includes a details field, so coordinators can describe equipment that is not covered by the standard list. A description is required when `Other` is selected.
+
+Technical Support Staff can open `/technical-support/queue` to see the latest requirements for all events. Replaced requirements are marked **Updated**, and requirements saved after the event start time are marked **Late request**.
+
+The US-016 schema is created by the normal initializer:
+
+```bash
+cd backend
+npm run init-db
+```
+
+The coordinator dashboard also shows a summary of submitted technical support requirements, with a link back to the full management page. The coordinator form retains its input when a save fails and displays a retryable error.
+

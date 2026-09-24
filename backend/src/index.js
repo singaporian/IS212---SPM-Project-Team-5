@@ -391,6 +391,116 @@ app.patch('/api/bookings/:id/decision', auth.authenticate, auth.requireRoles('ve
   }
 });
 
+const SUPPORT_EQUIPMENT_TYPES = Object.freeze(['Audio', 'Video & Display', 'Lighting', 'Staging', 'Networking', 'Power & Cabling', 'Furniture', 'Other']);
+
+function validateSupportRequirements(body) {
+  const equipment = Array.isArray(body.equipment) ? body.equipment : [];
+  const seen = new Set();
+  const normalizedEquipment = equipment.map((item) => {
+    const type = typeof item.type === 'string' ? item.type.trim() : '';
+    const quantity = Number(item.quantity);
+    const details = typeof item.details === 'string' ? item.details.trim() : '';
+    if (!SUPPORT_EQUIPMENT_TYPES.includes(type)) throw Object.assign(new Error('Choose a valid equipment type'), { status: 400 });
+    if (seen.has(type)) throw Object.assign(new Error('Each equipment type may only be listed once'), { status: 400 });
+    if (!Number.isInteger(quantity) || quantity <= 0) throw Object.assign(new Error('Equipment quantities must be positive whole numbers'), { status: 400 });
+    if (details.length > 500) throw Object.assign(new Error('Equipment details must be at most 500 characters'), { status: 400 });
+    if (type === 'Other' && !details) throw Object.assign(new Error('Describe the equipment when using Other'), { status: 400 });
+    seen.add(type);
+    return { type, quantity, ...(details ? { details } : {}) };
+  });
+  const staffRequired = Number(body.staffRequired);
+  if (!Number.isInteger(staffRequired) || staffRequired < 0) throw Object.assign(new Error('Number of staff must be a non-negative whole number'), { status: 400 });
+  return { equipment: normalizedEquipment, staffRequired };
+}
+
+// US-016: save or replace the latest technical support requirements for an assigned event.
+app.put('/api/events/:id/technical-support', auth.authenticate, auth.requireRoles('event_coordinator'), async (req, res) => {
+  let requirements;
+  try { requirements = validateSupportRequirements(req.body); } catch (error) { return res.status(error.status || 400).json({ error: error.message }); }
+  try {
+    const eventResult = await db.query(
+      `SELECT id, title, preferred_start FROM events
+       WHERE id = $1 AND assigned_coordinator_id = $2 AND status NOT IN ('completed', 'cancelled', 'rejected')`,
+      [req.params.id, req.auth.sub]
+    );
+    if (!eventResult.rows[0]) return res.status(404).json({ error: 'Event not found or not assigned to you' });
+    const event = eventResult.rows[0];
+    const lateRequest = event.preferred_start ? new Date() >= new Date(event.preferred_start) : false;
+    const existingRequirement = await db.query('SELECT id FROM technical_support_requirements WHERE event_id = $1', [req.params.id]);
+    const result = await db.query(
+      `INSERT INTO technical_support_requirements (event_id, equipment_requirements, staff_required, late_request, updated_by)
+       VALUES ($1, $2::jsonb, $3, $4, $5)
+       ON CONFLICT (event_id) DO UPDATE SET equipment_requirements = EXCLUDED.equipment_requirements,
+         staff_required = EXCLUDED.staff_required, late_request = EXCLUDED.late_request,
+         updated_by = EXCLUDED.updated_by, updated_at = now(), update_count = technical_support_requirements.update_count + 1
+       RETURNING id, event_id, equipment_requirements, staff_required, late_request, update_count, updated_at`,
+      [req.params.id, JSON.stringify(requirements.equipment), requirements.staffRequired, lateRequest, req.auth.sub]
+    );
+    await db.query(
+      `INSERT INTO notifications (user_id, event_id, message)
+       SELECT id, $1, $2 FROM users WHERE role = 'technical_support_staff'`,
+      [req.params.id, `Technical support requirements updated for ${event.title}${lateRequest ? ' (late request)' : ''}`]
+    );
+    res.json({ ...result.rows[0], updated: existingRequirement.rows.length > 0 });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Unable to save technical support requirements. Your input is still available; please retry.' });
+  }
+});
+
+app.get('/api/events/:id/technical-support', auth.authenticate, async (req, res) => {
+  try {
+    const eventAccess = await db.query(
+      `SELECT id, title, assigned_coordinator_id FROM events WHERE id = $1`,
+      [req.params.id]
+    );
+    if (!eventAccess.rows[0]) return res.status(404).json({ error: 'Event not found' });
+    const event = eventAccess.rows[0];
+    const isCoordinator = req.auth.role === 'event_coordinator' && event.assigned_coordinator_id === req.auth.sub;
+    const isTechSupport = req.auth.role === 'technical_support_staff';
+    if (!isCoordinator && !isTechSupport) return res.status(403).json({ error: 'You do not have permission to view these requirements' });
+    const result = await db.query(
+      `SELECT tsr.*, e.title AS event_title FROM technical_support_requirements tsr
+       JOIN events e ON e.id = tsr.event_id WHERE tsr.event_id = $1`,
+      [req.params.id]
+    );
+    res.json(result.rows[0] || { event_id: req.params.id, event_title: event.title, equipment_requirements: [], staff_required: 0, late_request: false, updated: false });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Unable to load technical support requirements' });
+  }
+});
+
+app.get('/api/technical-support/requirements', auth.authenticate, auth.requireRoles('technical_support_staff'), async (req, res) => {
+  try {
+    const result = await db.query(
+      `SELECT tsr.*, (tsr.update_count > 0) AS updated, e.title AS event_title, e.preferred_start, e.preferred_end
+       FROM technical_support_requirements tsr JOIN events e ON e.id = tsr.event_id
+       ORDER BY e.preferred_start NULLS LAST, tsr.updated_at DESC`
+    );
+    res.json(result.rows);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Unable to load technical support requirements' });
+  }
+});
+
+app.get('/api/technical-support/my-requirements', auth.authenticate, auth.requireRoles('event_coordinator'), async (req, res) => {
+  try {
+    const result = await db.query(
+      `SELECT tsr.*, (tsr.update_count > 0) AS updated, e.title AS event_title, e.preferred_start, e.preferred_end
+       FROM technical_support_requirements tsr JOIN events e ON e.id = tsr.event_id
+       WHERE e.assigned_coordinator_id = $1
+       ORDER BY tsr.updated_at DESC`,
+      [req.auth.sub]
+    );
+    res.json(result.rows);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Unable to load your technical support requirements' });
+  }
+});
+
 // dev-only: run schema SQL via HTTP (idempotent if schema includes IF NOT EXISTS)
 app.post('/api/init', async (req, res) => {
   try {
