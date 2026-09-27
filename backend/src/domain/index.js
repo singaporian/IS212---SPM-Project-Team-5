@@ -1,5 +1,17 @@
 const PUBLIC_REGISTRATION_ROLES = ['attendee', 'event_organiser'];
 const INTERNAL_ROLES = ['event_coordinator', 'venue_staff', 'technical_support_staff'];
+const EVENT_STATUS = Object.freeze({
+  DRAFT: 'draft',
+  SUBMITTED: 'submitted',
+  CLARIFICATION_REQUESTED: 'clarification_requested',
+  PLANNING: 'planning',        // approved by Coordinator
+  REJECTED: 'rejected',
+  CONFIRMED: 'confirmed',
+  COMPLETED: 'completed',
+  CANCELLED: 'cancelled'
+});
+const CHANGE_REQUEST_STATUSES = [EVENT_STATUS.PLANNING, EVENT_STATUS.CONFIRMED];
+
 
 class User {
   constructor({ id, name, email, role, passwordHash = null }) {
@@ -64,7 +76,7 @@ class EventRequest {
   }
 
   canRequestChanges() {
-    return this.status !== 'draft'; // AC-008-001: only a submitted event can receive a change request
+     return CHANGE_REQUEST_STATUSES.includes(this.status);// AC-008-001: only a submitted event can receive a change request, US-34:Before approval, the Organiser edits the request directly (US-034).
   }
 
   assignTo(coordinatorId) {
@@ -206,4 +218,4 @@ class ChangeRequest {
     };
   }
 }
-module.exports = { User, EventRequest, Venue, Booking, ChangeRequest }; //changed for Us-008
+module.exports = { User, EventRequest, Venue, Booking, ChangeRequest, EVENT_STATUS };

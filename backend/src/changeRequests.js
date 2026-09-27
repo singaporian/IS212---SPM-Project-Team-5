@@ -61,11 +61,11 @@ function parseChangeRequestInput(body) {
 }
 
 const router = express.Router();
-router.use(auth.authenticate, auth.requireRoles('event_organiser'));
+const organiserOnly = [auth.authenticate, auth.requireRoles('event_organiser')];
 router.use((req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
 
-// AC-008-001 through AC-008-005.
-router.post('/:id/change-requests', async (req, res) => {
+
+router.post('/:id/change-requests', ...organiserOnly, async (req, res) => {
   if (!uuidPattern.test(req.params.id)) return res.status(404).json({ error: 'Event not found.' });
   let changes;
   try { changes = parseChangeRequestInput(req.body); }
@@ -80,7 +80,7 @@ router.post('/:id/change-requests', async (req, res) => {
     const event = EventRequest.fromRow(eventResult.rows[0]);
 
     if (!event.canRequestChanges()) {
-      return res.status(409).json({ error: 'This event has not been submitted yet.' });
+      return res.status(409).json({ error: 'Change requests can only be made after your event is approved. Until then, edit the request directly." ' });
     }
 
     const crResult = await db.query(
@@ -106,7 +106,7 @@ router.post('/:id/change-requests', async (req, res) => {
 });
 
 // Feeds the Organiser's own-requests list on the Events page.
-router.get('/mine', async (req, res) => {
+router.get('/mine', ...organiserOnly, async (req, res) => {
   try {
     const result = await db.query(
       `SELECT id, title, event_type, preferred_start, preferred_end, expected_attendance, status, created_at
