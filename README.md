@@ -116,8 +116,8 @@ The draft API requires an Event Organiser JWT:
 
 Draft form values are stored in `draft_data` exactly as entered, including
 separate date/time fields, attendance placeholders and registration choices.
-The event title is also updated for listing. Future submission code should
-validate and map these draft values into the structured event fields.
+The event title is also updated for listing. US-006 submission validates and
+maps these draft values into the structured event fields.
 Ownership and Draft status are enforced in the atomic write statement.
 Missing and inaccessible draft IDs return the same generic response.
 
@@ -140,3 +140,40 @@ values are allowed, and valid historical dates are allowed; no past-date
 restriction is applied. Date formats, time formats and start/end ordering are
 still validated. Event Type, Programme/Agenda and Special Arrangements are
 outside this agreed draft scope.
+
+## Submit a draft for review (US-006)
+
+Run `npm run init-db` in `backend` after updating to this branch to add the
+submission timestamp and description columns. Start the database, backend
+and frontend as above.
+
+As an Event Organiser, fill in Event Name, both start and end date/time, and
+a positive whole-number Expected Attendance, then select Submit for Review.
+The current form values are saved and submitted together; a separate Save Draft
+action is not required. Save Draft remains available for incomplete information,
+including blank or Not decided attendance. Dates/times use Singapore time (UTC+8), with end after start;
+there is no past-date restriction. Other fields remain optional, including
+None / Not Required choices. Any valid minute is allowed (CHG-001).
+
+Invalid submissions stay in Draft and show corrective messages. Successful
+submission preserves the current form values and same request ID, changes status
+to `submitted`, and opens a read-only confirmation. My Submitted Requests
+lets the organiser reopen it. The request appears in the existing coordinator
+queue for assignment and review.
+
+`POST /api/drafts/:id/submit` accepts `{ "version": "<saved version>", "draft": { ...currentFormValues } }`
+for an existing draft. Obtain its version from a draft GET/PUT response.
+For a new unsaved form, send `version: null` with `draft` and use the form's stable
+request UUID. The legacy `{ "version": "<saved version>" }` payload remains
+supported and submits the saved snapshot instead. Other top-level fields are rejected.
+The server validates before atomically saving and submitting. Ownership and status
+checks remain enforced. Stale versions return 409; matching retries of an already
+submitted request return its existing receipt without creating a duplicate.
+
+An earlier end date identifies only End Date; on the same date, an equal or
+earlier end time identifies only End Time (DEF-001). A later end date permits an
+earlier clock time. Submitted event times display as 12-hour AM/PM without changing
+stored values. The success confirmation remains visible if receipt loading fails.
+
+See [US-006 test plan and execution evidence](docs/testing/US-006-test-plan.md)
+for the field mapping, setup, test cases and actual automated/browser results.

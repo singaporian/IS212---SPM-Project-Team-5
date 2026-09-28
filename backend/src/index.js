@@ -15,6 +15,7 @@ app.use(cors());
 app.use(express.json());
 app.use('/api/drafts', require('./drafts').router);
 app.use('/api/equipment', require('./equipment').router);
+app.use('/api', require('./submissions').router);
 
 app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
 
@@ -167,10 +168,10 @@ app.get('/api/venues', auth.authenticate, auth.requireRoles('event_coordinator',
 app.get('/api/events/unassigned', auth.authenticate, auth.requireRoles('event_coordinator'), async (req, res) => {
   try {
     const result = await db.query(
-      `SELECT id, title, event_type, preferred_start, preferred_end, expected_attendance, status, created_at
+      `SELECT id, title, event_type, preferred_start, preferred_end, expected_attendance, status, created_at, submitted_at
        FROM events
        WHERE status = 'submitted' AND assigned_coordinator_id IS NULL
-       ORDER BY created_at ASC`
+       ORDER BY COALESCE(submitted_at, created_at) ASC`
     );
     res.json(result.rows);
   } catch (err) {
@@ -264,4 +265,5 @@ app.post('/api/init', async (req, res) => {
 });
 
 const port = process.env.PORT || 3000;
-app.listen(port, () => console.log(`Backend listening on port ${port}`));
+if (require.main === module) app.listen(port, () => console.log(`Backend listening on port ${port}`));
+module.exports = app;
