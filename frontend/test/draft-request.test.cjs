@@ -23,4 +23,6 @@ test('valid responses and field validation errors retain their data', async () =
   const fields = { eventName: 'Enter a name.' };
   await assert.rejects(requestWith(async () => Response.json({ error: 'Correct fields.', fields }, { status: 422 }))(),
     error => error.status === 422 && error.message === 'Correct fields.' && error.fields.eventName === fields.eventName);
+  await assert.rejects(requestWith(async () => Response.json({ error: 'Enter a valid date.', field: 'startDate' }, { status: 400 }))(),
+    error => error.field === 'startDate' && error.fields.startDate === 'Enter a valid date.');
 });

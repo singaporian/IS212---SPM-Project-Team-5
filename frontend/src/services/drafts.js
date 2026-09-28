@@ -24,7 +24,8 @@ export async function draftRequest(path = '', options = {}) {
   }
   if (!response.ok) {
     const error = new Error(data.error || 'Request failed. Please retry.')
-    error.fields = data.fields || {}
+    error.fields = data.fields || (data.field ? { [data.field]: error.message } : {})
+    error.field = data.field || Object.keys(error.fields)[0] || null
     error.status = response.status
     throw error
   }

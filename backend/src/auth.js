@@ -1,6 +1,7 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const db = require('./db');
+const { User } = require('./domain');
 
 const ROLES = Object.freeze([
   'event_organiser',
@@ -13,7 +14,7 @@ const ROLES = Object.freeze([
 const jwtSecret = process.env.JWT_SECRET || 'local-development-secret-change-me';
 
 function publicUser(user) {
-  return { id: user.id, name: user.name, email: user.email, role: user.role };
+  return User.fromRow(user).toPublicJSON();
 }
 
 function signToken(user) {
@@ -86,7 +87,9 @@ function authenticate(req, res, next) {
 
 function requireRoles(...allowedRoles) {
   return (req, res, next) => {
-    if (!req.auth || !allowedRoles.includes(req.auth.role)) {
+    const currentRole = String(req.auth?.role || '').trim().toLowerCase();
+    const permittedRoles = allowedRoles.map((role) => String(role).trim().toLowerCase());
+    if (!permittedRoles.includes(currentRole)) {
       return res.status(403).json({ error: 'You do not have permission to access this resource' });
     }
     next();

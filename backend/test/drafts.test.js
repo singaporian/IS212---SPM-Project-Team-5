@@ -81,7 +81,10 @@ test('draft API persists atomically and enforces ownership in PostgreSQL', async
       }
     });
     await t.test('invalid values do not partially update a saved draft', async () => {
-      assert.equal((await request('/' + id, 'PUT', { eventName: 'Should not save', expectedAttendance: 'bad' })).status, 400);
+      const invalid = await request('/' + id, 'PUT', { eventName: 'Should not save', expectedAttendance: 'bad' });
+      assert.equal(invalid.status, 400);
+      assert.equal(invalid.body.field, 'expectedAttendance');
+      assert.equal(invalid.body.fields.expectedAttendance, 'Enter a positive whole number.');
       assert.deepEqual((await request('/' + id)).body.draft_data, saved);
     });
     await t.test('a database write failure preserves the entire previous save and permits retry', async () => {

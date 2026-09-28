@@ -247,6 +247,10 @@ test('submission integrates with real PostgreSQL and coordinator routes', async 
       assert.ok(!(await request('/drafts')).body.some(item => item.id === draft.id));
       assert.deepEqual((await request('/requests/' + draft.id)).body.draft_data, draft.draft_data);
       assert.ok((await request('/requests')).body.some(item => item.id === draft.id));
+      // Main's US-008 organiser list must not be shadowed by the coordinator /events/:id route.
+      const organiserEvents = await request('/events/mine');
+      assert.equal(organiserEvents.status, 200);
+      assert.ok(organiserEvents.body.some(item => item.id === draft.id));
       assert.ok((await request('/events/unassigned', 'GET', undefined, coordToken)).body.some(item => item.id === draft.id));
       assert.equal((await request('/events/' + draft.id + '/assign', 'PATCH', {}, coordToken)).status, 200);
       const detail = await request('/events/' + draft.id, 'GET', undefined, coordToken);

@@ -72,7 +72,10 @@ router.get('/:id', async (req, res) => {
 router.put('/:id', async (req, res) => {
   let data;
   try { data = validateDraft(req.body); }
-  catch (error) { return res.status(400).json({ error: error.message, fields: error.fields || {} }); }
+  catch (error) {
+    const fields = error.fields || (error.field ? { [error.field]: error.message } : {});
+    return res.status(400).json({ error: error.message, fields, field: error.field || Object.keys(fields)[0] || null });
+  }
   try {
     const result = await db.query(`INSERT INTO events (id, organiser_id, title, draft_data, status)
       VALUES ($1, $2, $3, $4::jsonb, 'draft')

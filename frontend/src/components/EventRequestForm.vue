@@ -234,7 +234,7 @@ export default {
         }
       } catch (error) {
         if (this.draftId !== id) return
-        this.saveFields = error.fields || {}
+        this.saveFields = error.fields || (error.field ? { [error.field]: error.message } : {})
         this.saveError = (error.message || 'Unable to save draft.') + ' Your input has been kept; please retry.'
       } finally {
         if (this.draftId === id) {

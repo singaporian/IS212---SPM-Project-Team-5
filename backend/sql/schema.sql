@@ -89,19 +89,54 @@ ALTER TABLE events ADD COLUMN IF NOT EXISTS draft_data jsonb NOT NULL DEFAULT '{
 ALTER TABLE events ADD COLUMN IF NOT EXISTS description text;
 ALTER TABLE events ADD COLUMN IF NOT EXISTS submitted_at timestamptz;
 
+-- Latest technical support requirements for each event (US-016).
+CREATE TABLE IF NOT EXISTS technical_support_requirements (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  event_id uuid NOT NULL UNIQUE REFERENCES events(id) ON DELETE CASCADE,
+  equipment_requirements jsonb NOT NULL DEFAULT '[]'::jsonb,
+  staff_required integer NOT NULL DEFAULT 0 CHECK (staff_required >= 0),
+  late_request boolean NOT NULL DEFAULT false,
+  update_count integer NOT NULL DEFAULT 0 CHECK (update_count >= 0),
+  updated_by uuid REFERENCES users(id) ON DELETE SET NULL,
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+ALTER TABLE technical_support_requirements ADD COLUMN IF NOT EXISTS update_count integer NOT NULL DEFAULT 0;
+
 -- Venue bookings
 CREATE TABLE IF NOT EXISTS bookings (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   event_id uuid REFERENCES events(id) ON DELETE CASCADE,
   venue_id uuid REFERENCES venues(id) ON DELETE SET NULL,
+  requested_by uuid REFERENCES users(id) ON DELETE SET NULL,
   start_time timestamptz NOT NULL,
   end_time timestamptz NOT NULL,
   status text NOT NULL DEFAULT 'pending',
   setup_minutes integer NOT NULL DEFAULT 30 CHECK (setup_minutes >= 0),
   turnaround_minutes integer NOT NULL DEFAULT 30 CHECK (turnaround_minutes >= 0),
+  venue_requirements jsonb NOT NULL DEFAULT '{}'::jsonb,
+  conflict_warning boolean NOT NULL DEFAULT false,
+  conflict_details jsonb NOT NULL DEFAULT '[]'::jsonb,
+  decision_reason text,
+  decision_comment text,
+  alternative_start_time timestamptz,
+  alternative_end_time timestamptz,
+  decided_by uuid REFERENCES users(id) ON DELETE SET NULL,
+  decided_at timestamptz,
   CHECK (end_time > start_time),
   created_at timestamptz DEFAULT now()
 );
+
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS requested_by uuid REFERENCES users(id) ON DELETE SET NULL;
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS venue_requirements jsonb NOT NULL DEFAULT '{}'::jsonb;
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS conflict_warning boolean NOT NULL DEFAULT false;
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS conflict_details jsonb NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS decision_reason text;
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS decision_comment text;
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS alternative_start_time timestamptz;
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS alternative_end_time timestamptz;
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS decided_by uuid REFERENCES users(id) ON DELETE SET NULL;
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS decided_at timestamptz;
 
 -- Equipment inventory
 CREATE TABLE IF NOT EXISTS equipment (
@@ -165,3 +200,14 @@ CREATE TABLE IF NOT EXISTS event_changes (
   change_summary text,
   created_at timestamptz DEFAULT now()
 );
+
+-- Organiser-submitted proposed changes to an already-submitted event
+CREATE TABLE IF NOT EXISTS event_change_requests (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  event_id uuid NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+  organiser_id uuid NOT NULL REFERENCES users(id) ON DELETE SET NULL,
+  proposed_changes jsonb NOT NULL,
+  status text NOT NULL DEFAULT 'pending',
+  created_at timestamptz DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS event_change_requests_event_idx ON event_change_requests (event_id);
