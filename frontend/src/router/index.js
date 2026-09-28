@@ -2,6 +2,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 import HomePage from '../views/HomePage.vue'
 import NewEventRequestView from '../views/NewEventRequestView.vue'
 import DraftsView from '../views/DraftsView.vue'
+import SubmittedRequestsView from '../views/SubmittedRequestsView.vue'
 import LoginView from '../views/LoginView.vue'
 import VenueSearchView from '../views/VenueSearchView.vue'
 import CoordinatorRequestsView from '../views/CoordinatorRequestsView.vue'
@@ -18,6 +19,8 @@ import TechnicalSupportRequestsView from '../views/TechnicalSupportRequestsView.
 import EventChangeRequestView from '../views/EventChangeRequestView.vue'
 
 const routes = [
+  { path: '/requests/submitted', name: 'submitted-event-requests', component: SubmittedRequestsView, meta: { requiresAuth: true, roles: ['event_organiser'] } },
+  { path: '/requests/submitted/:id', name: 'submitted-event-request', component: SubmittedRequestsView, meta: { requiresAuth: true, roles: ['event_organiser'] } },
   { path: '/requests/drafts', name: 'event-drafts', component: DraftsView, meta: { requiresAuth: true, roles: ['event_organiser'] } },
   { path: '/requests/drafts/:id', name: 'edit-event-draft', component: NewEventRequestView, meta: { requiresAuth: true, roles: ['event_organiser'] } },
   { path: '/login', name: 'login', component: LoginView, meta: { guestOnly: true } },
@@ -35,7 +38,7 @@ const routes = [
   { path: '/technical-support/requests', name: 'support-requests', component: TechnicalSupportRequestsView, meta: { requiresAuth: true, roles: ['event_coordinator'] } },
   { path: '/technical-support/queue', name: 'technical-support-queue', component: TechnicalSupportRequirementsView, meta: { requiresAuth: true, roles: ['technical_support_staff'] } },
   { path: '/events/:id/change-request', name: 'event-change-request', component: EventChangeRequestView, meta: { requiresAuth: true, roles: ['event_organiser'] } },
-  
+
 ]
 
 const router = createRouter({

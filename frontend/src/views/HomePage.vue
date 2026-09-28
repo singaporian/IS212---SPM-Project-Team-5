@@ -6,7 +6,8 @@
           <p class="lead">{{ roleDescription }}</p>
         <div class="d-flex gap-2 mt-3">
             <router-link v-if="canCreateRequest" class="btn btn-accent btn-lg" to="/requests/new">Create Request</router-link>
-            <button class="btn btn-outline-secondary btn-lg">{{ secondaryAction }}</button>
+            <router-link v-if="canCreateRequest" class="btn btn-outline-primary btn-lg" to="/requests/drafts">My event requests</router-link>
+            <button v-else class="btn btn-outline-secondary btn-lg">{{ secondaryAction }}</button>
         </div>
       </div>
       <div style="width:280px">
@@ -65,6 +66,7 @@
               <router-link v-else-if="role === 'venue_staff'" class="btn btn-outline-secondary btn-sm w-100 mb-2" to="/bookings/pending">{{ primaryRoleAction }}</router-link>
               <router-link v-else-if="canCreateRequest" class="btn btn-outline-secondary btn-sm w-100 mb-2" to="/requests/drafts">My Drafts</router-link>
               <button v-else class="btn btn-outline-secondary btn-sm w-100 mb-2">{{ primaryRoleAction }}</button>
+              <router-link v-if="canCreateRequest" class="btn btn-outline-secondary btn-sm w-100 mb-2" to="/requests/submitted">My Submitted Requests</router-link>
               <router-link v-if="role === 'event_coordinator'" class="btn btn-outline-success btn-sm w-100" to="/bookings/new">Create Venue Booking Request</router-link>
           </div>
         </div>

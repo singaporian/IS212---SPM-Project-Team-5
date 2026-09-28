@@ -85,6 +85,10 @@ ALTER TABLE events ADD COLUMN IF NOT EXISTS assigned_coordinator_id uuid REFEREN
 -- Preserve incomplete draft fields without coercing dates, placeholders or tri-state choices.
 ALTER TABLE events ADD COLUMN IF NOT EXISTS draft_data jsonb NOT NULL DEFAULT '{}'::jsonb;
 
+-- US-006: submission preserves the draft snapshot and exposes review fields.
+ALTER TABLE events ADD COLUMN IF NOT EXISTS description text;
+ALTER TABLE events ADD COLUMN IF NOT EXISTS submitted_at timestamptz;
+
 -- Latest technical support requirements for each event (US-016).
 CREATE TABLE IF NOT EXISTS technical_support_requirements (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),

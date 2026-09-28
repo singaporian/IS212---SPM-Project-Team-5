@@ -13,7 +13,7 @@
           <li v-for="ev in unassigned" :key="ev.id" class="d-flex justify-content-between align-items-center border-bottom py-2">
             <div>
               <div class="fw-semibold">{{ ev.title }}</div>
-              <div class="small text-muted">Submitted {{ formatDate(ev.created_at) }}</div>
+              <div class="small text-muted">Submitted {{ formatDate(ev.submitted_at || ev.created_at) }}</div>
             </div>
             <button class="btn btn-sm btn-accent" @click="assignToSelf(ev.id)">Assign to Me</button>
           </li>
@@ -44,9 +44,12 @@
               <div><strong>Preferred End:</strong> {{ formatDate(selected.preferred_end) }}</div>
               <div><strong>Expected Attendance:</strong> {{ selected.expected_attendance ?? '—' }}</div>
               <div><strong>Purpose:</strong> {{ selected.purpose || '—' }}</div>
+              <div style="white-space: pre-wrap"><strong>Description:</strong> {{ selected.description || '—' }}</div>
+              <div style="white-space: pre-wrap"><strong>Accessibility Needs:</strong> {{ selected.draft_data?.accessibilityNeeds || selected.accessibility_requirements?.notes || 'Not provided' }}</div>
+              <div style="white-space: pre-wrap"><strong>Equipment Requirements:</strong> {{ selected.draft_data?.equipmentRequirements || (Array.isArray(selected.equipment_requirements) ? selected.equipment_requirements.join(', ') : '') || 'Not provided' }}</div>
               <div><strong>Venue Layout Preference:</strong> {{ selected.venue_layout_preference || '—' }}</div>
               <div><strong>Programme:</strong> {{ selected.programme || '—' }}</div>
-              <div><strong>Registration Required:</strong> {{ selected.registration_required ? 'Yes' : 'No' }}</div>
+              <div><strong>Registration Required:</strong> {{ selected.registration_required == null ? 'Not decided' : selected.registration_required ? 'Yes' : 'No' }}</div>
               <div><strong>Special Arrangements:</strong> {{ selected.special_arrangements || '—' }}</div>
             </div>
           </li>
@@ -72,7 +75,7 @@ export default {
   methods: {
     formatDate(v) {
       if (!v) return '—'
-      return new Date(v).toLocaleString()
+      return new Date(v).toLocaleString('en-SG', { timeZone: 'Asia/Singapore' })
     },
     async loadAll() {
       await Promise.all([this.loadUnassigned(), this.loadAssigned()])
