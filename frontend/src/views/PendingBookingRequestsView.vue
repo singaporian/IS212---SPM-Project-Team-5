@@ -12,10 +12,11 @@
             <p class="small text-muted mb-2">Coordinator: {{ request.coordinator_name || 'Unknown' }} ({{ request.coordinator_email || 'no email' }})</p>
             <p class="small mb-1">{{ formatDate(request.start_time) }} to {{ formatDate(request.end_time) }}</p>
             <p class="small mb-1">Setup: {{ request.setup_minutes }} minutes; turnaround: {{ request.turnaround_minutes }} minutes</p>
-            <p v-if="request.conflict_warning" class="alert alert-warning py-2 small mb-0">Conflict warning was acknowledged at submission. Review the existing booking conflict before deciding.</p>
           </div>
           <span class="badge bg-warning text-dark align-self-start">Pending Review</span>
         </div>
+        <button class="btn btn-outline-primary btn-sm mt-3" :aria-expanded="reviewId === request.id" @click="reviewId = reviewId === request.id ? '' : request.id">{{ reviewId === request.id ? 'Hide review' : 'Review details and availability' }}</button>
+        <BookingReview v-if="reviewId === request.id" :key="request.id" :booking-id="request.id" />
         <div class="mt-3 d-flex flex-wrap gap-2">
           <button class="btn btn-success btn-sm" @click="decide(request, 'approved')">Approve</button>
           <button class="btn btn-outline-danger btn-sm" @click="openDecision(request, 'rejected')">Reject</button>
@@ -36,12 +37,14 @@
 
 <script>
 import { authHeaders, clearSession } from '../services/auth'
+import BookingReview from '../components/BookingReview.vue'
 
 export default {
   name: 'PendingBookingRequestsView',
-  data() { return { requests: [], error: '', active: '', decision: '', reason: '', comment: '', alternativeStartTime: '', alternativeEndTime: '', decisionError: '' } },
+  components: { BookingReview },
+  data() { return { requests: [], error: '', reviewId: '', active: '', decision: '', reason: '', comment: '', alternativeStartTime: '', alternativeEndTime: '', decisionError: '' } },
   methods: {
-    formatDate(value) { return value ? new Date(value).toLocaleString() : '—' },
+    formatDate(value) { return value ? new Date(value).toLocaleString('en-SG', { timeZone: 'Asia/Singapore', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true }).replace(/am|pm/gi, value => value.toUpperCase()) : '—' },
     async load() {
       const response = await fetch('/api/bookings/pending', { headers: authHeaders() })
       if (response.status === 401) { clearSession(); this.$router.push('/login'); return }
