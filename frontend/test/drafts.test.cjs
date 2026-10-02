@@ -226,8 +226,8 @@ test('valid complete future date/time pairs save while reversed times are reject
   assert.match(instance.saveError, /later than the start/);
 });
 
-// Lark: CHG-001-002, CHG-001-003; DEF-001 rendered styling and field messages.
-test('CHG-001 interval errors mark only the responsible end field and allow overnight times', async () => {
+// Organiser five-minute timing regression; DEF-001 ordering retained.
+test('DEF-001 interval errors mark only the responsible end field and allow overnight times', async () => {
   const { createSSRApp, compile } = require('vue');
   const { renderToString } = require('@vue/server-renderer');
   const template = parse(fs.readFileSync(path.join(__dirname, '../src/components/EventRequestForm.vue'), 'utf8')).descriptor.template.content;
@@ -237,7 +237,7 @@ test('CHG-001 interval errors mark only the responsible end field and allow over
     app.component('router-link', { template: '<a><slot /></a>' });
     const html = await renderToString(app);
     for (const field of ['endDate', 'endTime']) {
-      const input = html.match(new RegExp('<input[^>]*id="' + field + '"[^>]*>'))[0];
+      const input = html.match(new RegExp('<(?:input|select)[^>]*id="' + field + '"[^>]*>'))[0];
       assert.equal(input.includes('is-invalid'), field === invalidField);
       assert.equal(input.includes('aria-invalid="true"'), field === invalidField);
       assert.equal(html.includes('id="' + field + '-error"'), field === invalidField);
@@ -246,14 +246,14 @@ test('CHG-001 interval errors mark only the responsible end field and allow over
   }
   let calls = 0;
   const instance = formInstance(async () => { calls++; return {} });
-  Object.assign(instance.form, { startDate: '2026-10-15', startTime: '10:03', endDate: '2026-10-14', endTime: '10:04' });
+  Object.assign(instance.form, { startDate: '2026-10-15', startTime: '10:05', endDate: '2026-10-14', endTime: '10:10' });
   assert.equal(instance.fieldError('endDate'), 'End date must not be earlier than the start date.');
   assert.equal(instance.fieldError('endTime'), '');
   await assertRenderedFields(instance, 'endDate');
   await instance.saveDraft();
   assert.equal(calls, 0);
   instance.form.endDate = '2026-10-15';
-  for (const time of ['10:03', '10:02']) {
+  for (const time of ['10:05', '10:00']) {
     instance.form.endTime = time;
     assert.equal(instance.fieldError('endDate'), '');
     assert.equal(instance.fieldError('endTime'), 'End time must be later than the start time.');
@@ -262,7 +262,7 @@ test('CHG-001 interval errors mark only the responsible end field and allow over
     assert.equal(calls, 0);
   }
   instance.form.endDate = '2026-10-16';
-  instance.form.endTime = '00:01';
+  instance.form.endTime = '00:05';
   assert.equal(instance.fieldError('endDate'), '');
   assert.equal(instance.fieldError('endTime'), '');
   await assertRenderedFields(instance, '');
@@ -333,27 +333,29 @@ test('validation failures focus and scroll the first invalid control after re-en
   }
 });
 
-// Lark: CHG-001-001, CHG-001-002.
-test('CHG-001 form uses minute time inputs and saves non-five-minute intervals', async () => {
+// Organiser five-minute timing regression; DEF-001 ordering retained.
+test('organiser form uses five-minute selections and preserves saved values', async () => {
   const { compile } = require('vue');
   const { renderToString } = require('@vue/server-renderer');
   const { createSSRApp } = require('vue');
   let saved;
   const instance = formInstance(async (url, options) => { saved = JSON.parse(options.body); return { version: 'saved' }; }, 'saved-id');
-  Object.assign(instance.form, { startDate: '2026-10-01', endDate: '2026-10-01', startTime: '10:03', endTime: '10:07' });
+  Object.assign(instance.form, { startDate: '2026-10-01', endDate: '2026-10-01', startTime: '10:05', endTime: '10:10' });
   await instance.saveDraft();
-  assert.equal(saved.startTime, '10:03');
-  assert.equal(saved.endTime, '10:07');
-  instance.form.endTime = '23:59';
+  assert.equal(saved.startTime, '10:05');
+  assert.equal(saved.endTime, '10:10');
+  instance.form.endTime = '23:55';
   await instance.saveDraft();
-  assert.equal(saved.endTime, '23:59');
+  assert.equal(saved.endTime, '23:55');
   const source = fs.readFileSync(path.join(__dirname, '../src/components/EventRequestForm.vue'), 'utf8');
   const app = createSSRApp({ render: compile(parse(source).descriptor.template.content), data: () => instance });
   app.config.globalProperties.$route = instance.$route;
   app.component('router-link', { template: '<a><slot /></a>' });
   const html = await renderToString(app);
-  assert.match(html, /type="time" step="60"[^>]*id="startTime"/);
-  assert.match(html, /type="time" step="60"[^>]*id="endTime"/);
+  assert.match(html, /<select[^>]*id="startTime"/);
+  assert.ok(html.includes('value="23:55"'));
+  assert.ok(!html.includes('value="10:03"'));
+  assert.match(html, /<select[^>]*id="endTime"/);
 });
 
 // Lark: US-006-001, US-006-002, US-006-006 (rendered submission confirmation).
@@ -430,4 +432,16 @@ test('submission attendance messages appear unchanged beside the field', async (
     assert.equal(instance.submitted, false);
     assert.equal(instance.form.expectedAttendance, value);
   }
+});
+
+test('legacy off-grid organiser draft values remain visible and require correction without silent rounding', async () => {
+  let calls=0;
+  const instance=formInstance(async()=>{calls++;},'saved-id');
+  instance.form.startTime='10:03';
+  assert.equal(instance.fieldError('startTime'),'Choose a time in five-minute intervals.');
+  await instance.saveDraft();
+  assert.equal(calls,0);
+  assert.equal(instance.form.startTime,'10:03');
+  instance.form.startTime='10:05';
+  assert.equal(instance.fieldError('startTime'),'');
 });

@@ -18,9 +18,9 @@ Other fields remain optional. Accessibility/Equipment accept `None` or `Not Requ
 
 Validation failure preserves current input, identifies affected fields and leaves an existing request in Draft without overwriting saved data. Invalid new submissions create no partial database event. Success displays confirmation, preserves current values, and makes the request visible in the coordinator unassigned queue. Confirmation remains visible if the subsequent receipt GET fails; Retry reloads the receipt only.
 
-## CHG-001 and DEF-001
+## Organiser timing and DEF-001 (CHG-001 withdrawn)
 
-Any valid HH:mm minute from 00:00 through 23:59 is accepted. Native time controls use `step="60"`; there is no five-minute restriction. The combined end datetime must be later than the start datetime:
+Organiser start/end times use five-minute dropdown selections from 00:00 through 23:55. Off-grid input is rejected by draft and submission APIs on the affected field; blank times remain allowed for incomplete drafts. Existing off-grid draft values are preserved and must be corrected explicitly. Venue booking inputs retain minute precision. The combined end datetime must be later than the start datetime:
 
 | Condition | Field error |
 | --- | --- |
@@ -68,9 +68,9 @@ Preconditions: database/schema and backend/frontend running; Organiser signed in
 | US-006-004 | Save/reopen and attempt Submit with each unresolved attendance value. | US006 Estimate Pending; attendance blank, then Not decided. | Both save as Draft; both blocked at submission with exact before-submitting attendance message; input and Draft retained. |
 | US-006-005 | Save attendance 25; try abc then 1.5 without saving; Submit each. | US006 Attendance Format. | Both rejected with Enter a positive whole number.; current input retained; saved Draft remains 25. |
 | US-006-006 | Save attendance 25; attempt Submit with 0; change to 1 and Submit directly. | US006 Attendance Boundary. | 0 rejected with positive-whole-number message, Draft retained; 1 succeeds with confirmation and attendance 1 preserved. |
-| CHG-001-001 | Save/reopen non-five-minute times; Submit; inspect receipt. | CHG001 Minute Precision; 2026-10-15 10:03 to 10:04. | No rounding; one-minute interval accepted; receipt 10:03 AM to 10:04 AM. |
-| CHG-001-002 | Enter new request and Submit directly across midnight. | CHG001 Midnight Boundary; 2026-10-15 23:59 to 2026-10-16 00:00. | Valid interval; dates unchanged; receipt 11:59 PM to next-day 12:00 AM Singapore time. |
-| CHG-001-003 | Save valid 10:03 to 11:00; attempt same-day end 10:03 then 10:02; inspect saved draft separately. | CHG001 End Order; 2026-10-15. | Both blocked; only End Time invalid with exact DEF-001 time message; current input retained; saved Draft unchanged. |
+| Timing-001 | Save/reopen five-minute times; Submit; inspect receipt. | Organiser five-minute selection; 2026-10-15 10:05 to 10:10. | No rounding; five-minute interval accepted; receipt 10:05 AM to 10:10 AM. |
+| Timing-002 | Enter new request and Submit directly across midnight. | Organiser midnight boundary; 2026-10-15 23:55 to 2026-10-16 00:00. | Valid interval; dates unchanged; receipt 11:55 PM to next-day 12:00 AM Singapore time. |
+| DEF-001-001 | Save valid 10:05 to 11:00; attempt same-day end 10:05 then 10:00; inspect saved draft separately. | End ordering; 2026-10-15. | Both blocked; only End Time invalid with exact DEF-001 time message; current input retained; saved Draft unchanged. |
 
 Yu Hui reported executing these nine cases in Lark. Actual results, dates and attachments remain in Lark; this document does not infer pass status or claim a new browser run. DEF-001 regression coverage additionally verifies the earlier-end-date branch without adding redundant Lark IDs.
 
@@ -80,7 +80,7 @@ Nearby comments in backend/test/submissions.test.js, backend/test/drafts.test.js
 
 Automated-only checks include invalid native-clock values (AC-CHG001-03), authentication/ownership, stale versions, concurrent/idempotent retries, transaction rollback, integer overflow, malformed dates and POST-success/receipt-GET-failure handling. Invalid-clock field identification is specifically tested by:
 
-- `CHG-001 draft validation accepts every minute and identifies invalid time fields` in backend/test/drafts.test.js.
+- `organiser draft validation accepts five-minute times and identifies invalid time fields` in backend/test/drafts.test.js.
 - `US-006 rejected values give corrective errors and preserve the entire draft` in backend/test/submissions.test.js.
 
 Run from the repository root after starting PostgreSQL and applying the schema with backend's `npm run init-db`:
@@ -97,3 +97,5 @@ For local app setup, follow README.md. Fill the form and choose Submit for Revie
 Backend tests use isolated fixtures and deliberate database failures to verify rollback. The normal backend npm suite excludes the older root-level backend/test-us011-us012.js shared-fixture script. Frontend tests use mocked transport and render actual templates for relevant UI checks.
 
 Latest verified regression baseline (2026-09-28): backend 47 passed; frontend 34 passed; production build passed. Node counts include parent integration entries. The build emits the existing Vite CJS API deprecation warning. Earlier test counts and browser observations in historical records are not current acceptance evidence.
+
+CHG-001 Lark cases are withdrawn, not passed. Timing/DEF labels above describe retained regression checks and do not rename existing Lark records automatically.

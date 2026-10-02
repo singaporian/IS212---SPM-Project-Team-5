@@ -172,7 +172,7 @@ The current form values are saved and submitted together; a separate Save Draft
 action is not required. Save Draft remains available for incomplete information,
 including blank or Not decided attendance. Dates/times use Singapore time (UTC+8), with end after start;
 there is no past-date restriction. Other fields remain optional, including
-None / Not Required choices. Any valid minute is allowed (CHG-001).
+None / Not Required choices. Organiser start/end times use five-minute selections (00:00–23:55). CHG-001 was withdrawn; venue-booking time precision is unchanged.
 
 Invalid submissions stay in Draft and show corrective messages. Successful
 submission preserves the current form values and same request ID, changes status
