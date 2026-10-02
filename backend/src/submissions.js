@@ -19,6 +19,8 @@ function validateSubmission(input) {
   for (const [field, label] of [['startTime', 'Start Time'], ['endTime', 'End Time']]) {
     if (typeof values[field] !== 'string' || !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(values[field])) {
       errors[field] = `${label}: enter a valid clock time.`;
+    } else if (Number(values[field].slice(3)) % 5 !== 0) {
+      errors[field] = 'Choose a time in five-minute intervals.';
     }
   }
   const attendance = typeof values.expectedAttendance === 'string' ? values.expectedAttendance.trim() : '';

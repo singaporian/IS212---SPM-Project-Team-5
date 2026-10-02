@@ -1,3 +1,5 @@
+> Update — 2026-10-02: CHG-001 is withdrawn for the organiser event form. Five-minute selections and validation are restored. US-006 direct submission, DEF-001 field-specific ordering errors, AM/PM display and venue-booking work remain. The execution record below is historical evidence, not the current organiser timing specification. Existing stored times are not rewritten or rounded.
+
 # US-006 corrections and CHG-001 execution record
 
 Date: 2026-09-28

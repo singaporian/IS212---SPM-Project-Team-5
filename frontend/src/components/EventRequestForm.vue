@@ -23,7 +23,11 @@
           </div>
           <div class="col-md-3">
             <label for="startTime" class="form-label small">Start Time <span class="text-danger" aria-hidden="true">*</span><span class="visually-hidden"> (required for submission)</span></label>
-            <input type="time" step="60" class="form-control" id="startTime" :class="{ 'is-invalid': fieldError('startTime') }" :aria-invalid="!!fieldError('startTime')" :aria-describedby="fieldError('startTime') ? 'startTime-error' : undefined" @input="clearFieldError('startTime')" v-model="form.startTime" />
+            <select class="form-select" id="startTime" :class="{ 'is-invalid': fieldError('startTime') }" :aria-invalid="!!fieldError('startTime')" :aria-describedby="fieldError('startTime') ? 'startTime-error' : undefined" @change="clearFieldError('startTime')" v-model="form.startTime">
+              <option value="">Select time</option>
+              <option v-if="form.startTime && !TIME_OPTIONS.some(t => t.value === form.startTime)" :value="form.startTime" disabled>{{ form.startTime }} (choose a five-minute time)</option>
+              <option v-for="t in TIME_OPTIONS" :key="t.value" :value="t.value">{{ t.label }}</option>
+            </select>
             <div v-if="fieldError('startTime')" id="startTime-error" class="invalid-feedback" role="alert">{{ fieldError('startTime') }}</div>
           </div>
           <div class="col-md-3">
@@ -33,11 +37,15 @@
           </div>
           <div class="col-md-3">
             <label for="endTime" class="form-label small">End Time <span class="text-danger" aria-hidden="true">*</span><span class="visually-hidden"> (required for submission)</span></label>
-            <input type="time" step="60" class="form-control" id="endTime" :class="{ 'is-invalid': fieldError('endTime') }" :aria-invalid="!!fieldError('endTime')" :aria-describedby="fieldError('endTime') ? 'endTime-error' : undefined" @input="clearFieldError('endTime')" v-model="form.endTime" />
+            <select class="form-select" id="endTime" :class="{ 'is-invalid': fieldError('endTime') }" :aria-invalid="!!fieldError('endTime')" :aria-describedby="fieldError('endTime') ? 'endTime-error' : undefined" @change="clearFieldError('endTime')" v-model="form.endTime">
+              <option value="">Select time</option>
+              <option v-if="form.endTime && !TIME_OPTIONS.some(t => t.value === form.endTime)" :value="form.endTime" disabled>{{ form.endTime }} (choose a five-minute time)</option>
+              <option v-for="t in TIME_OPTIONS" :key="t.value" :value="t.value">{{ t.label }}</option>
+            </select>
             <div v-if="fieldError('endTime')" id="endTime-error" class="invalid-feedback" role="alert">{{ fieldError('endTime') }}</div>
           </div>
 
-          <div class="col-12"><p class="form-text mb-0">Event times use Singapore time (UTC+8).</p></div>
+          <div class="col-12"><p class="form-text mb-0">Event times use Singapore time (UTC+8), in five-minute intervals.</p></div>
           <div v-if="duration" class="col-12">
             <div class="form-text">Duration: {{ duration }}</div>
           </div>
@@ -123,10 +131,25 @@ import { draftRequest } from '../services/drafts'
 // value (case-insensitive, whitespace-trimmed match).
 const PLACEHOLDER_VALUES = ['not decided', 'none', 'not required']
 
+const TIME_OPTIONS = (() => {
+  const options = []
+  for (let minutes = 0; minutes < 24 * 60; minutes += 5) {
+    const h24 = Math.floor(minutes / 60)
+    const m = minutes % 60
+    const value = `${String(h24).padStart(2, '0')}:${String(m).padStart(2, '0')}`
+    const period = h24 < 12 ? 'AM' : 'PM'
+    const h12 = h24 % 12 === 0 ? 12 : h24 % 12
+    const label = `${h12}:${String(m).padStart(2, '0')} ${period}`
+    options.push({ value, label })
+  }
+  return options
+})()
+
 export default {
   name: 'EventRequestForm',
   data() {
     return {
+      TIME_OPTIONS,
       draftId: this.$route.params.id || crypto.randomUUID(),
       loading: false,
       loadError: '',
@@ -179,7 +202,8 @@ export default {
       field.scrollIntoView({ block: 'center', behavior: 'auto' })
     },
     fieldError(field) {
-      return (field === 'expectedAttendance' ? this.attendanceError : '') ||
+      return (['startTime', 'endTime'].includes(field) && this.form[field] && !/^(?:[01]\d|2[0-3]):[0-5][05]$/.test(this.form[field]) ? 'Choose a time in five-minute intervals.' : '') ||
+        (field === 'expectedAttendance' ? this.attendanceError : '') ||
         (field === this.endErrorField ? this.endError : '') ||
         this.saveFields[field] || this.submitFields[field] || ''
     },
@@ -213,7 +237,7 @@ export default {
       if (this.saving || this.submitting || this.submitted) return
       this.saveMessage = ''
       this.saveFields = {}
-      this.saveError = this.attendanceError || this.endError
+      this.saveError = this.fieldError('startTime') || this.fieldError('endTime') || this.attendanceError || this.endError
       if (this.saveError) {
         await this.focusFirstError()
         return

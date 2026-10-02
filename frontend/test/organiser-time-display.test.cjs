@@ -9,7 +9,7 @@ const { renderToString } = require('@vue/server-renderer');
 const descriptor = parse(fs.readFileSync(path.join(__dirname, '../src/views/SubmittedRequestsView.vue'), 'utf8')).descriptor;
 const script = descriptor.script.content.replace(/import .* from .*\r?\n/g, '').replace('export default', 'return');
 
-// Lark: CHG-001-001, CHG-001-002 (receipt minute precision and AM/PM display).
+// Retained AM/PM display regression, including previously stored off-grid times.
 test('organiser receipt renders AM/PM event times without modifying API data', async () => {
   for (const [raw, displayed] of [['15:23', '03:23 PM'], ['00:05', '12:05 AM'], ['12:05', '12:05 PM'], ['23:59', '11:59 PM'], ['15:25', '03:25 PM'], ['00:00', '12:00 AM'], ['10:03', '10:03 AM'], ['10:04', '10:04 AM']]) {
     const payload = { id: 'event', title: 'Test event', status: 'submitted', submitted_at: '2026-10-01T00:00:00Z',

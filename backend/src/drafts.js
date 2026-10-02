@@ -26,6 +26,7 @@ function validateDraft(input) {
   }
   for (const field of ['startTime', 'endTime']) {
     if (data[field] && !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(data[field])) throw fieldError(field, 'Enter a valid clock time.');
+    if (data[field] && Number(data[field].slice(3)) % 5 !== 0) throw fieldError(field, 'Choose a time in five-minute intervals.');
   }
   const attendance = data.expectedAttendance.trim().toLowerCase();
   if (attendance && !/^\d+$/.test(attendance) && !['not decided', 'none', 'not required'].includes(attendance)) {

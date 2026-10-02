@@ -23,13 +23,13 @@ test('submission requires name, both date/time pairs and positive integer attend
   }
 });
 
-// Lark: CHG-001-001, CHG-001-002, CHG-001-003; defect: DEF-001 (all four branches).
-test('CHG-001 submission interval errors identify only the cause and allow overnight times', () => {
-  const draft = { ...complete, startTime: '10:03', endTime: '10:04' };
+// Organiser five-minute timing regression; DEF-001 ordering retained.
+test('DEF-001 submission interval errors identify only the cause and allow overnight times', () => {
+  const draft = { ...complete, startTime: '10:05', endTime: '10:10' };
   for (const [changes, fields] of [
     [{ endDate: '2026-09-30' }, { endDate: 'End date must not be earlier than the start date.' }],
-    [{ endTime: '10:03' }, { endTime: 'End time must be later than the start time.' }],
-    [{ endTime: '10:02' }, { endTime: 'End time must be later than the start time.' }]
+    [{ endTime: '10:05' }, { endTime: 'End time must be later than the start time.' }],
+    [{ endTime: '10:00' }, { endTime: 'End time must be later than the start time.' }]
   ]) {
     assert.throws(() => validateSubmission({ ...draft, ...changes }), error => {
       assert.equal(error.status, 422);
@@ -37,8 +37,8 @@ test('CHG-001 submission interval errors identify only the cause and allow overn
       return true;
     });
   }
-  assert.equal(validateSubmission({ ...draft, endDate: '2026-10-02', endTime: '00:01' }).endTime, '00:01');
-  assert.equal(validateSubmission(draft).endTime, '10:04');
+  assert.equal(validateSubmission({ ...draft, endDate: '2026-10-02', endTime: '00:05' }).endTime, '00:05');
+  assert.equal(validateSubmission(draft).endTime, '10:10');
 });
 
 test('optional fields and valid historical dates do not block submission', () => {
@@ -86,7 +86,7 @@ test('submission integrates with real PostgreSQL and coordinator routes', async 
     const submit = draft => request('/drafts/' + draft.id + '/submit', 'POST', { version: draft.version });
     const row = async id => (await pool.query('SELECT * FROM events WHERE id=$1', [id])).rows[0];
     const coordToken = token(coordinator, 'event_coordinator');
-    // Lark: US-006-003 through US-006-006, CHG-001-003; AC-CHG001-03 invalid clocks.
+    // Lark: US-006-003 through US-006-006; invalid-clock and DEF-001 regressions.
     await t.test('US-006 rejected values give corrective errors and preserve the entire draft', async () => {
       const cases = [
         ['eventName', '   ', /enter an event name/],
@@ -115,10 +115,10 @@ test('submission integrates with real PostgreSQL and coordinator routes', async 
         assert.deepEqual(await row(draft.id), before);
       }
     });
-    // Lark: US-006-006, CHG-001-001, CHG-001-002 (minute precision and attendance 1).
-    await t.test('US-006 nonblank former placeholders and attendance one submit; CHG-001 minute times persist', async () => {
+    // Lark: US-006-006; five-minute times and attendance 1.
+    await t.test('US-006 nonblank former placeholders and attendance one submit; five-minute times persist', async () => {
       for (const [eventName, startTime, endTime] of [
-        ['none', '10:03', '10:07'], ['not required', '10:07', '23:59'], ['not decided', '23:58', '23:59']
+        ['none', '10:05', '10:10'], ['not required', '10:10', '23:55'], ['not decided', '23:50', '23:55']
       ]) {
         const draft = await save({ ...complete, eventName, expectedAttendance: '1', startTime, endTime });
         assert.equal((await submit(draft)).status, 200);
@@ -146,7 +146,7 @@ test('submission integrates with real PostgreSQL and coordinator routes', async 
     // Lark: US-006-001, US-006-002, US-006-006.
     await t.test('direct submit saves current values on the same ID and matching retries are idempotent', async () => {
       const draft = await save({ purpose: 'Old saved draft' });
-      const current = { ...complete, eventName: 'Current title', purpose: 'Unsaved purpose', startTime: '10:03', endTime: '10:07', expectedAttendance: '1' };
+      const current = { ...complete, eventName: 'Current title', purpose: 'Unsaved purpose', startTime: '10:05', endTime: '10:10', expectedAttendance: '1' };
       const body = { version: draft.version, draft: current };
       const path = '/drafts/' + draft.id + '/submit';
       const results = await Promise.all([request(path, 'POST', body), request(path, 'POST', body)]);
@@ -190,15 +190,15 @@ test('submission integrates with real PostgreSQL and coordinator routes', async 
       assert.equal((await pool.query('SELECT count(*) FROM events WHERE id=$1', [id])).rows[0].count, '1');
       assert.ok((await request('/events/unassigned', 'GET', undefined, coordToken)).body.some(item => item.id === id));
     });
-    // Lark: CHG-001-002; DEF-001 later date with earlier clock time.
-    await t.test('CHG-001 midnight direct submission preserves Singapore dates and minute values', async () => {
+    // Organiser five-minute timing regression; DEF-001 ordering retained.
+    await t.test('Organiser midnight direct submission preserves Singapore dates and minute values', async () => {
       const id = randomUUID();
-      const draft = { ...complete, startDate: '2026-10-15', startTime: '23:59', endDate: '2026-10-16', endTime: '00:00' };
+      const draft = { ...complete, startDate: '2026-10-15', startTime: '23:55', endDate: '2026-10-16', endTime: '00:00' };
       const result = await request('/drafts/' + id + '/submit', 'POST', { version: null, draft });
       assert.equal(result.status, 200);
       const stored = await row(id);
       assert.equal(stored.status, 'submitted');
-      assert.equal(stored.preferred_start.toISOString(), '2026-10-15T15:59:00.000Z');
+      assert.equal(stored.preferred_start.toISOString(), '2026-10-15T15:55:00.000Z');
       assert.equal(stored.preferred_end.toISOString(), '2026-10-15T16:00:00.000Z');
       const receipt = (await request('/requests/' + id)).body;
       for (const [key, value] of Object.entries(draft)) assert.equal(receipt.draft_data[key], value);
@@ -325,4 +325,8 @@ test('submission integrates with real PostgreSQL and coordinator routes', async 
     await originalPool.query(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`);
     await originalPool.end();
   }
+});
+
+test('organiser submission rejects off-grid times on the affected field', () => {
+  for (const field of ['startTime','endTime']) assert.throws(() => validateSubmission({ ...complete, [field]: '10:03' }), error => error.fields[field] === 'Choose a time in five-minute intervals.');
 });
