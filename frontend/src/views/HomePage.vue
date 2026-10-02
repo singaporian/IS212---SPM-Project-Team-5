@@ -126,7 +126,7 @@
                   <div class="d-flex gap-1"><span v-if="item.updated" class="badge bg-info text-dark">Updated</span><span v-if="item.late_request" class="badge bg-warning text-dark">Late</span></div>
                 </div>
                 <div class="small text-muted mt-1">{{ supportEquipmentSummary(item.equipment_requirements) }}</div>
-                <div v-if="selectedSupportId === item.id" class="support-summary-details mt-2" @click.stop><strong>Last updated:</strong> {{ formatBookingDate(item.updated_at) }}<br><strong>Event time:</strong> {{ formatBookingDate(item.preferred_start) }} to {{ formatBookingDate(item.preferred_end) }}</div>
+                <div v-if="selectedSupportId === item.id" class="support-summary-details mt-2" @click.stop><strong>Last updated:</strong> {{ formatBookingDate(item.updated_at) }}<br><strong>Event time:</strong> {{ supportEventTime(item) }}</div>
               </li>
             </ul>
           </div>
@@ -240,6 +240,10 @@ export default {
     supportEquipmentSummary(items) {
       if (!items.length) return 'No equipment specified'
       return items.map(item => `${item.type}: ${item.quantity}${item.details ? ` (${item.details})` : ''}`).join(', ')
+    },
+    supportEventTime(item) {
+      if (!item.preferred_start && !item.preferred_end) return 'Event time not specified'
+      return `${this.formatBookingDate(item.preferred_start)} to ${this.formatBookingDate(item.preferred_end)}`
     },
     toggleSupportDetails(id) {
       this.selectedSupportId = this.selectedSupportId === id ? null : id

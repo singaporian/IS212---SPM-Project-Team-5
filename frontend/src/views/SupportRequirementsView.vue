@@ -24,11 +24,19 @@ function makeEquipment() { return EQUIPMENT_TYPES.map(type => ({ type, quantity:
 export default {
   name: 'SupportRequirementsView',
   data() { return { events: [], eventId: '', equipment: makeEquipment(), staffRequired: 0, saving: false, message: '', error: '' } },
+  computed: {
+    selectedEvent() { return this.events.find((event) => event.id === this.eventId) },
+  },
   methods: {
     async loadEvents() {
       const response = await fetch('/api/events/assigned', { headers: authHeaders() })
       if (response.status === 401) { clearSession(); this.$router.push('/login'); return }
       this.events = response.ok ? await response.json() : []
+      const eventId = this.$route.query.eventId
+      if (eventId && this.events.some((event) => event.id === eventId)) {
+        this.eventId = eventId
+        await this.loadExisting()
+      }
     },
     async loadExisting() {
       this.message = ''; this.error = ''; this.equipment = makeEquipment(); this.staffRequired = 0
@@ -41,6 +49,11 @@ export default {
     },
     async save() {
       this.message = ''; this.error = ''; this.saving = true
+      if (this.selectedEvent?.preferred_end && new Date() > new Date(this.selectedEvent.preferred_end)) {
+        this.error = 'Technical support requirements cannot be submitted after the event has ended. Your input has been kept.'
+        this.saving = false
+        return
+      }
       const selected = this.equipment.filter(item => item.selected).map(item => ({ type: item.type, quantity: Number(item.quantity), details: item.details }))
       try {
         const response = await fetch(`/api/events/${this.eventId}/technical-support`, { method: 'PUT', headers: { ...authHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify({ equipment: selected, staffRequired: Number(this.staffRequired) }) })
