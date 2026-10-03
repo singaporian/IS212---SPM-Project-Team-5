@@ -22,16 +22,31 @@
             <dd class="col-sm-8" style="white-space: pre-wrap; overflow-wrap: anywhere">{{ value(key) }}</dd>
           </template>
         </dl>
+         <div v-if="canRequestChanges(request.status)" class="border-top pt-3 mt-3 d-flex flex-wrap gap-3 justify-content-between align-items-center">
+          <p class="mb-0 text-muted">Your event has been approved. To change its details, send a change request to your Event Coordinator.</p>
+          <router-link class="btn btn-primary" :to="{ name: 'event-change-request', params: { id: request.id } }">Request changes</router-link>
+        </div>
+        <p v-else-if="request.status === 'submitted'" class="border-top pt-3 mt-3 text-muted small mb-0">
+          Waiting for Coordinator approval. Change requests become available once the request is approved.
+        </p>
         <router-link to="/requests/submitted">All submitted requests</router-link>
       </template>
       <div v-else-if="!requests.length" class="text-center py-5"><h3 class="h5">Nothing submitted yet</h3><p class="text-muted">Complete the required fields, then choose Submit for Review.</p><router-link class="btn btn-primary" to="/requests/drafts">Go to drafts</router-link></div>
       <ul v-else class="list-group">
-        <li v-for="item in requests" :key="item.id" class="list-group-item d-flex flex-wrap gap-3 justify-content-between align-items-center py-3">
+               <li v-for="item in requests" :key="item.id" class="list-group-item d-flex flex-wrap gap-3 justify-content-between align-items-center py-3">
           <div>
             <router-link :to="{ name: 'submitted-event-request', params: { id: item.id } }">{{ item.title }}</router-link>
             <div class="small text-muted">Submitted {{ formatDate(item.submitted_at) }}</div>
           </div>
-          <div class="d-flex align-items-center gap-3"><span class="badge" :class="item.status === 'submitted' ? 'bg-success' : 'bg-primary'">{{ statusLabel(item.status) }}</span><router-link class="btn btn-outline-primary btn-sm" :to="{ name: 'submitted-event-request', params: { id: item.id } }">View request</router-link></div>
+            <div class="d-flex align-items-center gap-2">
+              <span class="badge" :class="item.status === 'submitted' ? 'bg-success' : 'bg-primary'">{{ statusLabel(item.status) }}</span>
+            <!-- US-008: clickable only for approved events (Planning/Confirmed) -->
+               <router-link v-if="canRequestChanges(item.status)" class="btn btn-primary btn-sm"
+              :to="{ name: 'event-change-request', params: { id: item.id } }">Request changes</router-link>
+                <span v-else :title="changeHint(item.status)" tabindex="0">
+              <button type="button" class="btn btn-outline-secondary btn-sm" disabled>Request changes</button>
+              </span>
+          </div>
         </li>
       </ul>
     </div></div>
@@ -41,6 +56,7 @@
 <script>
 import RequestNavigation from '../components/RequestNavigation.vue'
 import { authHeaders } from '../services/auth'
+import { canRequestChanges } from '../services/changeRequests'
 
 export default {
   name: 'SubmittedRequestsView',
@@ -58,6 +74,13 @@ export default {
   mounted() { this.load() },
   watch: { '$route.params.id'() { this.load() } },
   methods: {
+    canRequestChanges,
+
+     changeHint(status) {
+      return status === 'submitted'
+        ? 'Available once the Coordinator approves your request'
+        : `Not available for ${this.statusLabel(status).toLowerCase()} events`
+    },
     statusLabel(status) { return String(status || 'submitted').replace(/_/g, ' ').replace(/\b\w/g, letter => letter.toUpperCase()) },
     formatDate(value) { return value ? new Date(value).toLocaleString('en-SG', { timeZone: 'Asia/Singapore' }) : 'Not recorded' },
     value(key) {
