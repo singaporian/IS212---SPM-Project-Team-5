@@ -51,7 +51,7 @@
 
 <script>
 import { getUser } from '../services/auth'
-import { fetchMyEvents } from '../services/changeRequests'
+import { fetchMyEvents, canRequestChanges } from '../services/changeRequests'
 
 export default {
   name: 'EventsView',
@@ -65,6 +65,7 @@ export default {
 },
  mounted() { if (this.isOrganiser) this.load() },
   methods: {
+    canRequestChanges,
     // NEW: fetches the Organiser's own non-draft events and tracks loading/error
     // state for the three template branches above. Also called by the Retry button.
     async load() {
