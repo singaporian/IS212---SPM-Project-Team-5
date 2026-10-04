@@ -426,6 +426,83 @@ app.patch('/api/bookings/:id/decision', auth.authenticate, auth.requireRoles('ve
   }
 });
 
+// US-013: approve or reject a submitted request assigned to this coordinator
+app.patch('/api/events/:id/decision', auth.authenticate, auth.requireRoles('event_coordinator'), async (req, res) => {
+  const { decision, reason, reasonDetail } = req.body || {};
+  const safeDecision = typeof decision === 'string' ? decision.trim() : '';
+  const allowedDecisions = new Set(['approved', 'rejected']);
+  const allowedReasons = new Set(['insufficient_information', 'infeasible_requirements', 'duplicate_request', 'other']);
+
+  if (!allowedDecisions.has(safeDecision)) {
+    return res.status(400).json({ error: 'Decision must be either approved or rejected' });
+  }
+
+  if (safeDecision === 'rejected') {
+    const safeReason = typeof reason === 'string' ? reason.trim() : '';
+    if (!allowedReasons.has(safeReason)) {
+      return res.status(400).json({ error: 'A valid rejection reason is required' });
+    }
+    if (safeReason === 'other' && (!reasonDetail || !String(reasonDetail).trim())) {
+      return res.status(400).json({ error: 'A free-text detail is required when the reason is Other' });
+    }
+  }
+
+  const client = await db.pool.connect();
+  try {
+    await client.query('BEGIN');
+    const result = await client.query(
+      `UPDATE events
+       SET status = $1
+       WHERE id = $2 AND assigned_coordinator_id = $3 AND status = 'submitted'
+       RETURNING id, title, status, organiser_id`,
+      [safeDecision === 'approved' ? 'approved' : 'rejected', req.params.id, req.auth.sub]
+    );
+
+    if (!result.rows[0]) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Request not found, not assigned to this coordinator, or already decided' });
+    }
+
+    const row = result.rows[0];
+    const reasonMap = {
+      insufficient_information: 'Insufficient Information',
+      infeasible_requirements: 'Infeasible Requirements',
+      duplicate_request: 'Duplicate Request',
+      other: 'Other'
+    };
+    const reasonText = safeDecision === 'rejected' ? reasonMap[reason.trim()] : null;
+    const detailText = safeDecision === 'rejected' && reason === 'other' ? ` Details: ${String(reasonDetail).trim()}` : '';
+    const summary = safeDecision === 'approved'
+      ? `Decision: approved by coordinator ${req.auth.sub}`
+      : `Decision: rejected by coordinator ${req.auth.sub} for reason: ${reasonText}${detailText}`;
+
+    await client.query(
+      `INSERT INTO event_changes (event_id, changed_by, change_summary)
+       VALUES ($1, $2, $3)`,
+      [row.id, req.auth.sub, summary]
+    );
+
+    const notificationMessage = safeDecision === 'approved'
+      ? `Your event request "${row.title}" was approved and can proceed to venue search and booking.`
+      : `Your event request "${row.title}" was rejected. Reason: ${reasonText}${detailText ? ` ${detailText.replace(/^\s*Details:\s*/, 'Details: ')}` : ''}`;
+
+    await client.query(
+      `INSERT INTO notifications (user_id, event_id, message)
+       VALUES ($1, $2, $3)`,
+      [row.organiser_id, row.id, notificationMessage]
+    );
+
+    await client.query('COMMIT');
+    res.json({ ...row, message: notificationMessage });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error(error);
+    res.status(500).json({ error: 'Failed to save the event decision' });
+  } finally {
+    client.release();
+  }
+});
+
 const SUPPORT_EQUIPMENT_TYPES = Object.freeze(['Audio', 'Video & Display', 'Lighting', 'Staging', 'Networking', 'Power & Cabling', 'Furniture', 'Other']);
 
 function validateSupportRequirements(body) {
