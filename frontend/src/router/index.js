@@ -1,4 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import VenueBookingReviewView from '../views/VenueBookingReviewView.vue'
 import HomePage from '../views/HomePage.vue'
 import NewEventRequestView from '../views/NewEventRequestView.vue'
 import DraftsView from '../views/DraftsView.vue'
@@ -19,6 +20,7 @@ import TechnicalSupportRequestsView from '../views/TechnicalSupportRequestsView.
 import EventChangeRequestView from '../views/EventChangeRequestView.vue'
 
 const routes = [
+  { path: '/bookings/pending/:id', name: 'venue-booking-review', component: VenueBookingReviewView, meta: { requiresAuth: true, roles: ['venue_staff'] } },
   { path: '/requests/submitted', name: 'submitted-event-requests', component: SubmittedRequestsView, meta: { requiresAuth: true, roles: ['event_organiser'] } },
   { path: '/requests/submitted/:id', name: 'submitted-event-request', component: SubmittedRequestsView, meta: { requiresAuth: true, roles: ['event_organiser'] } },
   { path: '/requests/drafts', name: 'event-drafts', component: DraftsView, meta: { requiresAuth: true, roles: ['event_organiser'] } },
