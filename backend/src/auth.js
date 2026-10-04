@@ -87,7 +87,9 @@ function authenticate(req, res, next) {
 
 function requireRoles(...allowedRoles) {
   return (req, res, next) => {
-    if (!req.auth || !allowedRoles.includes(req.auth.role)) {
+    const currentRole = String(req.auth?.role || '').trim().toLowerCase();
+    const permittedRoles = allowedRoles.map((role) => String(role).trim().toLowerCase());
+    if (!permittedRoles.includes(currentRole)) {
       return res.status(403).json({ error: 'You do not have permission to access this resource' });
     }
     next();

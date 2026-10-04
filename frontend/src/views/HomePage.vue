@@ -6,7 +6,8 @@
           <p class="lead">{{ roleDescription }}</p>
         <div class="d-flex gap-2 mt-3">
             <router-link v-if="canCreateRequest" class="btn btn-accent btn-lg" to="/requests/new">Create Request</router-link>
-            <button class="btn btn-outline-secondary btn-lg">{{ secondaryAction }}</button>
+            <router-link v-if="canCreateRequest" class="btn btn-outline-primary btn-lg" to="/requests/drafts">My event requests</router-link>
+            <button v-else class="btn btn-outline-secondary btn-lg">{{ secondaryAction }}</button>
         </div>
       </div>
       <div style="width:280px">
@@ -59,10 +60,13 @@
               <h6>Quick Actions</h6>
               <router-link v-if="canCreateRequest" class="btn btn-outline-primary btn-sm w-100 mb-2" to="/requests/new">Start Draft</router-link>
               <router-link v-if="canManageEquipment" class="btn btn-outline-primary btn-sm w-100 mb-2" to="/equipment/new">Add Equipment</router-link>
+              <router-link v-if="role === 'event_coordinator'" class="btn btn-outline-primary btn-sm w-100 mb-2" to="/technical-support/requirements">Technical Support Requirements</router-link>
+              <router-link v-if="canManageEquipment" class="btn btn-outline-secondary btn-sm w-100 mb-2" to="/technical-support/queue">Support Requirements Queue</router-link>
               <router-link v-if="role === 'event_coordinator'" class="btn btn-outline-secondary btn-sm w-100 mb-2" to="/coordinator/requests">Assigned Event Requests</router-link>
               <router-link v-else-if="role === 'venue_staff'" class="btn btn-outline-secondary btn-sm w-100 mb-2" to="/bookings/pending">{{ primaryRoleAction }}</router-link>
               <router-link v-else-if="canCreateRequest" class="btn btn-outline-secondary btn-sm w-100 mb-2" to="/requests/drafts">My Drafts</router-link>
               <button v-else class="btn btn-outline-secondary btn-sm w-100 mb-2">{{ primaryRoleAction }}</button>
+              <router-link v-if="canCreateRequest" class="btn btn-outline-secondary btn-sm w-100 mb-2" to="/requests/submitted">My Submitted Requests</router-link>
               <router-link v-if="role === 'event_coordinator'" class="btn btn-outline-success btn-sm w-100" to="/bookings/new">Create Venue Booking Request</router-link>
           </div>
         </div>
@@ -103,6 +107,30 @@
             </ul>
           </div>
         </div>
+
+        <div v-if="role === 'event_coordinator'" class="card mt-3">
+          <div class="card-body">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+              <h6 class="mb-0">Submitted Technical Support Requirements</h6>
+              <div class="d-flex gap-2">
+                <button class="btn btn-sm btn-outline-primary" @click="loadSupportRequirements">Refresh</button>
+                <router-link class="btn btn-sm btn-outline-secondary" to="/technical-support/requests">View All</router-link>
+              </div>
+            </div>
+            <p v-if="supportError" class="text-danger small">{{ supportError }}</p>
+            <p v-else-if="!supportRequirements.length" class="text-muted small mb-0">No technical support requirements submitted yet.</p>
+            <ul v-else class="list-unstyled mb-0">
+              <li v-for="item in supportRequirements" :key="item.id" class="support-summary-item" :class="{ 'support-summary-selected': selectedSupportId === item.id }" tabindex="0" role="button" @click="toggleSupportDetails(item.id)" @keydown.enter="toggleSupportDetails(item.id)">
+                <div class="d-flex justify-content-between gap-2">
+                  <div><strong>{{ item.event_title }}</strong><div class="small text-muted">{{ item.staff_required }} staff · {{ item.equipment_requirements.length }} equipment type{{ item.equipment_requirements.length === 1 ? '' : 's' }}</div></div>
+                  <div class="d-flex gap-1"><span v-if="item.updated" class="badge bg-info text-dark">Updated</span><span v-if="item.late_request" class="badge bg-warning text-dark">Late</span></div>
+                </div>
+                <div class="small text-muted mt-1">{{ supportEquipmentSummary(item.equipment_requirements) }}</div>
+                <div v-if="selectedSupportId === item.id" class="support-summary-details mt-2" @click.stop><strong>Last updated:</strong> {{ formatBookingDate(item.updated_at) }}<br><strong>Event time:</strong> {{ supportEventTime(item) }}</div>
+              </li>
+            </ul>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -120,6 +148,9 @@ export default {
       venueCount: 0,
       bookingRequests: [],
       selectedBookingId: null,
+      supportRequirements: [],
+      selectedSupportId: null,
+      supportError: '',
       bookingError: '',
       backendOk: false
     }
@@ -196,6 +227,27 @@ export default {
         this.bookingError = error.message
       }
     },
+    async loadSupportRequirements() {
+      this.supportError = ''
+      try {
+        const response = await fetch('/api/technical-support/my-requirements', { headers: authHeaders() })
+        if (response.status === 401) { clearSession(); this.$router.push('/login'); return }
+        const data = await response.json()
+        if (!response.ok) throw new Error(data.error || 'Unable to load technical support requirements')
+        this.supportRequirements = data
+      } catch (error) { this.supportError = error.message }
+    },
+    supportEquipmentSummary(items) {
+      if (!items.length) return 'No equipment specified'
+      return items.map(item => `${item.type}: ${item.quantity}${item.details ? ` (${item.details})` : ''}`).join(', ')
+    },
+    supportEventTime(item) {
+      if (!item.preferred_start && !item.preferred_end) return 'Event time not specified'
+      return `${this.formatBookingDate(item.preferred_start)} to ${this.formatBookingDate(item.preferred_end)}`
+    },
+    toggleSupportDetails(id) {
+      this.selectedSupportId = this.selectedSupportId === id ? null : id
+    },
     formatBookingDate(value) {
       return value ? new Date(value).toLocaleString() : 'Time not provided'
     },
@@ -223,6 +275,7 @@ export default {
       this.backendOk = false;
     }
     if (this.role === 'event_coordinator') this.loadBookingRequests()
+    if (this.role === 'event_coordinator') this.loadSupportRequirements()
     this.loadVenueCount()
   }
 }
@@ -236,4 +289,7 @@ export default {
 .booking-request-item:hover, .booking-request-item:focus { background: #f8f9ff; outline: none }
 .booking-request-selected { background: #f8f9ff }
 .booking-request-details { border-top: 1px solid #e8ebf2; padding-top: .65rem; color: #52606d; font-size: .82rem; line-height: 1.7 }
+.support-summary-item { border-bottom: 1px solid #eef0f4; padding: .75rem .5rem; cursor: pointer; border-radius: .5rem }
+.support-summary-item:hover, .support-summary-item:focus, .support-summary-selected { background: #f8f9ff; outline: none }
+.support-summary-details { border-top: 1px solid #e8ebf2; padding-top: .5rem; color: #52606d; font-size: .82rem; line-height: 1.6 }
 </style>

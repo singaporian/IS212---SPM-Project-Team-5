@@ -11,7 +11,7 @@
           Booking request submitted. Venue Staff can now review it.
           <router-link to="/" class="alert-link ms-1">Return to dashboard</router-link>
         </div>
-        <form v-else @submit.prevent="showSummary = true">
+        <form v-else @submit.prevent="reviewRequest">
           <div class="row g-3">
             <div class="col-md-6">
               <label class="form-label" for="booking-event">Event</label>
@@ -29,7 +29,7 @@
             </div>
             <div class="col-md-3"><label class="form-label">Event date<input v-model="form.date" class="form-control" type="date" required /></label></div>
             <div class="col-md-3"><label class="form-label">Start time<input v-model="form.startTime" class="form-control" type="time" required /></label></div>
-            <div class="col-md-3"><label class="form-label">End time<input v-model="form.endTime" class="form-control" type="time" required /></label></div>
+            <div class="col-md-3"><label class="form-label">End time<input v-model="form.endTime" class="form-control" :class="{ 'is-invalid': timeValidationError }" type="time" required /><div v-if="timeValidationError" class="invalid-feedback">{{ timeValidationError }}</div></label></div>
             <div class="col-md-3"><label class="form-label">Setup minutes<input v-model.number="form.setupMinutes" class="form-control" type="number" min="0" required /></label></div>
             <div class="col-md-3"><label class="form-label">Turnaround minutes<input v-model.number="form.turnaroundMinutes" class="form-control" type="number" min="0" required /></label></div>
             <div class="col-12"><label class="form-label">Venue requirements<textarea v-model="form.requirements" class="form-control" rows="3" placeholder="Layout, accessibility, facilities, or other requirements"></textarea></label></div>
@@ -51,7 +51,7 @@
           <div v-if="conflicts.length" class="alert alert-warning">
             <strong>Potential booking conflict detected.</strong>
             <p class="small mb-2">You must acknowledge this warning before submitting. Venue Staff will see the conflict flag.</p>
-            <ul class="small mb-2"><li v-for="conflict in conflicts" :key="conflict.booking_id">{{ conflict.event_title }}: {{ formatDate(conflict.start_time) }} to {{ formatDate(conflict.end_time) }} ({{ conflict.status }})</li></ul>
+            <ul class="small mb-2"><li v-for="conflict in conflicts" :key="conflict.booking_id">{{ conflict.event_title }} at {{ conflict.venue_name }}: {{ formatDate(conflict.start_time) }} to {{ formatDate(conflict.end_time) }} ({{ conflictStatusLabel(conflict.status) }})</li></ul>
           </div>
           <div v-if="error" class="alert alert-danger">{{ error }}</div>
           <div class="d-flex gap-2">
@@ -76,6 +76,7 @@ export default {
       showSummary: false,
       conflicts: [],
       error: '',
+      timeValidationError: '',
       submitting: false,
       success: false,
       form: { eventId: '', venueId: '', date: '', startTime: '', endTime: '', setupMinutes: 30, turnaroundMinutes: 30, requirements: '' }
@@ -86,7 +87,28 @@ export default {
     selectedVenue() { return this.venues.find((venue) => venue.id === this.form.venueId) }
   },
   methods: {
+    reviewRequest() {
+      this.error = ''
+      this.timeValidationError = ''
+      if (!this.form.date || !this.form.startTime || !this.form.endTime) {
+        this.showSummary = true
+        return
+      }
+      const start = new Date(`${this.form.date}T${this.form.startTime}`)
+      const end = new Date(`${this.form.date}T${this.form.endTime}`)
+      if (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime()) || end <= start) {
+        this.timeValidationError = 'End time must be later than the start time.'
+        return
+      }
+      this.showSummary = true
+    },
     formatDate(value) { return value ? new Date(value).toLocaleString() : '—' },
+    conflictStatusLabel(status) {
+      if (status === 'pending') return 'Pending booking confirmation'
+      if (status === 'approved') return 'Approved booking'
+      if (status === 'confirmed') return 'Confirmed booking'
+      return status ? status.replaceAll('_', ' ') : 'Existing booking'
+    },
     async loadOptions() {
       const headers = authHeaders()
       const [eventsResponse, venuesResponse] = await Promise.all([

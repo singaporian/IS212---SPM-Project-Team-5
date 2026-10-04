@@ -6,31 +6,38 @@ const fields = ['eventName', 'startDate', 'startTime', 'endDate', 'endTime',
   'accessibilityNeeds', 'equipmentRequirements', 'registrationNeeds'];
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+function fieldError(field, message) {
+  return Object.assign(new Error(message), { fields: { [field]: message } });
+}
+
 function validateDraft(input) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('Invalid draft fields.');
   if (Object.keys(input).some(key => !fields.includes(key))) throw new Error('Unknown draft field.');
   const data = {};
   for (const field of fields) {
     const value = input[field] ?? (field === 'registrationNeeds' ? 'not_decided' : '');
-    if (typeof value !== 'string' || value.length > 10000) throw new Error(field + ' must be text of at most 10,000 characters.');
+    if (typeof value !== 'string' || value.length > 10000) throw fieldError(field, field + ' must be text of at most 10,000 characters.');
     data[field] = value;
   }
   for (const field of ['startDate', 'endDate']) {
     const value = data[field];
     if (value && (!/^\d{4}-\d{2}-\d{2}$/.test(value) || !Number.isFinite(Date.parse(value)) ||
-      new Date(value).toISOString().slice(0, 10) !== value)) throw new Error('Enter a valid date.');
+      new Date(value).toISOString().slice(0, 10) !== value)) throw fieldError(field, 'Enter a valid date.');
   }
   for (const field of ['startTime', 'endTime']) {
-    if (data[field] && !/^(?:[01]\d|2[0-3]):[0-5][05]$/.test(data[field])) throw new Error('Choose a time in five-minute intervals.');
+    if (data[field] && !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(data[field])) throw fieldError(field, 'Enter a valid clock time.');
+    if (data[field] && Number(data[field].slice(3)) % 5 !== 0) throw fieldError(field, 'Choose a time in five-minute intervals.');
   }
   const attendance = data.expectedAttendance.trim().toLowerCase();
   if (attendance && !/^\d+$/.test(attendance) && !['not decided', 'none', 'not required'].includes(attendance)) {
-    throw new Error("Expected attendance must be a whole number (or 'not decided').");
+    throw fieldError('expectedAttendance', "Enter a positive whole number.");
   }
-  if (!['not_decided', 'yes', 'no'].includes(data.registrationNeeds)) throw new Error('Invalid registration needs.');
-  if (data.startDate && data.endDate && (data.endDate < data.startDate ||
-    (data.startDate === data.endDate && data.startTime && data.endTime && data.endTime <= data.startTime))) {
-    throw new Error('End date/time must be later than the start.');
+  if (!['not_decided', 'yes', 'no'].includes(data.registrationNeeds)) throw fieldError('registrationNeeds', 'Invalid registration needs.');
+  if (data.startDate && data.endDate && data.endDate < data.startDate) {
+    throw fieldError('endDate', 'End date must not be earlier than the start date.');
+  }
+  if (data.startDate && data.startDate === data.endDate && data.startTime && data.endTime && data.endTime <= data.startTime) {
+    throw fieldError('endTime', 'End time must be later than the start time.');
   }
   return data;
 }
@@ -53,7 +60,7 @@ router.get('/', async (req, res) => {
 });
 router.get('/:id', async (req, res) => {
   try {
-    const result = await db.query("SELECT id, draft_data, status, updated_at FROM events WHERE id = $1 AND organiser_id = $2 AND status = 'draft'", [req.params.id, req.auth.sub]);
+    const result = await db.query("SELECT id, draft_data, status, updated_at, md5(draft_data::text) AS version FROM events WHERE id = $1 AND organiser_id = $2 AND status = 'draft'", [req.params.id, req.auth.sub]);
     if (!result.rows[0]) return res.status(404).json({ error: 'Draft not found.' });
     res.json(result.rows[0]);
   } catch (error) {
@@ -66,13 +73,16 @@ router.get('/:id', async (req, res) => {
 router.put('/:id', async (req, res) => {
   let data;
   try { data = validateDraft(req.body); }
-  catch (error) { return res.status(400).json({ error: error.message, field: error.field || null }); }
+  catch (error) {
+    const fields = error.fields || (error.field ? { [error.field]: error.message } : {});
+    return res.status(400).json({ error: error.message, fields, field: error.field || Object.keys(fields)[0] || null });
+  }
   try {
     const result = await db.query(`INSERT INTO events (id, organiser_id, title, draft_data, status)
       VALUES ($1, $2, $3, $4::jsonb, 'draft')
       ON CONFLICT (id) DO UPDATE SET title = EXCLUDED.title, draft_data = EXCLUDED.draft_data, updated_at = now()
       WHERE events.organiser_id = $2 AND events.status = 'draft'
-      RETURNING id, draft_data, status, updated_at`, [req.params.id, req.auth.sub, data.eventName, JSON.stringify(data)]);
+      RETURNING id, draft_data, status, updated_at, md5(draft_data::text) AS version`, [req.params.id, req.auth.sub, data.eventName, JSON.stringify(data)]);
     if (!result.rows[0]) return res.status(404).json({ error: 'Draft not found.' });
     res.json(result.rows[0]);
   } catch (error) {

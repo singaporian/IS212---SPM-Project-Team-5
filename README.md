@@ -109,6 +109,14 @@ docker-compose up -d db
 
 - If the backend connects to the wrong Postgres instance (e.g., local Postgres on 5432), change `backend/.env` `DB_HOST` to `127.0.0.1` and `DB_PORT` to `55432` to explicitly target the project container.
 
+- If `npm run dev` reports `EADDRINUSE` on port 3000, another backend process is already running. Stop it, then start the backend once:
+
+```bash
+kill $(lsof -tiTCP:3000 -sTCP:LISTEN)
+cd backend
+npm run dev
+```
+
 
 ## Save Draft Progress (US-004)
 
@@ -127,8 +135,8 @@ The draft API requires an Event Organiser JWT:
 
 Draft form values are stored in `draft_data` exactly as entered, including
 separate date/time fields, attendance placeholders and registration choices.
-The event title is also updated for listing. Future submission code should
-validate and map these draft values into the structured event fields.
+The event title is also updated for listing. US-006 submission validates and
+maps these draft values into the structured event fields.
 Ownership and Draft status are enforced in the atomic write statement.
 Missing and inaccessible draft IDs return the same generic response.
 
@@ -152,3 +160,68 @@ restriction is applied. Date formats, time formats and start/end ordering are
 still validated. Event Type, Programme/Agenda and Special Arrangements are
 outside this agreed draft scope.
 
+## Submit a draft for review (US-006)
+
+Run `npm run init-db` in `backend` after updating to this branch to add the
+submission timestamp and description columns. Start the database, backend
+and frontend as above.
+
+As an Event Organiser, fill in Event Name, both start and end date/time, and
+a positive whole-number Expected Attendance, then select Submit for Review.
+The current form values are saved and submitted together; a separate Save Draft
+action is not required. Save Draft remains available for incomplete information,
+including blank or Not decided attendance. Dates/times use Singapore time (UTC+8), with end after start;
+there is no past-date restriction. Other fields remain optional, including
+None / Not Required choices. Organiser start/end times use five-minute selections (00:00–23:55). CHG-001 was withdrawn; venue-booking time precision is unchanged.
+
+Invalid submissions stay in Draft and show corrective messages. Successful
+submission preserves the current form values and same request ID, changes status
+to `submitted`, and opens a read-only confirmation. My Submitted Requests
+lets the organiser reopen it. The request appears in the existing coordinator
+queue for assignment and review.
+
+`POST /api/drafts/:id/submit` accepts `{ "version": "<saved version>", "draft": { ...currentFormValues } }`
+for an existing draft. Obtain its version from a draft GET/PUT response.
+For a new unsaved form, send `version: null` with `draft` and use the form's stable
+request UUID. The legacy `{ "version": "<saved version>" }` payload remains
+supported and submits the saved snapshot instead. Other top-level fields are rejected.
+The server validates before atomically saving and submitting. Ownership and status
+checks remain enforced. Stale versions return 409; matching retries of an already
+submitted request return its existing receipt without creating a duplicate.
+
+An earlier end date identifies only End Date; on the same date, an equal or
+earlier end time identifies only End Time (DEF-001). A later end date permits an
+earlier clock time. Submitted event times display as 12-hour AM/PM without changing
+stored values. The success confirmation remains visible if receipt loading fails.
+
+See [US-006 test plan and execution evidence](docs/testing/US-006-test-plan.md)
+for the field mapping, setup, test cases and actual automated/browser results.
+
+## Technical Support Requirements (US-016)
+
+Event Coordinators can open `/technical-support/requirements` from the dashboard to select an assigned event, choose multiple equipment types with quantities, and specify the number of technical support staff required. Saving replaces the previous requirements version for that event and notifies Technical Support Staff.
+
+The equipment type `Other` includes a details field, so coordinators can describe equipment that is not covered by the standard list. A description is required when `Other` is selected.
+
+Technical Support Staff can open `/technical-support/queue` to see the latest requirements for all events. Replaced requirements are marked **Updated**, and requirements saved after the event start time are marked **Late request**.
+
+The US-016 schema is created by the normal initializer:
+
+```bash
+cd backend
+npm run init-db
+```
+
+The coordinator dashboard also shows a summary of submitted technical support requirements, with a link back to the full management page. The coordinator form retains its input when a save fails and displays a retryable error.
+
+## Notifications (US-002)
+
+Authenticated users can click the bell icon in the header to view their notification list. Unread notifications show a count badge and a highlighted row; clicking a notification marks it as read. The list is loaded from `/api/notifications` for the signed-in user only, and read state is updated through `/api/notifications/:id/read` with ownership checks.
+
+The implemented booking and technical-support triggers are targeted by role and event relationship:
+
+- A submitted venue booking request notifies Venue Staff.
+- A Venue Staff booking decision notifies the Coordinator who submitted that request.
+- Updated technical-support requirements notify Technical Support Staff.
+
+Notification responses include only the notification message and event identifier, not protected event details. Users must still pass the relevant authorization checks to view event information.

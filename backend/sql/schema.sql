@@ -85,6 +85,24 @@ ALTER TABLE events ADD COLUMN IF NOT EXISTS assigned_coordinator_id uuid REFEREN
 -- Preserve incomplete draft fields without coercing dates, placeholders or tri-state choices.
 ALTER TABLE events ADD COLUMN IF NOT EXISTS draft_data jsonb NOT NULL DEFAULT '{}'::jsonb;
 
+-- US-006: submission preserves the draft snapshot and exposes review fields.
+ALTER TABLE events ADD COLUMN IF NOT EXISTS description text;
+ALTER TABLE events ADD COLUMN IF NOT EXISTS submitted_at timestamptz;
+
+-- Latest technical support requirements for each event (US-016).
+CREATE TABLE IF NOT EXISTS technical_support_requirements (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  event_id uuid NOT NULL UNIQUE REFERENCES events(id) ON DELETE CASCADE,
+  equipment_requirements jsonb NOT NULL DEFAULT '[]'::jsonb,
+  staff_required integer NOT NULL DEFAULT 0 CHECK (staff_required >= 0),
+  late_request boolean NOT NULL DEFAULT false,
+  update_count integer NOT NULL DEFAULT 0 CHECK (update_count >= 0),
+  updated_by uuid REFERENCES users(id) ON DELETE SET NULL,
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+ALTER TABLE technical_support_requirements ADD COLUMN IF NOT EXISTS update_count integer NOT NULL DEFAULT 0;
+
 -- Venue bookings
 CREATE TABLE IF NOT EXISTS bookings (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -182,3 +200,14 @@ CREATE TABLE IF NOT EXISTS event_changes (
   change_summary text,
   created_at timestamptz DEFAULT now()
 );
+
+-- Organiser-submitted proposed changes to an already-submitted event
+CREATE TABLE IF NOT EXISTS event_change_requests (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  event_id uuid NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+  organiser_id uuid NOT NULL REFERENCES users(id) ON DELETE SET NULL,
+  proposed_changes jsonb NOT NULL,
+  status text NOT NULL DEFAULT 'pending',
+  created_at timestamptz DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS event_change_requests_event_idx ON event_change_requests (event_id);

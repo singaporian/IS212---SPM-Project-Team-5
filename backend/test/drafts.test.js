@@ -13,7 +13,7 @@ test('draft validation accepts incomplete values and rejects invalid populated f
     for (const [key, value] of Object.entries(input)) assert.equal(result[key], value);
   }
   for (const input of [{ expectedAttendance: '-2' }, { expectedAttendance: '1.5' },
-    { startDate: '2099-02-30' }, { startTime: '24:00' }, { startTime: '12:03' },
+    { startDate: '2099-02-30' }, { startTime: '24:00' }, { startTime: '12:70' },
     { registrationNeeds: 'maybe' }, { eventName: {} }, { status: 'submitted' },
     { startDate: '2099-01-02', endDate: '2099-01-01' }]) {
     assert.throws(() => validateDraft(input));
@@ -81,7 +81,10 @@ test('draft API persists atomically and enforces ownership in PostgreSQL', async
       }
     });
     await t.test('invalid values do not partially update a saved draft', async () => {
-      assert.equal((await request('/' + id, 'PUT', { eventName: 'Should not save', expectedAttendance: 'bad' })).status, 400);
+      const invalid = await request('/' + id, 'PUT', { eventName: 'Should not save', expectedAttendance: 'bad' });
+      assert.equal(invalid.status, 400);
+      assert.equal(invalid.body.field, 'expectedAttendance');
+      assert.equal(invalid.body.fields.expectedAttendance, 'Enter a positive whole number.');
       assert.deepEqual((await request('/' + id)).body.draft_data, saved);
     });
     await t.test('a database write failure preserves the entire previous save and permits retry', async () => {
@@ -162,5 +165,43 @@ test('draft API persists atomically and enforces ownership in PostgreSQL', async
     await client.query('ROLLBACK');
     client.release();
     await db.pool.end();
+  }
+});
+
+
+// Organiser five-minute timing regression; DEF-001 ordering retained.
+test('DEF-001 draft interval errors identify only the cause and allow overnight times', () => {
+  const draft = { startDate: '2026-10-15', startTime: '10:05', endDate: '2026-10-15', endTime: '10:10' };
+  for (const [changes, fields] of [
+    [{ endDate: '2026-10-14' }, { endDate: 'End date must not be earlier than the start date.' }],
+    [{ endTime: '10:05' }, { endTime: 'End time must be later than the start time.' }],
+    [{ endTime: '10:00' }, { endTime: 'End time must be later than the start time.' }]
+  ]) {
+    assert.throws(() => validateDraft({ ...draft, ...changes }), error => {
+      assert.deepEqual(error.fields, fields);
+      return true;
+    });
+  }
+  assert.equal(validateDraft({ ...draft, endDate: '2026-10-16', endTime: '00:05' }).endTime, '00:05');
+  assert.equal(validateDraft(draft).endTime, '10:10');
+});
+
+// Organiser five-minute timing regression; DEF-001 ordering retained.
+test('organiser draft validation accepts five-minute times and identifies invalid time fields', () => {
+  for (const time of ['10:05', '10:10', '23:55']) {
+    assert.equal(validateDraft({ startTime: time }).startTime, time);
+    assert.equal(validateDraft({ endTime: time }).endTime, time);
+  }
+  for (const field of ['startTime', 'endTime']) {
+    for (const time of ['25:00', '12:70']) {
+      assert.throws(() => validateDraft({ [field]: time }), error => /valid clock time/.test(error.fields[field]));
+    }
+  }
+});
+
+test('organiser draft rejects off-grid times without rounding, but permits blank times', () => {
+  for (const field of ['startTime', 'endTime']) {
+    for (const time of ['10:03','10:07','23:59']) assert.throws(() => validateDraft({ [field]: time }), error => error.fields[field] === 'Choose a time in five-minute intervals.');
+    assert.equal(validateDraft({ [field]: '' })[field], '');
   }
 });

@@ -1,5 +1,18 @@
 const PUBLIC_REGISTRATION_ROLES = ['attendee', 'event_organiser'];
 const INTERNAL_ROLES = ['event_coordinator', 'venue_staff', 'technical_support_staff'];
+const EVENT_STATUS = Object.freeze({
+  DRAFT: 'draft',
+  SUBMITTED: 'submitted',
+  CLARIFICATION_REQUESTED: 'clarification_requested',
+  PLANNING: 'planning',        // approved by Coordinator
+  REJECTED: 'rejected',
+  CONFIRMED: 'confirmed',
+  COMPLETED: 'completed',
+  CANCELLED: 'cancelled'
+});
+const CHANGE_REQUEST_STATUSES = [EVENT_STATUS.PLANNING, EVENT_STATUS.CONFIRMED];
+const MAJOR_CHANGE_LABELS = Object.freeze({ expectedAttendance: 'Expected Attendance', duration: 'Duration' });
+
 
 class User {
   constructor({ id, name, email, role, passwordHash = null }) {
@@ -61,6 +74,25 @@ class EventRequest {
 
   canBeAssigned() {
     return this.status === 'submitted' && !this.assignedCoordinatorId;
+  }
+
+  canRequestChanges() {
+     return CHANGE_REQUEST_STATUSES.includes(this.status);// AC-008-001: only a submitted event can receive a change request, US-34:Before approval, the Organiser edits the request directly (US-034).
+  }
+
+    // US-010 (AC-010-001): Expected Attendance and Duration are the only "major" aspects.
+  // Moving the event while keeping the same length is NOT a duration change.
+  majorChangesIn(changes) {
+    const major = [];
+    if (changes.expectedAttendance !== undefined && Number(changes.expectedAttendance) !== Number(this.expected_attendance)) {
+      major.push('expectedAttendance');
+    }
+    if (changes.preferredStart !== undefined && changes.preferredEnd !== undefined) {
+      const proposed = new Date(changes.preferredEnd) - new Date(changes.preferredStart);
+      const current = this.preferred_start && this.preferred_end ? new Date(this.preferred_end) - new Date(this.preferred_start) : null;
+      if (current === null || proposed !== current) major.push('duration');
+    }
+    return major;
   }
 
   assignTo(coordinatorId) {
@@ -167,4 +199,39 @@ class Booking {
   }
 }
 
-module.exports = { User, EventRequest, Venue, Booking };
+class ChangeRequest {
+  constructor({ id, eventId, organiserId, proposedChanges = {}, status = 'pending', createdAt = null }) {
+    this.id = id;
+    this.eventId = eventId;
+    this.organiserId = organiserId;
+    this.proposedChanges = proposedChanges;
+    this.status = status;
+    this.createdAt = createdAt;
+  }
+
+  static fromRow(row) {
+    return new ChangeRequest({
+      id: row.id,
+      eventId: row.event_id,
+      organiserId: row.organiser_id,
+      proposedChanges: row.proposed_changes,
+      status: row.status,
+      createdAt: row.created_at
+    });
+  }
+
+  isPending() {
+    return this.status === 'pending';
+  }
+
+  toJSON() {
+    return {
+      id: this.id,
+      event_id: this.eventId,
+      proposed_changes: this.proposedChanges,
+      status: this.status,
+      created_at: this.createdAt
+    };
+  }
+}
+module.exports = { User, EventRequest, Venue, Booking, ChangeRequest, EVENT_STATUS, MAJOR_CHANGE_LABELS };

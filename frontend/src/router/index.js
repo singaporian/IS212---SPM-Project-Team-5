@@ -1,7 +1,9 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import VenueBookingReviewView from '../views/VenueBookingReviewView.vue'
 import HomePage from '../views/HomePage.vue'
 import NewEventRequestView from '../views/NewEventRequestView.vue'
 import DraftsView from '../views/DraftsView.vue'
+import SubmittedRequestsView from '../views/SubmittedRequestsView.vue'
 import LoginView from '../views/LoginView.vue'
 import VenueSearchView from '../views/VenueSearchView.vue'
 import CoordinatorRequestsView from '../views/CoordinatorRequestsView.vue'
@@ -12,8 +14,15 @@ import EventsView from '../views/EventsView.vue'
 import AccessDeniedView from '../views/AccessDeniedView.vue'
 import { getUser, isAuthenticated } from '../services/auth'
 import BookingRequestsView from '../views/BookingRequestsView.vue'
+import SupportRequirementsView from '../views/SupportRequirementsView.vue'
+import TechnicalSupportRequirementsView from '../views/TechnicalSupportRequirementsView.vue'
+import TechnicalSupportRequestsView from '../views/TechnicalSupportRequestsView.vue'
+import EventChangeRequestView from '../views/EventChangeRequestView.vue'
 
 const routes = [
+  { path: '/bookings/pending/:id', name: 'venue-booking-review', component: VenueBookingReviewView, meta: { requiresAuth: true, roles: ['venue_staff'] } },
+  { path: '/requests/submitted', name: 'submitted-event-requests', component: SubmittedRequestsView, meta: { requiresAuth: true, roles: ['event_organiser'] } },
+  { path: '/requests/submitted/:id', name: 'submitted-event-request', component: SubmittedRequestsView, meta: { requiresAuth: true, roles: ['event_organiser'] } },
   { path: '/requests/drafts', name: 'event-drafts', component: DraftsView, meta: { requiresAuth: true, roles: ['event_organiser'] } },
   { path: '/requests/drafts/:id', name: 'edit-event-draft', component: NewEventRequestView, meta: { requiresAuth: true, roles: ['event_organiser'] } },
   { path: '/login', name: 'login', component: LoginView, meta: { guestOnly: true } },
@@ -26,7 +35,12 @@ const routes = [
   { path: '/equipment/new', name: 'add-equipment', component: AddEquipmentView, meta: { requiresAuth: true, roles: ['technical_support_staff'] } },
   { path: '/bookings/new', name: 'new-booking-request', component: BookingRequestView, meta: { requiresAuth: true, roles: ['event_coordinator'] } },
   { path: '/bookings', name: 'booking-requests', component: BookingRequestsView, meta: { requiresAuth: true, roles: ['event_coordinator'] } },
-  { path: '/bookings/pending', name: 'pending-booking-requests', component: PendingBookingRequestsView, meta: { requiresAuth: true, roles: ['venue_staff'] } }
+  { path: '/bookings/pending', name: 'pending-booking-requests', component: PendingBookingRequestsView, meta: { requiresAuth: true, roles: ['venue_staff'] } },
+  { path: '/technical-support/requirements', name: 'support-requirements', component: SupportRequirementsView, meta: { requiresAuth: true, roles: ['event_coordinator'] } },
+  { path: '/technical-support/requests', name: 'support-requests', component: TechnicalSupportRequestsView, meta: { requiresAuth: true, roles: ['event_coordinator'] } },
+  { path: '/technical-support/queue', name: 'technical-support-queue', component: TechnicalSupportRequirementsView, meta: { requiresAuth: true, roles: ['technical_support_staff'] } },
+  { path: '/requests/submitted/:id/change-request', name: 'event-change-request', component: EventChangeRequestView, meta: { requiresAuth: true, roles: ['event_organiser'] } },
+  { path: '/events/:id/change-request', redirect: to => ({ name: 'event-change-request', params: { id: to.params.id } }) },
 ]
 
 const router = createRouter({
