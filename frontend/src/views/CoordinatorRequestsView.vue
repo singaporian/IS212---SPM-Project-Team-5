@@ -48,6 +48,39 @@
               <div><strong>Programme:</strong> {{ selected.programme || '—' }}</div>
               <div><strong>Registration Required:</strong> {{ selected.registration_required ? 'Yes' : 'No' }}</div>
               <div><strong>Special Arrangements:</strong> {{ selected.special_arrangements || '—' }}</div>
+
+              <div class="mt-3 d-flex gap-2">
+                <button class="btn btn-sm btn-success" @click="openDecision(ev.id, 'approved')">Approve</button>
+                <button class="btn btn-sm btn-outline-danger" @click="openDecision(ev.id, 'rejected')">Reject</button>
+              </div>
+
+              <div v-if="decisionEventId === ev.id" class="mt-3 p-3 border rounded bg-white">
+                <div class="fw-semibold mb-2">{{ decisionType === 'approved' ? 'Confirm you want to approve this request?' : 'Confirm you want to reject this request?' }}</div>
+
+                <div v-if="decisionType === 'rejected'" class="mb-3">
+                  <label class="form-label d-block">Reason</label>
+                  <select v-model="rejectReason" class="form-select form-select-sm">
+                    <option value="">Select a reason</option>
+                    <option value="insufficient_information">Insufficient Information</option>
+                    <option value="infeasible_requirements">Infeasible Requirements</option>
+                    <option value="duplicate_request">Duplicate Request</option>
+                    <option value="other">Other</option>
+                  </select>
+                  <input
+                    v-if="rejectReason === 'other'"
+                    v-model="rejectDetail"
+                    class="form-control form-control-sm mt-2"
+                    type="text"
+                    placeholder="Add detail for the Other reason"
+                  />
+                </div>
+
+                <div v-if="decisionError" class="alert alert-danger py-2 small mb-2">{{ decisionError }}</div>
+                <div class="d-flex gap-2">
+                  <button class="btn btn-sm btn-primary" @click="confirmDecision(ev.id)">Confirm</button>
+                  <button class="btn btn-sm btn-outline-secondary" @click="cancelDecision">Go Back</button>
+                </div>
+              </div>
             </div>
           </li>
         </ul>
@@ -66,13 +99,65 @@ export default {
       unassigned: [],
       assigned: [],
       selected: null,
-      assignError: ''
+      assignError: '',
+      decisionEventId: null,
+      decisionType: '',
+      rejectReason: '',
+      rejectDetail: '',
+      decisionError: ''
     }
   },
   methods: {
     formatDate(v) {
       if (!v) return '—'
       return new Date(v).toLocaleString()
+    },
+    openDecision(id, type) {
+      this.decisionEventId = id
+      this.decisionType = type
+      this.rejectReason = ''
+      this.rejectDetail = ''
+      this.decisionError = ''
+    },
+    cancelDecision() {
+      this.decisionEventId = null
+      this.decisionType = ''
+      this.rejectReason = ''
+      this.rejectDetail = ''
+      this.decisionError = ''
+    },
+    async confirmDecision(id) {
+      this.decisionError = ''
+
+      if (this.decisionType === 'rejected') {
+        if (!this.rejectReason) {
+          this.decisionError = 'Please select a rejection reason.'
+          return
+        }
+        if (this.rejectReason === 'other' && !this.rejectDetail.trim()) {
+          this.decisionError = 'Please add a detail for the Other reason.'
+          return
+        }
+      }
+
+      const body = this.decisionType === 'rejected'
+        ? { decision: 'rejected', reason: this.rejectReason, reasonDetail: this.rejectDetail }
+        : { decision: 'approved' }
+
+      const res = await fetch(`/api/events/${id}/decision`, {
+        method: 'PATCH',
+        headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      })
+      const data = await res.json().catch(() => ({}))
+
+      if (!res.ok) {
+        this.decisionError = data.error || 'Could not save the decision. Please try again.'
+        return
+      }
+
+      this.cancelDecision()
+      await this.loadAll()
     },
     async loadAll() {
       await Promise.all([this.loadUnassigned(), this.loadAssigned()])
