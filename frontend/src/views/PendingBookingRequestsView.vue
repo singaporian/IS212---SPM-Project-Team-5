@@ -1,64 +1,72 @@
 <template>
-  <div>
-    <router-link to="/" class="d-inline-block mb-3 small">&laquo; Back to Dashboard</router-link>
-    <h1 class="h3 mb-4">Pending venue booking requests</h1>
-    <div v-if="error" class="alert alert-danger">{{ error }}</div>
-    <div v-if="!requests.length && !error" class="empty-state text-center">No pending booking requests.</div>
-    <article v-for="request in requests" :key="request.id" class="card mb-3">
-      <div class="card-body">
-        <div class="d-flex justify-content-between gap-3">
-          <div>
-            <h2 class="h5 mb-1">{{ request.event_title }} at {{ request.venue_name }}</h2>
-            <p class="small text-muted mb-2">Coordinator: {{ request.coordinator_name || 'Unknown' }} ({{ request.coordinator_email || 'no email' }})</p>
-            <p class="small mb-1">{{ formatDate(request.start_time) }} to {{ formatDate(request.end_time) }}</p>
-            <p class="small mb-1">Setup: {{ request.setup_minutes }} minutes; turnaround: {{ request.turnaround_minutes }} minutes</p>
-            <p v-if="request.conflict_warning" class="alert alert-warning py-2 small mb-0">Conflict warning was acknowledged at submission. Review the existing booking conflict before deciding.</p>
-          </div>
-          <span class="badge bg-warning text-dark align-self-start">Pending Review</span>
+  <main class="venue-inbox">
+    <router-link to="/" class="small">Back to Dashboard</router-link>
+    <header class="inbox-heading">
+      <div><p class="eyebrow">VENUE WORKSPACE</p><h1>Pending venue booking requests</h1><p class="text-muted">Review the requested arrangement before making a decision. Times are in Singapore time.</p></div>
+      <button class="btn btn-outline-primary" :disabled="loading" @click="load">Refresh inbox</button>
+    </header>
+    <p v-if="loading" role="status">Loading requests...</p>
+    <div v-else-if="error" class="alert alert-danger" role="alert">{{ error }} <button class="btn btn-link" @click="load">Retry</button></div>
+    <p v-else-if="!requests.length" class="empty-state">No requests in this view.</p>
+    <article v-for="request in requests" :key="request.id" class="card inbox-item">
+      <div class="inbox-content">
+        <div><h2>{{ request.event_title }}</h2><p class="venue-name">{{ request.venue_name }}</p><p>{{ formatRange(request.start_time, request.end_time) }}</p><p class="small text-muted">Coordinator: {{ request.coordinator_name || 'Not recorded' }}</p></div>
+        <div class="inbox-status">
+          <span class="badge bg-warning text-dark">{{ statusLabel(summaries[request.id]?.status || request.status) }}</span>
+          <template v-if="summaries[request.id]">
+            <p>Attendance: {{ summaries[request.id].expected_attendance ?? 'Not recorded' }}</p>
+            <p>{{ summaries[request.id].reserved_conflicts ? 'Warning: Reserved booking conflict' : 'No reserved booking conflict' }}</p>
+            <p>{{ summaries[request.id].unavailable_conflicts ? 'Warning: Recorded venue unavailability' : 'No recorded unavailability conflict' }}</p>
+          </template>
+          <p v-else role="status" class="text-muted">{{ summaryErrors[request.id] || 'Loading attendance and availability...' }}</p>
         </div>
-        <div class="mt-3 d-flex flex-wrap gap-2">
-          <button class="btn btn-success btn-sm" @click="decide(request, 'approved')">Approve</button>
-          <button class="btn btn-outline-danger btn-sm" @click="openDecision(request, 'rejected')">Reject</button>
-          <button class="btn btn-outline-primary btn-sm" @click="openDecision(request, 'alternative_suggested')">Suggest Alternative</button>
-        </div>
-        <div v-if="active === request.id" class="decision-panel mt-3 p-3 bg-light rounded">
-          <label v-if="decision === 'rejected'" class="form-label">Reason<select v-model="reason" class="form-select"><option value="Capacity Exceeded">Capacity Exceeded</option><option value="Maintenance Conflict">Maintenance Conflict</option><option value="Booking Conflict">Booking Conflict</option><option value="Other">Other</option></select></label>
-          <label class="form-label">Comment<textarea v-model="comment" class="form-control" rows="2"></textarea></label>
-          <div v-if="decision === 'alternative_suggested'" class="row g-2"><div class="col-md-6"><label class="form-label">Alternative start<input v-model="alternativeStartTime" class="form-control" type="datetime-local" required /></label></div><div class="col-md-6"><label class="form-label">Alternative end<input v-model="alternativeEndTime" class="form-control" type="datetime-local" required /></label></div></div>
-          <div v-if="decisionError" class="alert alert-danger py-2">{{ decisionError }}</div>
-          <button class="btn btn-accent btn-sm" @click="submitDecision(request.id)">Confirm decision</button>
-          <button class="btn btn-link btn-sm" @click="active = ''">Cancel</button>
-        </div>
+        <router-link class="btn btn-primary" :to="{ name: 'venue-booking-review', params: { id: request.id } }">Review Request</router-link>
       </div>
     </article>
-  </div>
+  </main>
 </template>
-
 <script>
+import BookingReview from '../components/BookingReview.vue'
 import { authHeaders, clearSession } from '../services/auth'
-
 export default {
   name: 'PendingBookingRequestsView',
-  data() { return { requests: [], error: '', active: '', decision: '', reason: '', comment: '', alternativeStartTime: '', alternativeEndTime: '', decisionError: '' } },
+  data() { return { requests: [], summaries: {}, summaryErrors: {}, loading: true, error: '', loadVersion: 0 } },
   methods: {
-    formatDate(value) { return value ? new Date(value).toLocaleString() : '—' },
+    formatRange: BookingReview.methods.formatRange,
+    formatDate: BookingReview.methods.formatDate,
+    statusLabel: BookingReview.methods.statusLabel,
     async load() {
-      const response = await fetch('/api/bookings/pending', { headers: authHeaders() })
-      if (response.status === 401) { clearSession(); this.$router.push('/login'); return }
-      const data = await response.json()
-      if (!response.ok) { this.error = data.error || 'Unable to load requests'; return }
-      this.requests = data
-    },
-    openDecision(request, decision) { this.active = request.id; this.decision = decision; this.reason = ''; this.comment = ''; this.decisionError = '' },
-    async submitDecision(id) {
-      this.decisionError = ''
-      const response = await fetch(`/api/bookings/${id}/decision`, { method: 'PATCH', headers: { ...authHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify({ decision: this.decision, reason: this.reason, comment: this.comment, alternativeStartTime: this.alternativeStartTime || null, alternativeEndTime: this.alternativeEndTime || null }) })
-      const data = await response.json()
-      if (!response.ok) { this.decisionError = data.error || 'Unable to save decision'; return }
-      this.active = ''
-      await this.load()
+      const version = ++this.loadVersion
+      this.loading = true; this.error = ''; this.requests = []; this.summaries = {}; this.summaryErrors = {}
+      try {
+        const response = await fetch('/api/bookings/pending', { headers: authHeaders() })
+        if (version !== this.loadVersion) return
+        if (response.status === 401) { clearSession(); this.$router.push('/login'); return }
+        const data = await response.json()
+        if (!response.ok) throw new Error('Unable to load requests. Please retry.')
+        if (version !== this.loadVersion) return
+        this.requests = data; this.loading = false
+        await Promise.all(data.map(async request => {
+          try {
+            const result = await fetch(`/api/bookings/${encodeURIComponent(request.id)}/review?summary=1`, { headers: authHeaders() })
+            if (!result.ok) throw new Error('Summary unavailable')
+            const summary = await result.json()
+            if (version === this.loadVersion) this.summaries[request.id] = summary
+          } catch {
+            if (version === this.loadVersion) this.summaryErrors[request.id] = 'Attendance and availability unavailable. Open the review to retry.'
+          }
+        }))
+      } catch { if (version === this.loadVersion) this.error = 'Unable to load requests. Please retry.' }
+      finally { if (version === this.loadVersion) this.loading = false }
     }
   },
   mounted() { this.load() }
 }
 </script>
+<style scoped>
+.inbox-heading { display:flex; align-items:center; justify-content:space-between; gap:1rem; margin:1.5rem 0; }
+h1 { font-size:1.65rem; } .eyebrow { font-size:.75rem; letter-spacing:.1em; color:#64748b; font-weight:700; }
+.inbox-item { margin-bottom:1rem; padding:1.4rem; } .inbox-content { display:grid; grid-template-columns:minmax(0,1.4fr) minmax(0,1fr) auto; align-items:center; gap:1.5rem; }
+h2 { font-size:1.15rem; margin-bottom:.3rem; } p { margin-bottom:.4rem; } .venue-name { color:#475569; } .inbox-status { font-size:.88rem; } .badge { margin-bottom:.6rem; }
+@media(max-width:800px) { .inbox-heading { align-items:flex-start; flex-direction:column; } .inbox-content { grid-template-columns:1fr; gap:1rem; } }
+</style>
