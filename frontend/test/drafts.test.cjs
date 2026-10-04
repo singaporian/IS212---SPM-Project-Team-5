@@ -374,6 +374,7 @@ test('US-006 successful POST retains rendered confirmation after receipt GET fai
   const script = descriptor.script.content.replace(/import .* from .*\r?\n/g, '').replace('export default', 'return');
   const calls = [];
   const options = new Function('fetch', 'authHeaders', 'RequestNavigation', 'canRequestChanges', script)(async (url, options) => {
+
     calls.push({ url, method: options.method || 'GET' });
     return Response.json({ error: 'Unable to load details.' }, { status: 500 });
   }, () => ({}), { template: '<nav />' }, status => ['planning', 'confirmed'].includes(status));

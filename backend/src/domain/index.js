@@ -11,6 +11,7 @@ const EVENT_STATUS = Object.freeze({
   CANCELLED: 'cancelled'
 });
 const CHANGE_REQUEST_STATUSES = [EVENT_STATUS.PLANNING, EVENT_STATUS.CONFIRMED];
+const MAJOR_CHANGE_LABELS = Object.freeze({ expectedAttendance: 'Expected Attendance', duration: 'Duration' });
 
 
 class User {
@@ -77,6 +78,21 @@ class EventRequest {
 
   canRequestChanges() {
      return CHANGE_REQUEST_STATUSES.includes(this.status);// AC-008-001: only a submitted event can receive a change request, US-34:Before approval, the Organiser edits the request directly (US-034).
+  }
+
+    // US-010 (AC-010-001): Expected Attendance and Duration are the only "major" aspects.
+  // Moving the event while keeping the same length is NOT a duration change.
+  majorChangesIn(changes) {
+    const major = [];
+    if (changes.expectedAttendance !== undefined && Number(changes.expectedAttendance) !== Number(this.expected_attendance)) {
+      major.push('expectedAttendance');
+    }
+    if (changes.preferredStart !== undefined && changes.preferredEnd !== undefined) {
+      const proposed = new Date(changes.preferredEnd) - new Date(changes.preferredStart);
+      const current = this.preferred_start && this.preferred_end ? new Date(this.preferred_end) - new Date(this.preferred_start) : null;
+      if (current === null || proposed !== current) major.push('duration');
+    }
+    return major;
   }
 
   assignTo(coordinatorId) {
@@ -218,4 +234,4 @@ class ChangeRequest {
     };
   }
 }
-module.exports = { User, EventRequest, Venue, Booking, ChangeRequest, EVENT_STATUS };
+module.exports = { User, EventRequest, Venue, Booking, ChangeRequest, EVENT_STATUS, MAJOR_CHANGE_LABELS };
