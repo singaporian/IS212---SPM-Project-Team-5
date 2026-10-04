@@ -373,10 +373,10 @@ test('US-006 successful POST retains rendered confirmation after receipt GET fai
   const descriptor = parse(source).descriptor;
   const script = descriptor.script.content.replace(/import .* from .*\r?\n/g, '').replace('export default', 'return');
   const calls = [];
-  const options = new Function('fetch', 'authHeaders', 'RequestNavigation', script)(async (url, options) => {
+  const options = new Function('fetch', 'authHeaders', 'RequestNavigation', 'canRequestChanges', script)(async (url, options) => {
     calls.push({ url, method: options.method || 'GET' });
     return Response.json({ error: 'Unable to load details.' }, { status: 500 });
-  }, () => ({}), { template: '<nav />' });
+  }, () => ({}), { template: '<nav />' }, status => ['planning', 'confirmed'].includes(status));
   const receipt = { ...options.data(), $route: { ...route, path: '/requests/submitted/saved-id' } };
   for (const [key, method] of Object.entries(options.methods)) receipt[key] = method.bind(receipt);
   await receipt.load();
