@@ -7,7 +7,8 @@
         <div class="d-flex gap-2 mt-3">
             <router-link v-if="canCreateRequest" class="btn btn-accent btn-lg" to="/requests/new">Create Request</router-link>
             <router-link v-if="canCreateRequest" class="btn btn-outline-primary btn-lg" to="/requests/drafts">My event requests</router-link>
-            <button v-else class="btn btn-outline-secondary btn-lg">{{ secondaryAction }}</button>
+              <router-link v-if="role === 'venue_staff'" class="btn btn-outline-secondary btn-lg" to="/venue/bookings">{{ secondaryAction }}</router-link>
+              <button v-else class="btn btn-outline-secondary btn-lg">{{ secondaryAction }}</button>
         </div>
       </div>
       <div style="width:280px">
@@ -63,7 +64,7 @@
               <router-link v-if="role === 'event_coordinator'" class="btn btn-outline-primary btn-sm w-100 mb-2" to="/technical-support/requirements">Technical Support Requirements</router-link>
               <router-link v-if="canManageEquipment" class="btn btn-outline-secondary btn-sm w-100 mb-2" to="/technical-support/queue">Support Requirements Queue</router-link>
               <router-link v-if="role === 'event_coordinator'" class="btn btn-outline-secondary btn-sm w-100 mb-2" to="/coordinator/requests">Assigned Event Requests</router-link>
-              <router-link v-else-if="role === 'venue_staff'" class="btn btn-outline-secondary btn-sm w-100 mb-2" to="/bookings/pending">{{ primaryRoleAction }}</router-link>
+              <router-link v-else-if="role === 'venue_staff'" class="btn btn-outline-secondary btn-sm w-100 mb-2" to="/venue/bookings">{{ primaryRoleAction }}</router-link>
               <router-link v-else-if="canCreateRequest" class="btn btn-outline-secondary btn-sm w-100 mb-2" to="/requests/drafts">My Drafts</router-link>
               <button v-else class="btn btn-outline-secondary btn-sm w-100 mb-2">{{ primaryRoleAction }}</button>
               <router-link v-if="canCreateRequest" class="btn btn-outline-secondary btn-sm w-100 mb-2" to="/requests/submitted">My Submitted Requests</router-link>

@@ -146,6 +146,88 @@ const operatingDays = [0, 1, 2, 3, 4, 5, 6];
 const availableFrom = '2026-09-13';
 const availableUntil = '2027-01-31';
 
+async function ensureDemoEvent(title, expectedAttendance, organiserId) {
+  const existing = await db.query(
+    'SELECT id FROM events WHERE title = $1 ORDER BY created_at LIMIT 1',
+    [title]
+  );
+  if (existing.rows[0]) {
+    await db.query(
+      `UPDATE events
+       SET organiser_id = $1, status = 'approved', event_type = 'Conference',
+           expected_attendance = $2, purpose = 'Demo booking for US-017'
+       WHERE id = $3`,
+      [organiserId, expectedAttendance, existing.rows[0].id]
+    );
+    return existing.rows[0].id;
+  }
+
+  const result = await db.query(
+    `INSERT INTO events (organiser_id, title, event_type, expected_attendance, purpose, status)
+     VALUES ($1, $2, 'Conference', $3, 'Demo booking for US-017', 'approved')
+     RETURNING id`,
+    [organiserId, title, expectedAttendance]
+  );
+  return result.rows[0].id;
+}
+
+async function seedDemoBookings() {
+  const organiserResult = await db.query('SELECT id FROM users WHERE email = $1', ['organiser@connectsphere.local']);
+  const coordinatorResult = await db.query('SELECT id FROM users WHERE email = $1', ['coordinator@connectsphere.local']);
+  const venueResult = await db.query(
+    'SELECT id, name FROM venues WHERE name = ANY($1::text[])',
+    [['Hotel Ballroom 1', 'Hotel Ballroom 2']]
+  );
+  const venuesByName = new Map(venueResult.rows.map((venue) => [venue.name, venue.id]));
+  if (!organiserResult.rows[0] || !coordinatorResult.rows[0] || !venuesByName.has('Hotel Ballroom 1') || !venuesByName.has('Hotel Ballroom 2')) {
+    throw new Error('Unable to find demo users or venues required for US-017 bookings');
+  }
+
+  const organiserId = organiserResult.rows[0].id;
+  const coordinatorId = coordinatorResult.rows[0].id;
+  const bookingSpecs = [
+    { title: 'US-017 Demo: Morning Conference', attendance: 80, venue: 'Hotel Ballroom 1', day: 3, start: '09:00', end: '11:00', setup: 30, turnaround: 45 },
+    { title: 'US-017 Demo: Midday Workshop', attendance: 45, venue: 'Hotel Ballroom 1', day: 3, start: '11:30', end: '13:00', setup: 30, turnaround: 30 },
+    { title: 'US-017 Demo: Evening Seminar', attendance: 30, venue: 'Hotel Ballroom 1', day: 3, start: '17:00', end: '18:00', setup: 30, turnaround: 30 },
+    { title: 'US-017 Demo: Ballroom Two Reception', attendance: 35, venue: 'Hotel Ballroom 2', day: 5, start: '14:00', end: '16:00', setup: 30, turnaround: 30 }
+  ];
+
+  const events = [];
+  for (const spec of bookingSpecs) {
+    events.push({
+      ...spec,
+      eventId: await ensureDemoEvent(spec.title, spec.attendance, organiserId)
+    });
+  }
+
+  await db.query('DELETE FROM bookings WHERE event_id = ANY($1::uuid[])', [events.map((event) => event.eventId)]);
+  for (const event of events) {
+    await db.query(
+      `INSERT INTO bookings (
+         event_id, venue_id, requested_by, start_time, end_time, status,
+         setup_minutes, turnaround_minutes, decided_by, decided_at
+       )
+       VALUES (
+         $1, $2, $3,
+         (CURRENT_DATE + $4::int) + $5::time,
+         (CURRENT_DATE + $4::int) + $6::time,
+         'confirmed', $7, $8, $9, now()
+       )`,
+      [
+        event.eventId,
+        venuesByName.get(event.venue),
+        coordinatorId,
+        event.day,
+        event.start,
+        event.end,
+        event.setup,
+        event.turnaround,
+        coordinatorId
+      ]
+    );
+  }
+}
+
 async function run() {
   const passwordHash = await bcrypt.hash('Password123!', 12);
   for (const [name, email, role] of demoUsers) {
@@ -210,6 +292,8 @@ async function run() {
     );
   }
   console.log('Demo venues seeded.');
+  await seedDemoBookings();
+  console.log('Demo confirmed bookings seeded.');
   await db.pool.end();
 }
 
