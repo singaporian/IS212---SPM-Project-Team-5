@@ -92,7 +92,8 @@ test('change request API enforces status, ownership and leaves the event unchang
     const crCount = async id =>
       Number((await client.query('SELECT count(*) FROM event_change_requests WHERE event_id = $1', [id])).rows[0].count);
     const notes = async id => (await client.query('SELECT * FROM notifications WHERE event_id = $1', [id])).rows;
-    const valid = { expectedAttendance: 150 };
+    // US-010: attendance/duration changes are now "major", so the ordinary change used here is venue-only.
+    const valid = { venueLayoutPreference: 'Theatre style' };
 
     await t.test('approved events (planning/confirmed) accept a change request (AC-008-001, 005)', async () => {
       for (const status of ['planning', 'confirmed']) {
@@ -118,7 +119,7 @@ test('change request API enforces status, ownership and leaves the event unchang
     await t.test('existing event information is unchanged after the request (AC-008-004)', async () => {
       const id = await makeEvent('planning');
       const before = await eventRow(id);
-      assert.equal((await post(id, { expectedAttendance: 999, venueLayoutPreference: 'Banquet' })).status, 201);
+      assert.equal((await post(id, { venueLayoutPreference: 'Banquet', equipmentRequirements: ['stage'] })).status, 201);
       assert.deepEqual(await eventRow(id), before);
     });
 
