@@ -388,6 +388,46 @@ app.get('/api/bookings/mine', auth.authenticate, auth.requireRoles('event_coordi
   res.json(result.rows);
 });
 
+app.get('/api/bookings', auth.authenticate, auth.requireRoles('venue_staff'), async (req, res) => {
+  try {
+    const { venueId, from, to } = req.query;
+    const filters = ['b.status = \'confirmed\''];
+    const params = [];
+
+    if (venueId) {
+      params.push(venueId);
+      filters.push(`b.venue_id = $${params.length}`);
+    }
+    if (from) {
+      params.push(from);
+      filters.push(`b.start_time::date >= $${params.length}::date`);
+    }
+    if (to) {
+      params.push(to);
+      filters.push(`b.start_time::date <= $${params.length}::date`);
+    }
+
+    const where = `WHERE ${filters.join(' AND ')}`;
+    const result = await db.query(
+      `SELECT b.id, b.venue_id, b.event_id, b.start_time, b.end_time, b.status,
+              b.setup_minutes, b.turnaround_minutes,
+              v.name AS venue_name,
+              e.title AS event_title,
+              e.expected_attendance
+       FROM bookings b
+       JOIN venues v ON v.id = b.venue_id
+       JOIN events e ON e.id = b.event_id
+       ${where}
+       ORDER BY b.venue_id ASC, b.start_time ASC`,
+      params
+    );
+    res.json(result.rows);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Failed to fetch bookings' });
+  }
+});
+
 // Venue Staff review queue and decision endpoint.
 app.get('/api/bookings/pending', auth.authenticate, auth.requireRoles('venue_staff'), async (req, res) => {
   const result = await db.query(

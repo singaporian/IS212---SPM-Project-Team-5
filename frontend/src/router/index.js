@@ -7,6 +7,7 @@ import SubmittedRequestsView from '../views/SubmittedRequestsView.vue'
 import LoginView from '../views/LoginView.vue'
 import VenueSearchView from '../views/VenueSearchView.vue'
 import CoordinatorRequestsView from '../views/CoordinatorRequestsView.vue'
+import VenueBookingsCalendarView from '../views/VenueBookingsCalendarView.vue'
 import AddEquipmentView from '../views/AddEquipmentView.vue'
 import BookingRequestView from '../views/BookingRequestView.vue'
 import PendingBookingRequestsView from '../views/PendingBookingRequestsView.vue'
@@ -31,6 +32,7 @@ const routes = [
   { path: '/access-denied', name: 'access-denied', component: AccessDeniedView, meta: { requiresAuth: true } },
   { path: '/venues', name: 'venue-search', component: VenueSearchView, meta: { requiresAuth: true, roles: ['event_coordinator', 'venue_staff'], resource: 'the venue workspace' } },
   { path: '/coordinator/requests', name: 'coordinator-requests', component: CoordinatorRequestsView, meta: { requiresAuth: true, roles: ['event_coordinator'] } },
+  { path: '/venue/bookings', name: 'venue-bookings-calendar', component: VenueBookingsCalendarView, meta: { requiresAuth: true, roles: ['venue_staff'] } },
   { path: '/requests/new', name: 'new-event-request', component: NewEventRequestView, meta: { requiresAuth: true, roles: ['event_organiser'] } },
   { path: '/equipment/new', name: 'add-equipment', component: AddEquipmentView, meta: { requiresAuth: true, roles: ['technical_support_staff'] } },
   { path: '/bookings/new', name: 'new-booking-request', component: BookingRequestView, meta: { requiresAuth: true, roles: ['event_coordinator'] } },
