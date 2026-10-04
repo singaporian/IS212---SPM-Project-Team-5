@@ -14,6 +14,7 @@
           <div class="d-flex gap-1 align-self-start"><span v-if="item.updated" class="badge bg-info text-dark">Updated</span><span v-if="item.late_request" class="badge bg-warning text-dark">Late request</span></div>
         </div>
         <div class="small mt-3"><strong>Staff required:</strong> {{ item.staff_required }} <span class="ms-3"><strong>Equipment types:</strong> {{ item.equipment_requirements.length }}</span></div>
+        <router-link class="btn btn-sm btn-outline-primary mt-3" :to="{ name: 'support-requirements', query: { eventId: item.event_id } }" @click.stop>Edit</router-link>
         <div v-if="selectedId === item.id" class="details mt-3" @click.stop>
           <strong>Equipment details</strong>
           <ul class="small mb-0"><li v-for="equipment in item.equipment_requirements" :key="equipment.type">{{ equipment.type }}: {{ equipment.quantity }}<span v-if="equipment.details"> — {{ equipment.details }}</span></li><li v-if="!item.equipment_requirements.length">No equipment specified</li></ul>

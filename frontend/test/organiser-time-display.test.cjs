@@ -16,9 +16,9 @@ test('organiser receipt renders AM/PM event times without modifying API data', a
       draft_data: { startTime: raw, endTime: raw, startDate: '2026-10-01', registrationNeeds: 'no' } };
     const before = JSON.stringify(payload);
     const calls = [];
-    const options = new Function('fetch', 'authHeaders', 'RequestNavigation', script)(async (url, options) => {
+    const options = new Function('fetch', 'authHeaders', 'RequestNavigation', 'canRequestChanges', script)(async (url, options) => {
       calls.push({ url, options }); return { ok: true, json: async () => payload };
-    }, () => ({}), {});
+    }, () => ({}), {}, status => ['planning', 'confirmed'].includes(status));
     const state = { ...options.data(), $route: { params: { id: 'event' }, query: {} } };
     for (const [name, method] of Object.entries(options.methods)) state[name] = method.bind(state);
     await state.load();

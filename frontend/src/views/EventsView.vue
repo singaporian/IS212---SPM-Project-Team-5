@@ -29,10 +29,12 @@
             class="d-flex justify-content-between align-items-center border-bottom py-2">
             <div>
               <div class="fw-semibold">{{ ev.title || 'Untitled event' }}</div>
-              <div class="small text-muted">Status: {{ ev.status }}</div>
+                           <div class="small text-muted">Status: {{ statusLabel(ev.status) }}</div>
             </div>
-            <router-link class="btn btn-sm btn-outline-primary"
+            <!-- US-008 (AC-008-001): only approved events (planning/confirmed) can take a change request. -->
+            <router-link v-if="canRequestChanges(ev.status)" class="btn btn-sm btn-outline-primary"
               :to="{ name: 'event-change-request', params: { id: ev.id } }">Request Changes</router-link>
+            <span v-else class="small text-muted">Changes available after approval</span>
           </li>
         </ul>
       </div>
@@ -51,7 +53,7 @@
 
 <script>
 import { getUser } from '../services/auth'
-import { fetchMyEvents } from '../services/changeRequests'
+import { fetchMyEvents, canRequestChanges } from '../services/changeRequests'
 
 export default {
   name: 'EventsView',
@@ -65,8 +67,10 @@ export default {
 },
  mounted() { if (this.isOrganiser) this.load() },
   methods: {
+    canRequestChanges,
     // NEW: fetches the Organiser's own non-draft events and tracks loading/error
     // state for the three template branches above. Also called by the Retry button.
+    statusLabel(status) { return String(status || '').replace(/_/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase()) },
     async load() {
       this.loading = true
       this.error = ''

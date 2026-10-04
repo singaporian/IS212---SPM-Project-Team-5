@@ -445,6 +445,9 @@ function validateSupportRequirements(body) {
   });
   const staffRequired = Number(body.staffRequired);
   if (!Number.isInteger(staffRequired) || staffRequired < 0) throw Object.assign(new Error('Number of staff must be a non-negative whole number'), { status: 400 });
+  if (staffRequired === 0 && normalizedEquipment.length === 0) {
+    throw Object.assign(new Error('Select at least one equipment type or require at least one technical support staff member'), { status: 400 });
+  }
   return { equipment: normalizedEquipment, staffRequired };
 }
 
@@ -454,12 +457,15 @@ app.put('/api/events/:id/technical-support', auth.authenticate, auth.requireRole
   try { requirements = validateSupportRequirements(req.body); } catch (error) { return res.status(error.status || 400).json({ error: error.message }); }
   try {
     const eventResult = await db.query(
-      `SELECT id, title, preferred_start FROM events
+      `SELECT id, title, preferred_start, preferred_end FROM events
        WHERE id = $1 AND assigned_coordinator_id = $2 AND status NOT IN ('completed', 'cancelled', 'rejected')`,
       [req.params.id, req.auth.sub]
     );
     if (!eventResult.rows[0]) return res.status(404).json({ error: 'Event not found or not assigned to you' });
     const event = eventResult.rows[0];
+    if (event.preferred_end && new Date() > new Date(event.preferred_end)) {
+      return res.status(400).json({ error: 'Technical support requirements cannot be submitted after the event has ended' });
+    }
     const lateRequest = event.preferred_start ? new Date() >= new Date(event.preferred_start) : false;
     const existingRequirement = await db.query('SELECT id FROM technical_support_requirements WHERE event_id = $1', [req.params.id]);
     const result = await db.query(

@@ -27,6 +27,9 @@ function parseChangeRequestInput(body) {
     if (end <= start) throw Object.assign(new Error('End time must be later than start time.'), { status: 400 });
     changes.preferredStart = start.toISOString();
     changes.preferredEnd = end.toISOString();
+    if ([start, end].some((d) => d.getUTCMinutes() % 5 !== 0 || d.getUTCSeconds() !== 0 || d.getUTCMilliseconds() !== 0)) {
+      throw Object.assign(new Error('Choose a time in five-minute intervals.'), { status: 400 });
+    }
   }
 
   if (body.expectedAttendance !== undefined) {
