@@ -2,9 +2,8 @@ const express = require('express');
 const db = require('./db');
 const auth = require('./auth');
 
-// Only confirmed bookings have source-backed reservation semantics for US-019.
-// Approved and other states remain contextual records pending lifecycle clarification.
-const RESERVED_STATUSES = new Set(['confirmed']);
+// Team-confirmed lifecycle policy: approved arrangements reserve the venue.
+const { occupiesVenue } = require('./venueOccupancy');
 
 function occupiedInterval(booking) {
   // Missing values add no buffer; do not use the domain model's 30-minute defaults.
@@ -24,7 +23,7 @@ function reviewConflicts(request, bookings, unavailability) {
   const occupied = occupiedInterval(request);
   return [
     ...bookings.filter(booking => booking.id !== request.id && booking.venue_id === request.venue_id &&
-      RESERVED_STATUSES.has(booking.status) && overlaps(occupied, occupiedInterval(booking)))
+      occupiesVenue(booking.status) && overlaps(occupied, occupiedInterval(booking)))
       .map(booking => ({ type: 'booking', id: booking.id, status: booking.status,
         title: booking.event_title || 'Reserved booking', ...occupiedInterval(booking) })),
     ...unavailability.filter(period => period.venue_id === request.venue_id &&
@@ -42,9 +41,10 @@ router.get('/:id/review', auth.authenticate, auth.requireRoles('venue_staff'), a
   }
   try {
     const result = await db.query(`SELECT b.*, e.title AS event_title,
+      u.name AS coordinator_name, u.email AS coordinator_email,
       e.expected_attendance, e.preferred_start, e.preferred_end, e.venue_layout_preference,
       e.accessibility_requirements, e.equipment_requirements, e.draft_data
-      FROM bookings b JOIN events e ON e.id = b.event_id WHERE b.id = $1`, [req.params.id]);
+      FROM bookings b JOIN events e ON e.id = b.event_id LEFT JOIN users u ON u.id = b.requested_by WHERE b.id = $1`, [req.params.id]);
     const request = result.rows[0];
     if (!request) return res.status(404).json({ error: 'Booking request not found.' });
     const occupied = occupiedInterval(request);
@@ -71,10 +71,16 @@ router.get('/:id/review', auth.authenticate, auth.requireRoles('venue_staff'), a
       ORDER BY start_time, id`, bounds);
     const hours = await db.query(`SELECT day_of_week, opens_at::text, closes_at::text
       FROM venue_operating_hours WHERE venue_id = $1 ORDER BY day_of_week`, [request.venue_id]);
+    const conflicts = reviewConflicts(request, bookings.rows, unavailability.rows);
+    if (req.query.summary === '1') return res.json({
+      expected_attendance: request.expected_attendance,
+      reserved_conflicts: conflicts.filter(item => item.type === 'booking').length,
+      unavailable_conflicts: conflicts.filter(item => item.type === 'unavailability').length
+    });
     res.json({ request, venue: venue.rows[0], occupied,
       bookings: bookings.rows.map(booking => ({ ...booking, occupied: occupiedInterval(booking) })),
       unavailability: unavailability.rows, operating_hours: hours.rows,
-      conflicts: reviewConflicts(request, bookings.rows, unavailability.rows) });
+      conflicts });
   } catch (error) {
     console.error('Booking review failed:', error.code || error.message);
     res.status(500).json({ error: 'Unable to load booking review. Please retry.' });

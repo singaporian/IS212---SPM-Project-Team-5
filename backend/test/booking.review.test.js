@@ -7,15 +7,15 @@ const { occupiedInterval, reviewConflicts } = require('../src/bookingReview');
 
 const sample = { id: 'request', venue_id: 'venue', start_time: '2026-10-15T10:03:00+08:00', end_time: '2026-10-15T11:07:00+08:00' };
 
-test('US-019 source-backed conflict classification includes confirmed only and excludes self/other venues', () => {
+test('TC-US019-03/06 AC3: US-019 team-policy conflict classification includes approved and confirmed and excludes self/other venues', () => {
   const bookings = ['pending', 'approved', 'confirmed', 'rejected', 'alternative_suggested', 'hold', 'unknown']
     .map(status => ({ ...sample, id: status, status }));
   bookings.push({ ...sample, status: 'confirmed' }, { ...sample, id: 'elsewhere', venue_id: 'other', status: 'confirmed' });
-  assert.deepEqual(reviewConflicts(sample, bookings, []).map(item => item.id), ['confirmed']);
+  assert.deepEqual(reviewConflicts(sample, bookings, []).map(item => item.id), ['approved', 'confirmed']);
 });
 
 // Technical convention coverage only; exact-touch acceptance awaits team confirmation.
-test('US-019 strict-overlap implementation convention and recorded setup/turnaround calculations', () => {
+test('TC-US019-07/08/09 AC4: US-019 strict-overlap implementation convention and recorded setup/turnaround calculations', () => {
   const next = { ...sample, id: 'next', status: 'confirmed', start_time: sample.end_time, end_time: '2026-10-15T12:00:00+08:00' };
   assert.equal(reviewConflicts(sample, [next], []).length, 0);
   assert.equal(reviewConflicts({ ...sample, turnaround_minutes: 1 }, [next], []).length, 1);
@@ -36,7 +36,7 @@ test('US-019 missing/zero buffers add nothing and overnight minute values are pr
   assert.deepEqual(occupiedInterval({ ...overnight, setup_minutes: null, turnaround_minutes: 0 }), expected);
 });
 
-test('US-019 recorded unavailability uses occupied interval and strict-overlap implementation convention', () => {
+test('TC-US019-04 AC2/AC3: US-019 recorded unavailability uses occupied interval and strict-overlap implementation convention', () => {
   const period = { id: 'blocked', venue_id: sample.venue_id, start_time: sample.end_time, end_time: '2026-10-15T12:00:00+08:00', reason: 'Maintenance' };
   assert.equal(reviewConflicts(sample, [], [period]).length, 0);
   const conflicts = reviewConflicts({ ...sample, turnaround_minutes: 1 }, [], [period]);
@@ -57,8 +57,8 @@ test('US-019 review API returns current requirements/availability without changi
     }
     db.query = (sql, params) => client.query(sql, params);
     const venue = randomUUID(), event = randomUUID(), requestId = randomUUID();
-    await client.query(`INSERT INTO venues (id, name, capacity, facilities, accessibility, notes)
-      VALUES ($1, 'Review room', 100, '["Projector"]', '{"wheelchair":true}', 'Recorded operating note')`, [venue]);
+    await client.query(`INSERT INTO venues (id, name, capacity, facilities, accessibility, notes, location, supported_layouts)
+      VALUES ($1, 'Review room', 100, '["Projector"]', '{"wheelchair":true}', 'Recorded operating note', 'Level 2', '["Classroom"]')`, [venue]);
     await client.query(`INSERT INTO events (id, title, expected_attendance, preferred_start, preferred_end, draft_data)
       VALUES ($1, 'Review workshop', 25, '2026-10-15T09:00:00+08:00', '2026-10-15T10:00:00+08:00',
       '{"venueRequirements":"Original theatre preference","accessibilityNeeds":"Wheelchair access","equipmentRequirements":"Projector"}')`, [event]);
@@ -74,11 +74,11 @@ test('US-019 review API returns current requirements/availability without changi
     server = require('../src/index').listen(0, '127.0.0.1');
     await new Promise(resolve => server.once('listening', resolve));
     const token = role => jwt.sign({ sub: randomUUID(), role }, process.env.JWT_SECRET || 'local-development-secret-change-me');
-    async function get(id = requestId, bearer = token('venue_staff')) {
-      const response = await fetch(`http://127.0.0.1:${server.address().port}/api/bookings/${id}/review`, { headers: bearer ? { Authorization: 'Bearer ' + bearer } : {} });
+    async function get(id = requestId, bearer = token('venue_staff'), summary = false) {
+      const response = await fetch(`http://127.0.0.1:${server.address().port}/api/bookings/${id}/review${summary ? "?summary=1" : ""}`, { headers: bearer ? { Authorization: 'Bearer ' + bearer } : {} });
       return { status: response.status, body: await response.json() };
     }
-    await t.test('required details keep booking values primary and show operating information', async () => {
+    await t.test('TC-US019-01/02 AC1/AC2: required details keep booking values primary and show operating information', async () => {
       const result = await get();
       assert.equal(result.status, 200);
       assert.equal(result.body.request.venue_requirements.description, 'Requested classroom layout');
@@ -87,13 +87,21 @@ test('US-019 review API returns current requirements/availability without changi
       assert.equal(result.body.request.draft_data.accessibilityNeeds, 'Wheelchair access');
       assert.equal(result.body.request.draft_data.equipmentRequirements, 'Projector');
       assert.equal(result.body.request.start_time, '2026-10-15T02:03:00.000Z');
+      assert.equal(result.body.request.end_time, '2026-10-15T03:07:00.000Z');
+      assert.equal(result.body.venue.location, 'Level 2');
+      assert.equal(result.body.venue.capacity, 100);
+      assert.deepEqual(result.body.venue.supported_layouts, ['Classroom']);
+      assert.deepEqual(result.body.venue.accessibility, { wheelchair: true });
+      assert.equal(result.body.venue.notes, 'Recorded operating note');
       assert.equal(result.body.request.preferred_start, '2026-10-15T01:00:00.000Z');
       assert.deepEqual(result.body.venue.facilities, ['Projector']);
       assert.equal(result.body.operating_hours[0].opens_at, '15:03:00');
       assert.equal(result.body.bookings.length, 1);
       assert.deepEqual(result.body.conflicts, []);
+      const summary = await get(requestId, token('venue_staff'), true);
+      assert.deepEqual(summary.body, { expected_attendance: 25, reserved_conflicts: 0, unavailable_conflicts: 0 });
     });
-    await t.test('refresh detects confirmed bookings/unavailability, keeps approved contextual and causes no writes', async () => {
+    await t.test('refresh detects confirmed bookings/unavailability, includes approved reservations and causes no writes', async () => {
       const approved = await booking('approved'), confirmed = await booking('confirmed');
       await booking('rejected');
       await booking('alternative_suggested');
@@ -107,14 +115,30 @@ test('US-019 review API returns current requirements/availability without changi
       const before = await snapshot();
       const result = await get();
       assert.equal(result.status, 200);
-      assert.deepEqual(result.body.conflicts.map(item => item.id).sort(), [confirmed, period].sort());
+      assert.deepEqual(result.body.conflicts.map(item => item.id).sort(), [approved, confirmed, period].sort());
       assert.ok(result.body.bookings.some(item => item.id === approved && item.status === 'approved'));
+      const summary = await get(requestId, token('venue_staff'), true);
+      assert.deepEqual(summary.body, { expected_attendance: 25, reserved_conflicts: 2, unavailable_conflicts: 1 });
       assert.deepEqual(await snapshot(), before);
     });
     await t.test('overnight review retrieves periods on the following Singapore date', async () => {
       const id = await booking('pending', '2026-10-15T23:59:00+08:00', '2026-10-16T00:01:00+08:00');
       const reserved = await booking('confirmed', '2026-10-16T00:00:00+08:00', '2026-10-16T00:30:00+08:00');
       assert.ok((await get(id)).body.conflicts.some(item => item.id === reserved));
+    });
+    await t.test('TC-US019-10 missing optional information keeps review usable', async () => {
+      await client.query('SAVEPOINT optional_fields');
+      try {
+        await client.query("UPDATE events SET draft_data = '{}'::jsonb, expected_attendance = NULL WHERE id = $1", [event]);
+        await client.query('UPDATE venues SET location = NULL, facilities = NULL, accessibility = NULL, supported_layouts = NULL, notes = NULL WHERE id = $1', [venue]);
+        await client.query('DELETE FROM venue_operating_hours WHERE venue_id = $1', [venue]);
+        const result = await get();
+        assert.equal(result.status, 200);
+        assert.equal(result.body.request.expected_attendance, null);
+        assert.equal(result.body.venue.location, null);
+        assert.deepEqual(result.body.operating_hours, []);
+        assert.ok(Array.isArray(result.body.conflicts));
+      } finally { await client.query('ROLLBACK TO SAVEPOINT optional_fields'); }
     });
     await t.test('only venue staff can review and missing requests return 404', async () => {
       assert.equal((await get(requestId, '')).status, 401);
@@ -139,3 +163,8 @@ test('US-019 review API returns current requirements/availability without changi
     await db.pool.end();
   }
 });
+
+ test('TC-US019-05 AC3: separated reserved interval is not a conflict', () => {
+  const later = { ...sample, id: 'later', status: 'approved', start_time: '2026-10-15T13:00:00+08:00', end_time: '2026-10-15T14:00:00+08:00' };
+  assert.deepEqual(reviewConflicts(sample, [later], []), []);
+ });
