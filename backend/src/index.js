@@ -311,25 +311,108 @@ function parseBookingInput(body) {
   const endTime = new Date(body.endTime);
   const setupMinutes = Number(body.setupMinutes ?? 30);
   const turnaroundMinutes = Number(body.turnaroundMinutes ?? 30);
+  const requiredCapacity = body.requiredCapacity === undefined || body.requiredCapacity === null || body.requiredCapacity === '' ? null : Number(body.requiredCapacity);
   if (!uuidPattern.test(body.eventId || '') || !uuidPattern.test(body.venueId || '')) throw Object.assign(new Error('A valid event and venue are required'), { status: 400 });
   if (!Number.isFinite(startTime.getTime()) || !Number.isFinite(endTime.getTime()) || endTime <= startTime) throw Object.assign(new Error('End time must be later than start time'), { status: 400 });
   if (!Number.isInteger(setupMinutes) || setupMinutes < 0 || !Number.isInteger(turnaroundMinutes) || turnaroundMinutes < 0) throw Object.assign(new Error('Setup and turnaround times must be non-negative whole minutes'), { status: 400 });
+  if (requiredCapacity !== null && (!Number.isInteger(requiredCapacity) || requiredCapacity <= 0)) throw Object.assign(new Error('Required capacity must be a positive whole number'), { status: 400 });
   const venueRequirements = body.venueRequirements && typeof body.venueRequirements === 'object' && !Array.isArray(body.venueRequirements) ? body.venueRequirements : {};
-  return { startTime, endTime, setupMinutes, turnaroundMinutes, venueRequirements, acknowledgeConflict: body.acknowledgeConflict === true };
+  return { startTime, endTime, setupMinutes, turnaroundMinutes, requiredCapacity, venueRequirements, acknowledgeConflict: body.acknowledgeConflict === true };
 }
 
 // US-015: create a pending venue booking request for an event assigned to this coordinator.
+app.post('/api/bookings/requests/batch', auth.authenticate, auth.requireRoles('event_coordinator'), async (req, res) => {
+  const bookings = Array.isArray(req.body.bookings) ? req.body.bookings : [];
+  if (!bookings.length) return res.status(400).json({ error: 'Add at least one venue booking' });
+  let client;
+  try {
+    client = await db.pool.connect();
+    await client.query('BEGIN');
+    const eventResult = await client.query(
+      `SELECT id, title, expected_attendance FROM events WHERE id = $1 AND assigned_coordinator_id = $2 AND status = 'submitted'`,
+      [req.body.eventId, req.auth.sub]
+    );
+    if (!eventResult.rows[0]) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Event not found or not assigned to you' });
+    }
+
+    const prepared = [];
+    const conflicts = [];
+    for (let index = 0; index < bookings.length; index += 1) {
+      let input;
+      try { input = parseBookingInput({ ...bookings[index], eventId: req.body.eventId }); }
+      catch (error) { await client.query('ROLLBACK'); return res.status(error.status || 400).json({ error: `Venue ${index + 1}: ${error.message}` }); }
+      const venueResult = await client.query('SELECT id, name, capacity FROM venues WHERE id = $1', [bookings[index].venueId]);
+      if (!venueResult.rows[0]) { await client.query('ROLLBACK'); return res.status(404).json({ error: `Venue ${index + 1} was not found` }); }
+      input.requiredCapacity = input.requiredCapacity ?? eventResult.rows[0].expected_attendance;
+      if (input.requiredCapacity && venueResult.rows[0].capacity < input.requiredCapacity) { await client.query('ROLLBACK'); return res.status(400).json({ error: `Venue ${index + 1} capacity is insufficient for the required capacity` }); }
+      const conflictResult = await client.query(
+        `SELECT b.id, b.start_time, b.end_time, b.status, v.name AS venue_name, e.title AS event_title
+         FROM bookings b JOIN venues v ON v.id = b.venue_id LEFT JOIN events e ON e.id = b.event_id
+         WHERE b.venue_id = $1 AND b.status IN ('pending', 'approved', 'confirmed')
+           AND b.start_time - (b.setup_minutes * interval '1 minute') < $3::timestamptz + ($5 * interval '1 minute')
+           AND b.end_time + (b.turnaround_minutes * interval '1 minute') > $2::timestamptz - ($4 * interval '1 minute')
+         ORDER BY b.start_time ASC`,
+        [bookings[index].venueId, input.startTime.toISOString(), input.endTime.toISOString(), input.setupMinutes, input.turnaroundMinutes]
+      );
+      const rowConflicts = conflictResult.rows.map((conflict) => ({
+        booking_id: conflict.id,
+        event_title: conflict.event_title || 'Existing booking',
+        venue_name: conflict.venue_name,
+        start_time: conflict.start_time,
+        end_time: conflict.end_time,
+        status: conflict.status
+      }));
+      if (rowConflicts.length) conflicts.push({ index, venue_name: venueResult.rows[0].name, conflicts: rowConflicts });
+      prepared.push({ index, input, venueId: bookings[index].venueId, venueName: venueResult.rows[0].name });
+    }
+    if (conflicts.length && req.body.acknowledgeConflicts !== true) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'One or more venue bookings have conflicts. Review and acknowledge them to continue.', conflicts });
+    }
+    const created = [];
+    for (const booking of prepared) {
+      const result = await client.query(
+        `INSERT INTO bookings (event_id, venue_id, requested_by, required_capacity, start_time, end_time, status,
+                              setup_minutes, turnaround_minutes, venue_requirements,
+                              conflict_warning, conflict_details)
+         VALUES ($1, $2, $3, $4, $5, $6, 'pending', $7, $8, $9::jsonb, $10, $11::jsonb)
+         RETURNING id, event_id, venue_id, start_time, end_time, status, setup_minutes,
+                   turnaround_minutes, venue_requirements, conflict_warning, conflict_details, created_at`,
+        [req.body.eventId, booking.venueId, req.auth.sub, booking.input.requiredCapacity, booking.input.startTime.toISOString(), booking.input.endTime.toISOString(), booking.input.setupMinutes, booking.input.turnaroundMinutes, JSON.stringify(booking.input.venueRequirements), conflicts.some((entry) => entry.index === booking.index), JSON.stringify((conflicts.find((entry) => entry.index === booking.index) || {}).conflicts || [])]
+      );
+      created.push(result.rows[0]);
+    }
+    await client.query('COMMIT');
+    await db.query(
+      `INSERT INTO notifications (user_id, event_id, message)
+       SELECT id, $1, $2 FROM users WHERE role = 'venue_staff'`,
+      [req.body.eventId, `${created.length} venue booking request${created.length === 1 ? '' : 's'} submitted for ${eventResult.rows[0].title}`]
+    );
+    res.status(201).json({ event_id: req.body.eventId, bookings: created });
+  } catch (error) {
+    if (client) await client.query('ROLLBACK').catch(() => {});
+    console.error(error);
+    res.status(500).json({ error: 'Unable to submit venue bookings. Your fields are still available; please retry.' });
+  } finally {
+    if (client) client.release();
+  }
+});
+
 app.post('/api/bookings/requests', auth.authenticate, auth.requireRoles('event_coordinator'), async (req, res) => {
   let input;
   try { input = parseBookingInput(req.body); } catch (error) { return res.status(error.status || 400).json({ error: error.message }); }
   try {
     const eventResult = await db.query(
-      `SELECT id, title FROM events WHERE id = $1 AND assigned_coordinator_id = $2 AND status = 'submitted'`,
+      `SELECT id, title, expected_attendance FROM events WHERE id = $1 AND assigned_coordinator_id = $2 AND status = 'submitted'`,
       [req.body.eventId, req.auth.sub]
     );
     if (!eventResult.rows[0]) return res.status(404).json({ error: 'Event not found or not assigned to you' });
-    const venueResult = await db.query('SELECT id, name FROM venues WHERE id = $1', [req.body.venueId]);
+    const venueResult = await db.query('SELECT id, name, capacity FROM venues WHERE id = $1', [req.body.venueId]);
     if (!venueResult.rows[0]) return res.status(404).json({ error: 'Venue not found' });
+    input.requiredCapacity = input.requiredCapacity ?? eventResult.rows[0].expected_attendance;
+    if (input.requiredCapacity && venueResult.rows[0].capacity < input.requiredCapacity) return res.status(400).json({ error: 'Venue capacity is insufficient for the required capacity' });
 
     const conflicts = await db.query(
       `SELECT b.id, b.start_time, b.end_time, b.status, b.setup_minutes, b.turnaround_minutes,
@@ -357,13 +440,13 @@ app.post('/api/bookings/requests', auth.authenticate, auth.requireRoles('event_c
     }
 
     const bookingResult = await db.query(
-      `INSERT INTO bookings (event_id, venue_id, requested_by, start_time, end_time, status,
+      `INSERT INTO bookings (event_id, venue_id, requested_by, required_capacity, start_time, end_time, status,
                             setup_minutes, turnaround_minutes, venue_requirements,
                             conflict_warning, conflict_details)
-       VALUES ($1, $2, $3, $4, $5, 'pending', $6, $7, $8::jsonb, $9, $10::jsonb)
+      VALUES ($1, $2, $3, $4, $5, $6, 'pending', $7, $8, $9::jsonb, $10, $11::jsonb)
        RETURNING id, event_id, venue_id, start_time, end_time, status, setup_minutes,
                  turnaround_minutes, venue_requirements, conflict_warning, conflict_details, created_at`,
-      [req.body.eventId, req.body.venueId, req.auth.sub, input.startTime.toISOString(), input.endTime.toISOString(), input.setupMinutes, input.turnaroundMinutes, JSON.stringify(input.venueRequirements), conflictDetails.length > 0, JSON.stringify(conflictDetails)]
+      [req.body.eventId, req.body.venueId, req.auth.sub, input.requiredCapacity, input.startTime.toISOString(), input.endTime.toISOString(), input.setupMinutes, input.turnaroundMinutes, JSON.stringify(input.venueRequirements), conflictDetails.length > 0, JSON.stringify(conflictDetails)]
     );
     await db.query(
       `INSERT INTO notifications (user_id, event_id, message)

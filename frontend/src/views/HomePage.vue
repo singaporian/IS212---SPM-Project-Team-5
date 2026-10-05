@@ -69,7 +69,7 @@
               <router-link v-else-if="canCreateRequest" class="btn btn-outline-secondary btn-sm w-100 mb-2" to="/requests/drafts">My Drafts</router-link>
               <button v-else class="btn btn-outline-secondary btn-sm w-100 mb-2">{{ primaryRoleAction }}</button>
               <router-link v-if="canCreateRequest" class="btn btn-outline-secondary btn-sm w-100 mb-2" to="/requests/submitted">My Submitted Requests</router-link>
-              <router-link v-if="role === 'event_coordinator'" class="btn btn-outline-success btn-sm w-100" to="/bookings/new">Create Venue Booking Request</router-link>
+              <router-link v-if="role === 'event_coordinator'" class="btn btn-outline-success btn-sm w-100" to="/bookings/batch">Create Venue Booking Requests</router-link>
           </div>
         </div>
 

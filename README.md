@@ -220,6 +220,18 @@ npm run init-db
 
 The coordinator dashboard also shows a summary of submitted technical support requirements, with a link back to the full management page. The coordinator form retains its input when a save fails and displays a retryable error.
 
+## Multiple Venue Bookings (US-036)
+
+An event can have multiple independent venue booking requests. Each request has its own venue, date/time, setup and turnaround times, requirements, conflict details, status, and Venue Staff decision. Submitting another request for the same event creates another booking row rather than replacing the earlier request.
+
+Event Coordinators can open **All Venue Booking Requests** and filter the list by event to view every venue arrangement for that event together. Venue Staff review and decide each booking independently, so approving, rejecting, or suggesting an alternative for one venue does not change the other bookings.
+
+To submit several venue bookings together, Event Coordinators can open `/bookings/batch`, add one row per venue, review all rows, and submit them in one action. The batch is transactional: if validation fails or conflicts require acknowledgement, no rows are saved until the Coordinator resolves or acknowledges the conflicts. Each saved row remains an independent booking request.
+
+The batch endpoint is `POST /api/bookings/requests/batch`.
+
+The event-wide `expected_attendance` value comes from the Event Organiser's submitted event request. The batch form uses it as the default **Required capacity** for each venue row, while the Coordinator can reduce it for breakout rooms or other partial-space arrangements. Each venue is checked independently against that row's required capacity.
+
 ## Notifications (US-002)
 
 Authenticated users can click the bell icon in the header to view their notification list. Unread notifications show a count badge and a highlighted row; clicking a notification marks it as read. The list is loaded from `/api/notifications` for the signed-in user only, and read state is updated through `/api/notifications/:id/read` with ownership checks.

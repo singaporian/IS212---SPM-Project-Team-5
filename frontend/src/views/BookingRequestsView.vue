@@ -7,17 +7,23 @@
         <h1 class="h3 mb-1">All Venue Booking Requests</h1>
         <p class="text-muted mb-0">Review the venue requests submitted for your assigned events.</p>
       </div>
-      <button class="btn btn-outline-primary" @click="loadRequests">Refresh</button>
+      <div class="d-flex gap-2">
+        <select v-model="eventFilter" class="form-select" aria-label="Filter by event">
+          <option value="">All events</option>
+          <option v-for="event in events" :key="event.id" :value="event.id">{{ event.title }}</option>
+        </select>
+        <button class="btn btn-outline-primary" @click="loadRequests">Refresh</button>
+      </div>
     </div>
 
     <div v-if="error" class="alert alert-danger">{{ error }}</div>
-    <div v-else-if="!requests.length" class="empty-state text-center">
+    <div v-else-if="!filteredRequests.length" class="empty-state text-center">
       <i class="bi bi-calendar2-x display-5"></i>
       <h2 class="h5 mt-3">No venue booking requests yet</h2>
       <p class="text-muted mb-0">Submitted requests will appear here.</p>
     </div>
     <div v-else class="row g-3">
-      <div v-for="request in requests" :key="request.id" class="col-lg-6">
+      <div v-for="request in filteredRequests" :key="request.id" class="col-lg-6">
         <article class="card h-100 booking-card" :class="{ 'booking-card-selected': selectedId === request.id }" tabindex="0" role="button" @click="toggleDetails(request.id)" @keydown.enter="toggleDetails(request.id)">
           <div class="card-body">
             <div class="d-flex justify-content-between gap-3">
@@ -49,7 +55,16 @@ import { authHeaders, clearSession } from '../services/auth'
 
 export default {
   name: 'BookingRequestsView',
-  data() { return { requests: [], error: '', selectedId: null } },
+  data() { return { requests: [], error: '', selectedId: null, eventFilter: '' } },
+  computed: {
+    events() {
+      const unique = new Map(this.requests.map((request) => [request.event_id, { id: request.event_id, title: request.event_title }]))
+      return [...unique.values()]
+    },
+    filteredRequests() {
+      return this.eventFilter ? this.requests.filter((request) => request.event_id === this.eventFilter) : this.requests
+    }
+  },
   methods: {
     async loadRequests() {
       this.error = ''

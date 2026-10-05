@@ -8,8 +8,11 @@
         <p class="text-muted">Choose an assigned event and venue. Conflicts are flagged for Venue Staff review.</p>
 
         <div v-if="success" class="alert alert-success">
-          Booking request submitted. Venue Staff can now review it.
-          <router-link to="/" class="alert-link ms-1">Return to dashboard</router-link>
+          Booking request for <strong>{{ submittedEventTitle }}</strong> submitted. Venue Staff can now review this venue arrangement.
+          <div class="mt-3 d-flex gap-2">
+            <button class="btn btn-sm btn-accent" type="button" @click="addAnotherVenue">Add another venue for this event</button>
+            <router-link to="/bookings" class="btn btn-sm btn-outline-secondary">View all venue bookings</router-link>
+          </div>
         </div>
         <form v-else @submit.prevent="reviewRequest">
           <div class="row g-3">
@@ -79,6 +82,7 @@ export default {
       timeValidationError: '',
       submitting: false,
       success: false,
+      submittedEventTitle: '',
       form: { eventId: '', venueId: '', date: '', startTime: '', endTime: '', setupMinutes: 30, turnaroundMinutes: 30, requirements: '' }
     }
   },
@@ -144,8 +148,26 @@ export default {
       if (response.status === 401) { clearSession(); this.$router.push('/login'); return }
       if (response.status === 409) { this.conflicts = data.conflicts || []; this.error = data.error; this.showSummary = true; this.submitting = false; return }
       if (!response.ok) { this.error = data.error || 'Unable to submit booking request. Please retry.'; this.submitting = false; return }
+      this.submittedEventTitle = this.selectedEvent?.title || 'this event'
       this.success = true
       this.submitting = false
+    },
+    addAnotherVenue() {
+      this.success = false
+      this.showSummary = false
+      this.conflicts = []
+      this.error = ''
+      this.timeValidationError = ''
+      this.form = {
+        eventId: this.form.eventId,
+        venueId: '',
+        date: '',
+        startTime: '',
+        endTime: '',
+        setupMinutes: 30,
+        turnaroundMinutes: 30,
+        requirements: ''
+      }
     }
   },
   mounted() { this.loadOptions() }
