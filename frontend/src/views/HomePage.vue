@@ -2,6 +2,7 @@
   <div>
     <section class="hero d-flex align-items-center">
       <div class="me-4" style="flex:1">
+          <p class="eyebrow mb-1">{{ roleLabel }} workspace</p>
           <h1 class="display-5">{{ greeting }}</h1>
           <p class="lead">{{ roleDescription }}</p>
         <div class="d-flex gap-2 mt-3">
@@ -69,6 +70,13 @@
               <button v-else class="btn btn-outline-secondary btn-sm w-100 mb-2">{{ primaryRoleAction }}</button>
               <router-link v-if="canCreateRequest" class="btn btn-outline-secondary btn-sm w-100 mb-2" to="/requests/submitted">My Submitted Requests</router-link>
               <router-link v-if="role === 'event_coordinator'" class="btn btn-outline-success btn-sm w-100" to="/bookings/new">Create Venue Booking Request</router-link>
+          </div>
+        </div>
+
+        <div v-if="isCoordinatorLead || isSafetyOfficer" class="card mt-3">
+          <div class="card-body">
+            <h6>{{ roleLabel }} focus</h6>
+            <p class="small text-muted mb-0">{{ roleFocus }}</p>
           </div>
         </div>
 
@@ -162,6 +170,15 @@ export default {
     canSearchVenues() { return ['event_coordinator', 'venue_staff'].includes(this.role) },
     canCreateRequest() { return ['event_organiser'].includes(this.role) },
     canManageEquipment() { return this.role === 'technical_support_staff' },
+    isCoordinatorLead() { return this.role === 'event_coordinator_lead' },
+    isSafetyOfficer() { return this.role === 'safety_officer' },
+    roleLabel() {
+      const labels = {
+        event_coordinator_lead: 'Event Coordinator Lead',
+        safety_officer: 'Safety Officer'
+      }
+      return labels[this.role] || this.role.replaceAll('_', ' ').replace(/\b\w/g, (letter) => letter.toUpperCase())
+    },
     greeting() { return `Welcome, ${this.user.name || 'there'}` },
     roleDescription() {
       const descriptions = {
@@ -169,15 +186,29 @@ export default {
         event_organiser: 'Shape your event from an early idea into a clear request for ConnectSphere.',
         event_coordinator: 'Coordinate event requests, venues, schedules, and stakeholder decisions.',
         venue_staff: 'Keep venue availability, bookings, and preparation on track.',
-        technical_support_staff: 'Plan equipment and technical support for every event.'
+        technical_support_staff: 'Plan equipment and technical support for every event.',
+        event_coordinator_lead: 'Oversee incoming event requests and coordinate assignment across the Event Coordinator team.',
+        safety_officer: 'Review operational safety arrangements before events proceed to preparation.'
       }
       return descriptions[this.role] || descriptions.attendee
     },
+    roleFocus() {
+      if (this.isCoordinatorLead) return 'Assignment oversight tools will appear here as the Lead workflow is implemented.'
+      return 'Operational safety review tools will appear here as the Safety Officer workflow is implemented.'
+    },
     secondaryAction() { return this.role === 'attendee' ? 'Browse Events' : 'View Calendar' },
-    workspaceTitle() { return this.canSearchVenues ? 'Venue workspace' : 'Your workspace' },
-    workspaceDescription() { return this.canSearchVenues ? 'Search and shortlist suitable venues for your event.' : 'Role-specific tools and updates will appear here.' },
+    workspaceTitle() {
+      if (this.isCoordinatorLead) return 'Coordinator Lead workspace'
+      if (this.isSafetyOfficer) return 'Safety review workspace'
+      return this.canSearchVenues ? 'Venue workspace' : 'Your workspace'
+    },
+    workspaceDescription() {
+      if (this.isCoordinatorLead) return 'Monitor incoming requests and coordinator assignment activity.'
+      if (this.isSafetyOfficer) return 'Monitor events awaiting operational safety review.'
+      return this.canSearchVenues ? 'Search and shortlist suitable venues for your event.' : 'Role-specific tools and updates will appear here.'
+    },
     primaryRoleAction() {
-      const actions = { attendee: 'My Registrations', event_organiser: 'My Event Requests', event_coordinator: 'Assigned Requests', venue_staff: 'Upcoming Bookings', technical_support_staff: 'Support Schedule' }
+      const actions = { attendee: 'My Registrations', event_organiser: 'My Event Requests', event_coordinator: 'Assigned Requests', venue_staff: 'Upcoming Bookings', technical_support_staff: 'Support Schedule', event_coordinator_lead: 'Assignment Oversight', safety_officer: 'Safety Reviews' }
       return actions[this.role] || 'My Workspace'
     }
   },

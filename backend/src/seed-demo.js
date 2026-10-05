@@ -4,8 +4,12 @@ const db = require('./db');
 const demoUsers = [
   ['Event Organiser', 'organiser@connectsphere.local', 'event_organiser'],
   ['Event Coordinator', 'coordinator@connectsphere.local', 'event_coordinator'],
+  ['Event Coordinator Two', 'coordinator2@connectsphere.local', 'event_coordinator'],
+  ['Event Coordinator Three', 'coordinator3@connectsphere.local', 'event_coordinator'],
+  ['Event Coordinator Lead', 'coordinatorlead@connectsphere.local', 'event_coordinator_lead'],
   ['Venue Staff', 'venue@connectsphere.local', 'venue_staff'],
   ['Technical Support', 'tech@connectsphere.local', 'technical_support_staff'],
+  ['Safety Officer', 'safety@connectsphere.local', 'safety_officer'],
   ['Attendee', 'attendee@connectsphere.local', 'attendee']
 ];
 

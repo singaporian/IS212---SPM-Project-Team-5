@@ -1,5 +1,5 @@
 const PUBLIC_REGISTRATION_ROLES = ['attendee', 'event_organiser'];
-const INTERNAL_ROLES = ['event_coordinator', 'venue_staff', 'technical_support_staff'];
+const INTERNAL_ROLES = ['event_coordinator', 'event_coordinator_lead', 'venue_staff', 'technical_support_staff', 'safety_officer'];
 const EVENT_STATUS = Object.freeze({
   DRAFT: 'draft',
   SUBMITTED: 'submitted',
