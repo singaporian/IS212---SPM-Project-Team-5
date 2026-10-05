@@ -162,6 +162,14 @@ CREATE TABLE IF NOT EXISTS equipment_reservations (
   created_at timestamptz DEFAULT now()
 );
 
+-- US-023: one reservation row per equipment item per event; deleting the row returns its units to stock.
+ALTER TABLE equipment_reservations ADD COLUMN IF NOT EXISTS status text NOT NULL DEFAULT 'reserved';
+ALTER TABLE equipment_reservations ADD COLUMN IF NOT EXISTS reserved_by uuid REFERENCES users(id) ON DELETE SET NULL;
+ALTER TABLE equipment_reservations ADD COLUMN IF NOT EXISTS updated_at timestamptz NOT NULL DEFAULT now();
+ALTER TABLE equipment_reservations DROP CONSTRAINT IF EXISTS equipment_reservations_quantity_positive;
+ALTER TABLE equipment_reservations ADD CONSTRAINT equipment_reservations_quantity_positive CHECK (quantity > 0);
+CREATE UNIQUE INDEX IF NOT EXISTS equipment_reservations_equipment_event_unique ON equipment_reservations (equipment_id, event_id);
+
 -- Attendee registrations
 CREATE TABLE IF NOT EXISTS registrations (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),

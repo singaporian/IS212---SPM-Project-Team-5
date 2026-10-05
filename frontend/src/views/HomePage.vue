@@ -38,7 +38,10 @@
             <div class="mt-3">
               <ul class="list-unstyled">
                   <li v-if="!venues.length && canSearchVenues" class="text-muted">Use Find Venues to search the venue directory.</li>
-                  <li v-if="canManageEquipment"><router-link class="btn btn-accent" to="/equipment/new"><i class="bi bi-plus-lg"></i> Add Equipment</router-link></li>
+                  <li v-if="canManageEquipment" class="d-flex flex-wrap gap-2">
+                    <router-link class="btn btn-accent" to="/equipment/new"><i class="bi bi-plus-lg"></i> Add Equipment</router-link>
+                    <router-link class="btn btn-accent" to="/equipment/reserve"><i class="bi bi-calendar-check"></i> Reserve Equipment</router-link>
+                  </li>
                   <li v-else-if="!canSearchVenues" class="text-muted">Your role workspace is ready. More tools will appear as features are added.</li>
                 <li v-for="v in venues" :key="v.id" class="list-group-item d-flex justify-content-between align-items-center">
                   <div>

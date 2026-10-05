@@ -149,8 +149,9 @@ const demoVenues = [
 const operatingDays = [0, 1, 2, 3, 4, 5, 6];
 const availableFrom = '2026-09-13';
 const availableUntil = '2027-01-31';
+const US023_PURPOSE = 'Demo event for US-023 equipment reservations';
 
-async function ensureDemoEvent(title, expectedAttendance, organiserId) {
+async function ensureDemoEvent(title, expectedAttendance, organiserId, purpose = 'Demo booking for US-017') {
   const existing = await db.query(
     'SELECT id FROM events WHERE title = $1 ORDER BY created_at LIMIT 1',
     [title]
@@ -159,18 +160,18 @@ async function ensureDemoEvent(title, expectedAttendance, organiserId) {
     await db.query(
       `UPDATE events
        SET organiser_id = $1, status = 'approved', event_type = 'Conference',
-           expected_attendance = $2, purpose = 'Demo booking for US-017'
+           expected_attendance = $2, purpose = $4
        WHERE id = $3`,
-      [organiserId, expectedAttendance, existing.rows[0].id]
+      [organiserId, expectedAttendance, existing.rows[0].id, purpose]
     );
     return existing.rows[0].id;
   }
 
   const result = await db.query(
     `INSERT INTO events (organiser_id, title, event_type, expected_attendance, purpose, status)
-     VALUES ($1, $2, 'Conference', $3, 'Demo booking for US-017', 'approved')
+     VALUES ($1, $2, 'Conference', $3, $4, 'approved')
      RETURNING id`,
-    [organiserId, title, expectedAttendance]
+    [organiserId, title, expectedAttendance, purpose]
   );
   return result.rows[0].id;
 }
@@ -193,14 +194,19 @@ async function seedDemoBookings() {
     { title: 'US-017 Demo: Morning Conference', attendance: 80, venue: 'Hotel Ballroom 1', day: 3, start: '09:00', end: '11:00', setup: 30, turnaround: 45 },
     { title: 'US-017 Demo: Midday Workshop', attendance: 45, venue: 'Hotel Ballroom 1', day: 3, start: '11:30', end: '13:00', setup: 30, turnaround: 30 },
     { title: 'US-017 Demo: Evening Seminar', attendance: 30, venue: 'Hotel Ballroom 1', day: 3, start: '17:00', end: '18:00', setup: 30, turnaround: 30 },
-    { title: 'US-017 Demo: Ballroom Two Reception', attendance: 35, venue: 'Hotel Ballroom 2', day: 5, start: '14:00', end: '16:00', setup: 30, turnaround: 30 }
+    { title: 'US-017 Demo: Ballroom Two Reception', attendance: 35, venue: 'Hotel Ballroom 2', day: 5, start: '14:00', end: '16:00', setup: 30, turnaround: 30 },
+    // US-023: overlaps the Morning Conference and the Midday Workshop, which do not overlap each other.
+    { title: 'US-023 Demo: Product Launch', attendance: 60, venue: 'Hotel Ballroom 2', day: 3, start: '10:00', end: '12:00', setup: 30, turnaround: 30, purpose: US023_PURPOSE },
+    // US-023: one event with two venue bookings, so it has two scheduled windows.
+    { title: 'US-023 Demo: Two-Room Summit', attendance: 50, venue: 'Hotel Ballroom 1', day: 6, start: '09:00', end: '12:00', setup: 30, turnaround: 30, purpose: US023_PURPOSE },
+    { title: 'US-023 Demo: Two-Room Summit', attendance: 50, venue: 'Hotel Ballroom 2', day: 6, start: '13:00', end: '17:00', setup: 30, turnaround: 30, purpose: US023_PURPOSE }
   ];
 
   const events = [];
   for (const spec of bookingSpecs) {
     events.push({
       ...spec,
-      eventId: await ensureDemoEvent(spec.title, spec.attendance, organiserId)
+      eventId: await ensureDemoEvent(spec.title, spec.attendance, organiserId, spec.purpose)
     });
   }
 
@@ -229,6 +235,45 @@ async function seedDemoBookings() {
         coordinatorId
       ]
     );
+  }
+}
+
+// US-023: demo inventory plus reservations that fully commit the microphones during the Morning Conference.
+const demoEquipment = [
+  { name: 'Wireless Microphone', type: 'Audio', quantity: 4, specs: { 'Frequency range': '470-530 MHz' } },
+  { name: 'Laser Projector', type: 'Video & Display', quantity: 2, specs: { Brightness: '7000 lumens' } },
+  { name: 'LED Par Light', type: 'Lighting', quantity: 10, specs: {} }
+];
+const demoReservations = [
+  { equipment: 'Wireless Microphone', event: 'US-017 Demo: Morning Conference', quantity: 4 },
+  { equipment: 'Laser Projector', event: 'US-017 Demo: Morning Conference', quantity: 1 },
+  { equipment: 'Laser Projector', event: 'US-017 Demo: Midday Workshop', quantity: 1 },
+  { equipment: 'LED Par Light', event: 'US-017 Demo: Evening Seminar', quantity: 6 }
+];
+
+async function seedDemoEquipment() {
+  const ids = new Map();
+  for (const item of demoEquipment) {
+    const existing = await db.query('SELECT id FROM equipment WHERE name = $1 ORDER BY created_at LIMIT 1', [item.name]);
+    const result = existing.rows[0]
+      ? await db.query(
+        `UPDATE equipment SET equipment_type = $2, total_quantity = $3, status = 'available', specs = $4::jsonb
+         WHERE id = $1 RETURNING id`,
+        [existing.rows[0].id, item.type, item.quantity, JSON.stringify(item.specs)])
+      : await db.query(
+        `INSERT INTO equipment (name, equipment_type, total_quantity, status, specs)
+         VALUES ($1, $2, $3, 'available', $4::jsonb) RETURNING id`,
+        [item.name, item.type, item.quantity, JSON.stringify(item.specs)]);
+    ids.set(item.name, result.rows[0].id);
+  }
+
+  const technician = await db.query('SELECT id FROM users WHERE email = $1', ['tech@connectsphere.local']);
+  await db.query('DELETE FROM equipment_reservations WHERE equipment_id = ANY($1::uuid[])', [[...ids.values()]]);
+  for (const reservation of demoReservations) {
+    await db.query(
+      `INSERT INTO equipment_reservations (equipment_id, event_id, quantity, status, reserved_by)
+       SELECT $1, id, $3, 'reserved', $4 FROM events WHERE title = $2 ORDER BY created_at LIMIT 1`,
+      [ids.get(reservation.equipment), reservation.event, reservation.quantity, technician.rows[0]?.id || null]);
   }
 }
 
@@ -298,6 +343,8 @@ async function run() {
   console.log('Demo venues seeded.');
   await seedDemoBookings();
   console.log('Demo confirmed bookings seeded.');
+  await seedDemoEquipment();
+  console.log('Demo equipment and reservations seeded.');
   await db.pool.end();
 }
 

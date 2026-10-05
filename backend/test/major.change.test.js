@@ -65,7 +65,7 @@ test('major-change API blocks change requests and runs cancel-and-resubmit atomi
   let server;
   try {
     await client.query('BEGIN');
-    for (const table of ['events', 'event_change_requests', 'notifications', 'event_changes']) {
+    for (const table of ['events', 'event_change_requests', 'notifications', 'event_changes', 'equipment_reservations']) {
       await client.query(`CREATE TEMP TABLE ${table} (LIKE public.${table} INCLUDING ALL) ON COMMIT DROP`);
     }
     db.query = (sql, params) => client.query(sql, params);
@@ -151,6 +151,7 @@ test('major-change API blocks change requests and runs cancel-and-resubmit atomi
 
     await t.test('proceeding cancels the event and opens a pre-filled draft (AC-010-004)', async () => {
       const id = await makeEvent();
+      await client.query('INSERT INTO equipment_reservations (equipment_id, event_id, quantity) VALUES ($1, $2, 3)', [randomUUID(), id]);
       const draftsBefore = await eventCount();
       const result = await post(`/${id}/cancel-and-resubmit`, { ...attendance, ...longer, equipmentRequirements: ['projector', 'mic'] });
       assert.equal(result.status, 201);
@@ -159,6 +160,7 @@ test('major-change API blocks change requests and runs cancel-and-resubmit atomi
       assert.equal(await eventCount(), draftsBefore + 1, 'exactly one new draft');
 
       assert.equal((await eventRow(id)).status, 'cancelled');
+      assert.equal(await count('equipment_reservations', id), 0, 'US-023: reserved equipment returns to stock on cancellation');
       const draft = await eventRow(result.body.draftId);
       assert.equal(draft.status, 'draft');
       assert.equal(draft.organiser_id, owner);
