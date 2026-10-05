@@ -6,8 +6,10 @@ const { User } = require('./domain');
 const ROLES = Object.freeze([
   'event_organiser',
   'event_coordinator',
+  'event_coordinator_lead',
   'venue_staff',
   'technical_support_staff',
+  'safety_officer',
   'attendee'
 ]);
 

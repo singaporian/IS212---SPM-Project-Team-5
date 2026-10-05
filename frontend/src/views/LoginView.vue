@@ -29,7 +29,7 @@
       <details class="demo-login mt-4">
         <summary>Development demo accounts</summary>
         <p class="small text-muted mt-2 mb-0">Use any demo email with password <strong>Password123!</strong>.</p>
-        <p class="small text-muted mb-0">organiser@connectsphere.local, coordinator@connectsphere.local, venue@connectsphere.local, tech@connectsphere.local, attendee@connectsphere.local</p>
+        <p class="small text-muted mb-0">organiser@connectsphere.local, coordinator@connectsphere.local, coordinator2@connectsphere.local, coordinator3@connectsphere.local, coordinatorlead@connectsphere.local, venue@connectsphere.local, tech@connectsphere.local, safety@connectsphere.local, attendee@connectsphere.local</p>
       </details>
     </div>
   </section>

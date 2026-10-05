@@ -60,11 +60,17 @@ Public registration creates either an `attendee` or `event_organiser` account. T
 | --- | --- |
 | Event Organiser | organiser@connectsphere.local |
 | Event Coordinator | coordinator@connectsphere.local |
+| Event Coordinator | coordinator2@connectsphere.local |
+| Event Coordinator | coordinator3@connectsphere.local |
+| Event Coordinator Lead | coordinatorlead@connectsphere.local |
 | Venue Staff | venue@connectsphere.local |
 | Technical Support Staff | tech@connectsphere.local |
+| Safety Officer | safety@connectsphere.local |
 | Attendee | attendee@connectsphere.local |
 
-All demo accounts use the password `Password123!`. These accounts are for local development only and must not be used in a deployed environment.
+All demo accounts use the password `Password123!`. These accounts are for local development only and must not be used in a deployed environment. Public registration still creates only Attendee or Event Organiser accounts; internal roles are provisioned by `seed-demo.js`.
+
+Existing event and booking assignments are not changed when additional Coordinator accounts are seeded. Current records keep their existing `assigned_coordinator_id` or `requested_by` user ID. The new Coordinators are available for future Event Coordinator Lead assignment workflows.
 
 The current venue endpoint is restricted to Event Coordinators and Venue Staff as an example of role-based authorization. Other feature endpoints will apply the same middleware as they are implemented.
 
