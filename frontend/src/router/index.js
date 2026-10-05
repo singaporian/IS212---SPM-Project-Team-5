@@ -10,6 +10,7 @@ import CoordinatorRequestsView from '../views/CoordinatorRequestsView.vue'
 import VenueBookingsCalendarView from '../views/VenueBookingsCalendarView.vue'
 import AddEquipmentView from '../views/AddEquipmentView.vue'
 import BookingRequestView from '../views/BookingRequestView.vue'
+import BatchBookingRequestView from '../views/BatchBookingRequestView.vue'
 import PendingBookingRequestsView from '../views/PendingBookingRequestsView.vue'
 import EventsView from '../views/EventsView.vue'
 import AccessDeniedView from '../views/AccessDeniedView.vue'
@@ -36,6 +37,7 @@ const routes = [
   { path: '/requests/new', name: 'new-event-request', component: NewEventRequestView, meta: { requiresAuth: true, roles: ['event_organiser'] } },
   { path: '/equipment/new', name: 'add-equipment', component: AddEquipmentView, meta: { requiresAuth: true, roles: ['technical_support_staff'] } },
   { path: '/bookings/new', name: 'new-booking-request', component: BookingRequestView, meta: { requiresAuth: true, roles: ['event_coordinator'] } },
+  { path: '/bookings/batch', name: 'batch-booking-request', component: BatchBookingRequestView, meta: { requiresAuth: true, roles: ['event_coordinator'] } },
   { path: '/bookings', name: 'booking-requests', component: BookingRequestsView, meta: { requiresAuth: true, roles: ['event_coordinator'] } },
   { path: '/bookings/pending', name: 'pending-booking-requests', component: PendingBookingRequestsView, meta: { requiresAuth: true, roles: ['venue_staff'] } },
   { path: '/technical-support/requirements', name: 'support-requirements', component: SupportRequirementsView, meta: { requiresAuth: true, roles: ['event_coordinator'] } },

@@ -109,6 +109,7 @@ CREATE TABLE IF NOT EXISTS bookings (
   event_id uuid REFERENCES events(id) ON DELETE CASCADE,
   venue_id uuid REFERENCES venues(id) ON DELETE SET NULL,
   requested_by uuid REFERENCES users(id) ON DELETE SET NULL,
+  required_capacity integer CHECK (required_capacity IS NULL OR required_capacity > 0),
   start_time timestamptz NOT NULL,
   end_time timestamptz NOT NULL,
   status text NOT NULL DEFAULT 'pending',
@@ -128,6 +129,7 @@ CREATE TABLE IF NOT EXISTS bookings (
 );
 
 ALTER TABLE bookings ADD COLUMN IF NOT EXISTS requested_by uuid REFERENCES users(id) ON DELETE SET NULL;
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS required_capacity integer;
 ALTER TABLE bookings ADD COLUMN IF NOT EXISTS venue_requirements jsonb NOT NULL DEFAULT '{}'::jsonb;
 ALTER TABLE bookings ADD COLUMN IF NOT EXISTS conflict_warning boolean NOT NULL DEFAULT false;
 ALTER TABLE bookings ADD COLUMN IF NOT EXISTS conflict_details jsonb NOT NULL DEFAULT '[]'::jsonb;
