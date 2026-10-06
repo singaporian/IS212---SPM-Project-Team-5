@@ -213,7 +213,7 @@ router.post('/reservations', async (req, res) => {
     if (data.quantity > available) {
       const names = overlapping.map(o => `"${o.title}" (${o.quantity})`).join(', ');
       const reason = committedElsewhere
-        ? `${committedElsewhere} of ${item.total_quantity} are already committed to overlapping events: ${names}.`
+        ? `${committedElsewhere} of ${item.total_quantity} ${committedElsewhere === 1 ? 'is' : 'are'} already committed to overlapping events: ${names}.`
         : `Only ${item.total_quantity} unit${item.total_quantity === 1 ? ' is' : 's are'} in inventory.`;
       const already = alreadyReserved ? ` ${alreadyReserved} ${alreadyReserved === 1 ? 'is' : 'are'} already reserved for this event.` : '';
       throw Object.assign(httpError(409,

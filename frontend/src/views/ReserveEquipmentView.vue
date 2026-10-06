@@ -83,11 +83,11 @@
               <thead>
                 <tr>
                   <th scope="col">Equipment</th>
-                  <th scope="col" class="text-end">Total</th>
-                  <th scope="col" class="text-end">Overlapping events</th>
-                  <th scope="col" class="text-end">This event</th>
-                  <th scope="col" class="text-end">Available</th>
-                  <th scope="col">Status</th>
+                  <th scope="col" class="text-center">Total</th>
+                  <th scope="col" class="text-center">Overlapping events</th>
+                  <th scope="col" class="text-center">This event</th>
+                  <th scope="col" class="text-center">Available</th>
+                  <th scope="col" class="ps-4">Status</th>
                   <th scope="col"><span class="visually-hidden">Actions</span></th>
                 </tr>
               </thead>
@@ -98,11 +98,11 @@
                     <div class="small text-muted">{{ item.equipment_type || '—' }}</div>
                     <div v-if="item.overlapping_events.length" class="small text-muted">Held by: {{ item.overlapping_events.map(e => `${e.title} (${e.quantity})`).join(', ') }}</div>
                   </td>
-                  <td class="text-end">{{ item.total_quantity }}</td>
-                  <td class="text-end">{{ item.committed_elsewhere }}</td>
-                  <td class="text-end">{{ item.reserved_for_event }}</td>
-                  <td class="text-end">{{ item.available }}</td>
-                  <td>
+                  <td class="text-center">{{ item.total_quantity }}</td>
+                  <td class="text-center">{{ item.committed_elsewhere }}</td>
+                  <td class="text-center">{{ item.reserved_for_event }}</td>
+                  <td class="text-center">{{ item.available }}</td>
+                  <td class="ps-4">
                     <span v-if="item.reservation" class="badge bg-primary">Reserved</span>
                     <span v-else-if="item.status !== 'available'" class="badge bg-secondary">Out of service</span>
                     <span v-else-if="item.available === 0" class="badge bg-warning text-dark">Fully committed</span>

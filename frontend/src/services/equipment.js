@@ -14,7 +14,12 @@ export async function createEquipment(payload) {
 
 // US-023: equipment reservations. Errors keep the server's message (including conflict details).
 async function request(url, options = {}, fallback) {
-  const response = await fetch(url, { ...options, headers: { ...authHeaders(), ...(options.body ? { 'Content-Type': 'application/json' } : {}) } })
+  let response
+  try {
+    response = await fetch(url, { ...options, headers: { ...authHeaders(), ...(options.body ? { 'Content-Type': 'application/json' } : {}) } })
+  } catch {
+    throw new Error('Unable to reach the server. Check your connection and retry.')
+  }
   if (response.status === 401) throw new Error('Your session has expired. Sign in in another tab, then retry here to keep your input.')
   const data = await response.json().catch(() => ({}))
   if (!response.ok) throw Object.assign(new Error(data.error || fallback), { status: response.status, conflict: data.conflict || null })

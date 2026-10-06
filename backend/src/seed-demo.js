@@ -151,7 +151,7 @@ const availableFrom = '2026-09-13';
 const availableUntil = '2027-01-31';
 const US023_PURPOSE = 'Demo event for US-023 equipment reservations';
 
-async function ensureDemoEvent(title, expectedAttendance, organiserId, purpose = 'Demo booking for US-017') {
+async function ensureDemoEvent(title, expectedAttendance, organiserId, purpose = 'Demo booking for US-017', eventType = 'Conference') {
   const existing = await db.query(
     'SELECT id FROM events WHERE title = $1 ORDER BY created_at LIMIT 1',
     [title]
@@ -159,19 +159,19 @@ async function ensureDemoEvent(title, expectedAttendance, organiserId, purpose =
   if (existing.rows[0]) {
     await db.query(
       `UPDATE events
-       SET organiser_id = $1, status = 'approved', event_type = 'Conference',
+       SET organiser_id = $1, status = 'approved', event_type = $5,
            expected_attendance = $2, purpose = $4
        WHERE id = $3`,
-      [organiserId, expectedAttendance, existing.rows[0].id, purpose]
+      [organiserId, expectedAttendance, existing.rows[0].id, purpose, eventType]
     );
     return existing.rows[0].id;
   }
 
   const result = await db.query(
     `INSERT INTO events (organiser_id, title, event_type, expected_attendance, purpose, status)
-     VALUES ($1, $2, 'Conference', $3, $4, 'approved')
+     VALUES ($1, $2, $5, $3, $4, 'approved')
      RETURNING id`,
-    [organiserId, title, expectedAttendance, purpose]
+    [organiserId, title, expectedAttendance, purpose, eventType]
   );
   return result.rows[0].id;
 }
@@ -190,23 +190,24 @@ async function seedDemoBookings() {
 
   const organiserId = organiserResult.rows[0].id;
   const coordinatorId = coordinatorResult.rows[0].id;
+  // Dates and times are Singapore local time, which is how the app displays them.
   const bookingSpecs = [
     { title: 'US-017 Demo: Morning Conference', attendance: 80, venue: 'Hotel Ballroom 1', day: 3, start: '09:00', end: '11:00', setup: 30, turnaround: 45 },
-    { title: 'US-017 Demo: Midday Workshop', attendance: 45, venue: 'Hotel Ballroom 1', day: 3, start: '11:30', end: '13:00', setup: 30, turnaround: 30 },
-    { title: 'US-017 Demo: Evening Seminar', attendance: 30, venue: 'Hotel Ballroom 1', day: 3, start: '17:00', end: '18:00', setup: 30, turnaround: 30 },
-    { title: 'US-017 Demo: Ballroom Two Reception', attendance: 35, venue: 'Hotel Ballroom 2', day: 5, start: '14:00', end: '16:00', setup: 30, turnaround: 30 },
+    { title: 'US-017 Demo: Midday Workshop', attendance: 45, venue: 'Hotel Ballroom 1', day: 3, start: '11:30', end: '13:00', setup: 30, turnaround: 30, type: 'Workshop' },
+    { title: 'US-017 Demo: Evening Seminar', attendance: 30, venue: 'Hotel Ballroom 1', day: 3, start: '17:00', end: '18:00', setup: 30, turnaround: 30, type: 'Seminar' },
+    { title: 'US-017 Demo: Ballroom Two Reception', attendance: 35, venue: 'Hotel Ballroom 2', day: 5, start: '14:00', end: '16:00', setup: 30, turnaround: 30, type: 'Reception' },
     // US-023: overlaps the Morning Conference and the Midday Workshop, which do not overlap each other.
-    { title: 'US-023 Demo: Product Launch', attendance: 60, venue: 'Hotel Ballroom 2', day: 3, start: '10:00', end: '12:00', setup: 30, turnaround: 30, purpose: US023_PURPOSE },
+    { title: 'US-023 Demo: Product Launch', attendance: 45, venue: 'Hotel Ballroom 2', day: 3, start: '10:00', end: '12:00', setup: 30, turnaround: 30, purpose: US023_PURPOSE, type: 'Product Launch' },
     // US-023: one event with two venue bookings, so it has two scheduled windows.
-    { title: 'US-023 Demo: Two-Room Summit', attendance: 50, venue: 'Hotel Ballroom 1', day: 6, start: '09:00', end: '12:00', setup: 30, turnaround: 30, purpose: US023_PURPOSE },
-    { title: 'US-023 Demo: Two-Room Summit', attendance: 50, venue: 'Hotel Ballroom 2', day: 6, start: '13:00', end: '17:00', setup: 30, turnaround: 30, purpose: US023_PURPOSE }
+    { title: 'US-023 Demo: Two-Room Summit', attendance: 50, venue: 'Hotel Ballroom 1', day: 6, start: '09:00', end: '12:00', setup: 30, turnaround: 30, purpose: US023_PURPOSE, type: 'Conference' },
+    { title: 'US-023 Demo: Two-Room Summit', attendance: 50, venue: 'Hotel Ballroom 2', day: 6, start: '13:00', end: '17:00', setup: 30, turnaround: 30, purpose: US023_PURPOSE, type: 'Conference' }
   ];
 
   const events = [];
   for (const spec of bookingSpecs) {
     events.push({
       ...spec,
-      eventId: await ensureDemoEvent(spec.title, spec.attendance, organiserId, spec.purpose)
+      eventId: await ensureDemoEvent(spec.title, spec.attendance, organiserId, spec.purpose, spec.type)
     });
   }
 
@@ -219,8 +220,8 @@ async function seedDemoBookings() {
        )
        VALUES (
          $1, $2, $3,
-         (CURRENT_DATE + $4::int) + $5::time,
-         (CURRENT_DATE + $4::int) + $6::time,
+         ((now() AT TIME ZONE 'Asia/Singapore')::date + $4::int + $5::time) AT TIME ZONE 'Asia/Singapore',
+         ((now() AT TIME ZONE 'Asia/Singapore')::date + $4::int + $6::time) AT TIME ZONE 'Asia/Singapore',
          'confirmed', $7, $8, $9, now()
        )`,
       [
@@ -236,6 +237,15 @@ async function seedDemoBookings() {
       ]
     );
   }
+
+  // Keep each event's requested times in line with its venue bookings.
+  await db.query(
+    `UPDATE events e SET preferred_start = b.start_time, preferred_end = b.end_time, updated_at = now()
+     FROM (SELECT event_id, min(start_time) AS start_time, max(end_time) AS end_time
+           FROM bookings WHERE event_id = ANY($1::uuid[]) GROUP BY event_id) b
+     WHERE e.id = b.event_id`,
+    [events.map((event) => event.eventId)]
+  );
 }
 
 // US-023: demo inventory plus reservations that fully commit the microphones during the Morning Conference.
