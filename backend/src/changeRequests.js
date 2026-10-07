@@ -169,6 +169,8 @@ router.post('/:id/cancel-and-resubmit', ...organiserOnly, async (req, res) => {
     }
 
     await client.query(`UPDATE events SET status = 'cancelled', updated_at = now() WHERE id = $1`, [event.id]);
+    // US-023: a cancelled event's equipment goes straight back to available stock.
+    await client.query('DELETE FROM equipment_reservations WHERE event_id = $1', [event.id]);
     const draft = await client.query(
       `INSERT INTO events (organiser_id, title, draft_data, status) VALUES ($1, $2, $3::jsonb, 'draft') RETURNING id`,
       [req.auth.sub, event.title, JSON.stringify(applyChangesToDraft(row.draft_data, changes))]);

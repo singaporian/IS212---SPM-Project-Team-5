@@ -16,6 +16,7 @@ app.use(cors());
 app.use(express.json());
 app.use('/api/drafts', require('./drafts').router);
 app.use('/api/equipment', require('./equipment').router);
+app.use('/api/equipment', require('./equipmentReservations').router);
 app.use('/api', require('./submissions').router);
 app.use('/api/bookings', require('./bookingReview').router);
 
