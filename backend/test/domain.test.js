@@ -17,6 +17,21 @@ test('EventRequest enforces assignment and ownership decisions', () => {
   assert.throws(() => request.assignTo('coordinator-2'), /already been assigned/);
 });
 
+test('EventRequest lets the Lead assign and reassign active requests only (US-034)', () => {
+  const request = new EventRequest({ title: 'Demo', status: 'submitted' });
+  assert.equal(request.assignCoordinator('coordinator-1'), null, 'no previous coordinator');
+  assert.equal(request.assignCoordinator('coordinator-2'), 'coordinator-1', 'reassignment returns the previous coordinator');
+  assert.equal(request.isAssignedTo('coordinator-2'), true);
+  assert.throws(() => request.assignCoordinator('coordinator-2'), /already assigned/);
+  assert.throws(() => request.assignCoordinator(''), /Choose an Event Coordinator/);
+  for (const status of ['approved', 'clarification_requested', 'planning', 'confirmed']) {
+    assert.equal(new EventRequest({ title: 'Active', status }).assignCoordinator('coordinator-1'), null, status);
+  }
+  for (const status of ['draft', 'rejected', 'completed', 'cancelled']) {
+    assert.throws(() => new EventRequest({ title: 'Closed', status }).assignCoordinator('coordinator-1'), /cannot be changed/, status);
+  }
+});
+
 test('Venue evaluates event suitability', () => {
   const venue = new Venue({ capacity: 100, facilities: ['projector'], supportedLayouts: ['theatre'] });
   assert.equal(venue.isSuitableFor({ expectedAttendance: 80, requiredFacilities: ['projector'], requiredLayouts: ['theatre'] }), true);

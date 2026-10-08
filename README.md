@@ -70,7 +70,7 @@ Public registration creates either an `attendee` or `event_organiser` account. T
 
 All demo accounts use the password `Password123!`. These accounts are for local development only and must not be used in a deployed environment. Public registration still creates only Attendee or Event Organiser accounts; internal roles are provisioned by `seed-demo.js`.
 
-Existing event and booking assignments are not changed when additional Coordinator accounts are seeded. Current records keep their existing `assigned_coordinator_id` or `requested_by` user ID. The new Coordinators are available for future Event Coordinator Lead assignment workflows.
+The seed assigns its demo events to the Coordinator who requested their venue bookings. It also creates `US-034 Demo:` event requests for the Event Coordinator Lead. Some of these requests are unassigned and the rest are assigned to Coordinators Two and Three. Re-running `npm run seed-demo` resets these demo requests to their original assignments.
 
 The current venue endpoint is restricted to Event Coordinators and Venue Staff as an example of role-based authorization. Other feature endpoints will apply the same middleware as they are implemented.
 
@@ -183,8 +183,8 @@ None / Not Required choices. Organiser start/end times use five-minute selection
 Invalid submissions stay in Draft and show corrective messages. Successful
 submission preserves the current form values and same request ID, changes status
 to `submitted`, and opens a read-only confirmation. My Submitted Requests
-lets the organiser reopen it. The request appears in the existing coordinator
-queue for assignment and review.
+lets the organiser reopen it. The request appears in the Event Coordinator
+Lead's unassigned queue for assignment (US-034).
 
 `POST /api/drafts/:id/submit` accepts `{ "version": "<saved version>", "draft": { ...currentFormValues } }`
 for an existing draft. Obtain its version from a draft GET/PUT response.
@@ -239,7 +239,29 @@ Authenticated users can click the bell icon in the header to view their notifica
 The implemented booking and technical-support triggers are targeted by role and event relationship:
 
 - A submitted venue booking request notifies Venue Staff.
-- A Venue Staff booking decision notifies the Coordinator who submitted that request.
+- A Venue Staff booking decision notifies the event's currently assigned Coordinator. If the event has no Coordinator, it notifies the Coordinator who submitted the request.
+- Assigning or reassigning an event request notifies the newly assigned Coordinator. A reassignment also notifies the previous Coordinator (US-034).
 - Updated technical-support requirements notify Technical Support Staff.
 
 Notification responses include only the notification message and event identifier, not protected event details. Users must still pass the relevant authorization checks to view event information.
+
+## Assign and Reassign Event Coordinators (US-034)
+
+Only the Event Coordinator Lead assigns event requests. This replaces US-011, so Event Coordinators can no longer assign requests to themselves or unassign them. The `/api/events/unassigned`, `/api/events/:id/assign` and `/api/events/:id/unassign` endpoints have been removed.
+
+Sign in as `coordinatorlead@connectsphere.local` and select **Assign Coordinator** in the workspace card on the home page. This opens `/coordinator-lead/assignments`, which has three sections:
+
+- **Unassigned queue**: active requests without a Coordinator, oldest first. **Review & assign** shows the organiser, schedule, attendance, purpose and description, then the Lead chooses a Coordinator. Each Coordinator's current active workload appears beside their name.
+- **Coordinator workload**: the number of active requests for each Coordinator. Selecting a Coordinator filters the table below.
+- **Active assignments**: every active request with its current Coordinator. **Reassign** opens a confirmation dialog for choosing a different Coordinator.
+
+Active requests have the status `submitted`, `clarification_requested`, `approved`, `planning` or `confirmed`. Drafts, rejected, completed and cancelled requests cannot be assigned. All Event Coordinator Leads supervise all Event Coordinators.
+
+The current Coordinator is stored in `events.assigned_coordinator_id`. Each change is also recorded in `event_changes`. The new Coordinator always receives a notification. On a reassignment, the previous Coordinator also receives one and loses access to the request immediately, because every Coordinator endpoint checks the event's current assignment. The new Coordinator's **My Venue Booking Requests** list includes bookings that the previous Coordinator made for the event.
+
+API endpoints (Event Coordinator Lead only):
+
+- `GET /api/coordinator-lead/overview` returns `{ unassigned, assignments, coordinators }`.
+- `PATCH /api/coordinator-lead/events/:id/coordinator` takes `{ "coordinatorId": "<uuid>", "currentCoordinatorId": "<uuid> | null" }`. `currentCoordinatorId` is the Coordinator the Lead saw on the request (`null` for an unassigned request). If someone else changed the assignment in the meantime, the request is refused with 409 and nothing is changed.
+
+No schema migration is needed. Run `npm run seed-demo` to load the demo requests. Run `npm test` in `backend` and `frontend` to run the tests: `backend/test/coordinator.assignments.test.js` and `frontend/test/assign-coordinator.test.cjs`. With the backend running, `node test-us011-us012.js` in `backend` runs an end-to-end check of assignment, reassignment and access.

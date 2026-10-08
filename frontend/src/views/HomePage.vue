@@ -30,7 +30,7 @@
                 <p class="text-muted small mb-2">{{ workspaceDescription }}</p>
               </div>
               <div>
-                <button class="btn btn-sm btn-outline-primary me-2" @click="loadVenues"><i class="bi bi-arrow-clockwise"></i> Refresh</button>
+                <button class="btn btn-sm btn-outline-primary me-2" @click="refreshWorkspace"><i class="bi bi-arrow-clockwise"></i> Refresh</button>
                   <router-link v-if="canSearchVenues" class="btn btn-sm btn-accent" to="/venues"><i class="bi bi-search"></i> Find Venues</router-link>
               </div>
             </div>
@@ -41,6 +41,9 @@
                   <li v-if="canManageEquipment" class="d-flex flex-wrap gap-2">
                     <router-link class="btn btn-accent" to="/equipment/new"><i class="bi bi-plus-lg"></i> Add Equipment</router-link>
                     <router-link class="btn btn-accent" to="/equipment/reserve"><i class="bi bi-calendar-check"></i> Reserve Equipment</router-link>
+                  </li>
+                  <li v-else-if="isCoordinatorLead" class="d-flex flex-wrap gap-2">
+                    <router-link class="btn btn-accent" to="/coordinator-lead/assignments"><i class="bi bi-person-check"></i> Assign Coordinator</router-link>
                   </li>
                   <li v-else-if="!canSearchVenues" class="text-muted">Your role workspace is ready. More tools will appear as features are added.</li>
                 <li v-for="v in venues" :key="v.id" class="list-group-item d-flex justify-content-between align-items-center">
@@ -69,6 +72,7 @@
               <router-link v-if="canManageEquipment" class="btn btn-outline-secondary btn-sm w-100 mb-2" to="/technical-support/queue">Support Requirements Queue</router-link>
               <router-link v-if="role === 'event_coordinator'" class="btn btn-outline-secondary btn-sm w-100 mb-2" to="/coordinator/requests">Assigned Event Requests</router-link>
               <router-link v-else-if="role === 'venue_staff'" class="btn btn-outline-secondary btn-sm w-100 mb-2" to="/venue/bookings">{{ primaryRoleAction }}</router-link>
+              <router-link v-else-if="isCoordinatorLead" class="btn btn-outline-secondary btn-sm w-100 mb-2" to="/coordinator-lead/assignments">{{ primaryRoleAction }}</router-link>
               <router-link v-else-if="canCreateRequest" class="btn btn-outline-secondary btn-sm w-100 mb-2" to="/requests/drafts">My Drafts</router-link>
               <button v-else class="btn btn-outline-secondary btn-sm w-100 mb-2">{{ primaryRoleAction }}</button>
               <router-link v-if="canCreateRequest" class="btn btn-outline-secondary btn-sm w-100 mb-2" to="/requests/submitted">My Submitted Requests</router-link>
@@ -196,7 +200,7 @@ export default {
       return descriptions[this.role] || descriptions.attendee
     },
     roleFocus() {
-      if (this.isCoordinatorLead) return 'Assignment oversight tools will appear here as the Lead workflow is implemented.'
+      if (this.isCoordinatorLead) return 'Use Assign Coordinator to work through the unassigned queue and rebalance active requests across coordinators.'
       return 'Operational safety review tools will appear here as the Safety Officer workflow is implemented.'
     },
     secondaryAction() { return this.role === 'attendee' ? 'Browse Events' : 'View Calendar' },
@@ -216,6 +220,14 @@ export default {
     }
   },
   methods: {
+    // Coordinators browse venues through Find Venues, so Refresh reloads their dashboard instead of listing every venue.
+    refreshWorkspace() {
+      this.loadVenueCount()
+      if (this.role !== 'event_coordinator') return this.loadVenues()
+      this.venues = []
+      this.loadBookingRequests()
+      this.loadSupportRequirements()
+    },
     async loadVenues() {
       try {
         const res = await fetch('/api/venues', { headers: authHeaders() });
