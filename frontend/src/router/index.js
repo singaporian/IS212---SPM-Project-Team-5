@@ -10,6 +10,7 @@ import CoordinatorRequestsView from '../views/CoordinatorRequestsView.vue'
 import VenueBookingsCalendarView from '../views/VenueBookingsCalendarView.vue'
 import AddEquipmentView from '../views/AddEquipmentView.vue'
 import ReserveEquipmentView from '../views/ReserveEquipmentView.vue'
+import AssignCoordinatorView from '../views/AssignCoordinatorView.vue'
 import BookingRequestView from '../views/BookingRequestView.vue'
 import BatchBookingRequestView from '../views/BatchBookingRequestView.vue'
 import PendingBookingRequestsView from '../views/PendingBookingRequestsView.vue'
@@ -38,6 +39,7 @@ const routes = [
   { path: '/requests/new', name: 'new-event-request', component: NewEventRequestView, meta: { requiresAuth: true, roles: ['event_organiser'] } },
   { path: '/equipment/new', name: 'add-equipment', component: AddEquipmentView, meta: { requiresAuth: true, roles: ['technical_support_staff'] } },
   { path: '/equipment/reserve', name: 'reserve-equipment', component: ReserveEquipmentView, meta: { requiresAuth: true, roles: ['technical_support_staff'] } },
+  { path: '/coordinator-lead/assignments', name: 'assign-coordinator', component: AssignCoordinatorView, meta: { requiresAuth: true, roles: ['event_coordinator_lead'], resource: 'coordinator assignment' } },
   { path: '/bookings/new', name: 'new-booking-request', component: BookingRequestView, meta: { requiresAuth: true, roles: ['event_coordinator'] } },
   { path: '/bookings/batch', name: 'batch-booking-request', component: BatchBookingRequestView, meta: { requiresAuth: true, roles: ['event_coordinator'] } },
   { path: '/bookings', name: 'booking-requests', component: BookingRequestsView, meta: { requiresAuth: true, roles: ['event_coordinator'] } },

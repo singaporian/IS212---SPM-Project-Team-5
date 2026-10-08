@@ -6,7 +6,7 @@ const fs = require('fs');
 const path = require('path');
 const db = require('./db');
 const auth = require('./auth');
-const { EventRequest, Venue, Booking } = require('./domain');
+const { Venue, Booking } = require('./domain');
 
 dotenv.config();
 const app = express();
@@ -213,24 +213,11 @@ app.get('/api/venues', auth.authenticate, auth.requireRoles('event_coordinator',
   }
 });
 
-// US-011: unassigned queue (submitted, no coordinator yet), oldest first
 // Register the organiser's /mine route before the coordinator's /:id route.
 app.use('/api/events', require('./changeRequests').router);
 
-app.get('/api/events/unassigned', auth.authenticate, auth.requireRoles('event_coordinator'), async (req, res) => {
-  try {
-    const result = await db.query(
-      `SELECT id, title, event_type, preferred_start, preferred_end, expected_attendance, status, created_at, submitted_at
-       FROM events
-       WHERE status = 'submitted' AND assigned_coordinator_id IS NULL
-       ORDER BY COALESCE(submitted_at, created_at) ASC`
-    );
-    res.json(result.rows);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Failed to fetch unassigned requests' });
-  }
-});
+// US-034: only the Event Coordinator Lead assigns and reassigns coordinators (this replaces US-011 self-assignment).
+app.use('/api/coordinator-lead', require('./coordinatorAssignments').router);
 
 // US-012: requests currently assigned to the logged-in coordinator
 app.get('/api/events/assigned', auth.authenticate, auth.requireRoles('event_coordinator'), async (req, res) => {
@@ -246,45 +233,6 @@ app.get('/api/events/assigned', auth.authenticate, auth.requireRoles('event_coor
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Failed to fetch assigned requests' });
-  }
-});
-
-// US-011: assign an unassigned request to self (fails gracefully if already taken)
-app.patch('/api/events/:id/assign', auth.authenticate, auth.requireRoles('event_coordinator'), async (req, res) => {
-  try {
-    const result = await db.query(
-      `UPDATE events SET assigned_coordinator_id = $1
-       WHERE id = $2 AND status = 'submitted' AND assigned_coordinator_id IS NULL
-       RETURNING id, title, assigned_coordinator_id`,
-      [req.auth.sub, req.params.id]
-    );
-    if (!result.rows[0]) {
-      return res.status(409).json({ error: 'This request has already been assigned' });
-    }
-    const request = EventRequest.fromRow(result.rows[0]);
-    res.json({ id: request.id, title: request.title, assigned_coordinator_id: request.assignedCoordinatorId });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Failed to assign request' });
-  }
-});
-
-// US-011: release a request back to the unassigned queue
-app.patch('/api/events/:id/unassign', auth.authenticate, auth.requireRoles('event_coordinator'), async (req, res) => {
-  try {
-    const result = await db.query(
-      `UPDATE events SET assigned_coordinator_id = NULL
-       WHERE id = $1 AND assigned_coordinator_id = $2
-       RETURNING id, title`,
-      [req.params.id, req.auth.sub]
-    );
-    if (!result.rows[0]) {
-      return res.status(404).json({ error: 'Request not found or not assigned to you' });
-    }
-    res.json(result.rows[0]);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Failed to unassign request' });
   }
 });
 
@@ -466,7 +414,7 @@ app.get('/api/bookings/mine', auth.authenticate, auth.requireRoles('event_coordi
   const result = await db.query(
     `SELECT b.*, v.name AS venue_name, e.title AS event_title
      FROM bookings b JOIN venues v ON v.id = b.venue_id JOIN events e ON e.id = b.event_id
-     WHERE b.requested_by = $1 ORDER BY b.created_at DESC`,
+     WHERE e.assigned_coordinator_id = $1 ORDER BY b.created_at DESC`,
     [req.auth.sub]
   );
   res.json(result.rows);
@@ -538,9 +486,11 @@ app.patch('/api/bookings/:id/decision', auth.authenticate, auth.requireRoles('ve
     );
     if (!result.rows[0]) return res.status(404).json({ error: 'Pending booking request not found' });
     const resultRow = result.rows[0];
+    // US-034: tell the event's current coordinator, who may have taken over from the one who requested the booking.
     await db.query(
       `INSERT INTO notifications (user_id, event_id, message)
-       SELECT requested_by, event_id, $1 FROM bookings WHERE id = $2`,
+       SELECT COALESCE(e.assigned_coordinator_id, b.requested_by), b.event_id, $1
+       FROM bookings b LEFT JOIN events e ON e.id = b.event_id WHERE b.id = $2`,
       [`Venue booking request ${decision.replace('_', ' ')}${reason ? `: ${reason}` : ''}`, req.params.id]
     );
     res.json(resultRow);

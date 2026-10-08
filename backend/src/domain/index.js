@@ -11,6 +11,9 @@ const EVENT_STATUS = Object.freeze({
   CANCELLED: 'cancelled'
 });
 const CHANGE_REQUEST_STATUSES = [EVENT_STATUS.PLANNING, EVENT_STATUS.CONFIRMED];
+// US-034: requests a Coordinator still works on, so the Lead can assign or reassign them.
+// 'approved' is what the Coordinator decision endpoint writes; 'planning' is its domain name.
+const ACTIVE_STATUSES = Object.freeze([EVENT_STATUS.SUBMITTED, EVENT_STATUS.CLARIFICATION_REQUESTED, 'approved', EVENT_STATUS.PLANNING, EVENT_STATUS.CONFIRMED]);
 const MAJOR_CHANGE_LABELS = Object.freeze({ expectedAttendance: 'Expected Attendance', duration: 'Duration' });
 
 
@@ -98,6 +101,21 @@ class EventRequest {
   assignTo(coordinatorId) {
     if (!this.canBeAssigned()) throw new Error('This request has already been assigned');
     this.assignedCoordinatorId = coordinatorId;
+  }
+
+  isActive() {
+    return ACTIVE_STATUSES.includes(this.status);
+  }
+
+  // US-034: the Lead assigns an unassigned request or reassigns it to another Coordinator.
+  // Returns the Coordinator who held it before (null when it was unassigned).
+  assignCoordinator(coordinatorId) {
+    if (!coordinatorId) throw new Error('Choose an Event Coordinator');
+    if (!this.isActive()) throw new Error(`"${this.title}" is ${this.status}, so its coordinator cannot be changed`);
+    if (this.assignedCoordinatorId === coordinatorId) throw new Error(`"${this.title}" is already assigned to this coordinator`);
+    const previousCoordinatorId = this.assignedCoordinatorId;
+    this.assignedCoordinatorId = coordinatorId;
+    return previousCoordinatorId;
   }
 
   unassignFrom(coordinatorId) {
@@ -234,4 +252,4 @@ class ChangeRequest {
     };
   }
 }
-module.exports = { User, EventRequest, Venue, Booking, ChangeRequest, EVENT_STATUS, MAJOR_CHANGE_LABELS };
+module.exports = { User, EventRequest, Venue, Booking, ChangeRequest, EVENT_STATUS, ACTIVE_STATUSES, MAJOR_CHANGE_LABELS };

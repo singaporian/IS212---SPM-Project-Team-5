@@ -151,7 +151,8 @@ const availableFrom = '2026-09-13';
 const availableUntil = '2027-01-31';
 const US023_PURPOSE = 'Demo event for US-023 equipment reservations';
 
-async function ensureDemoEvent(title, expectedAttendance, organiserId, purpose = 'Demo booking for US-017', eventType = 'Conference') {
+// The coordinator who requested an event's bookings is the one assigned to it (US-034 shows bookings by assignment).
+async function ensureDemoEvent(title, expectedAttendance, organiserId, coordinatorId, purpose = 'Demo booking for US-017', eventType = 'Conference') {
   const existing = await db.query(
     'SELECT id FROM events WHERE title = $1 ORDER BY created_at LIMIT 1',
     [title]
@@ -160,18 +161,18 @@ async function ensureDemoEvent(title, expectedAttendance, organiserId, purpose =
     await db.query(
       `UPDATE events
        SET organiser_id = $1, status = 'approved', event_type = $5,
-           expected_attendance = $2, purpose = $4
+           expected_attendance = $2, purpose = $4, assigned_coordinator_id = $6
        WHERE id = $3`,
-      [organiserId, expectedAttendance, existing.rows[0].id, purpose, eventType]
+      [organiserId, expectedAttendance, existing.rows[0].id, purpose, eventType, coordinatorId]
     );
     return existing.rows[0].id;
   }
 
   const result = await db.query(
-    `INSERT INTO events (organiser_id, title, event_type, expected_attendance, purpose, status)
-     VALUES ($1, $2, $5, $3, $4, 'approved')
+    `INSERT INTO events (organiser_id, title, event_type, expected_attendance, purpose, status, assigned_coordinator_id)
+     VALUES ($1, $2, $5, $3, $4, 'approved', $6)
      RETURNING id`,
-    [organiserId, title, expectedAttendance, purpose, eventType]
+    [organiserId, title, expectedAttendance, purpose, eventType, coordinatorId]
   );
   return result.rows[0].id;
 }
@@ -207,7 +208,7 @@ async function seedDemoBookings() {
   for (const spec of bookingSpecs) {
     events.push({
       ...spec,
-      eventId: await ensureDemoEvent(spec.title, spec.attendance, organiserId, spec.purpose, spec.type)
+      eventId: await ensureDemoEvent(spec.title, spec.attendance, organiserId, coordinatorId, spec.purpose, spec.type)
     });
   }
 
@@ -287,6 +288,80 @@ async function seedDemoEquipment() {
   }
 }
 
+// US-034: submitted requests for the Event Coordinator Lead to assign. Re-seeding resets each one to the coordinator listed
+// (null = back in the unassigned queue). Dates are days from today in Singapore time; submittedHoursAgo orders the queue.
+const demoAssignmentRequests = [
+  { title: 'US-034 Demo: Freshman Orientation Fair', type: 'Fair', day: 14, start: '09:00', end: '16:00', attendance: 180, submittedHoursAgo: 72,
+    purpose: 'Welcome incoming students and introduce campus clubs.', description: 'Booths for 30 student clubs with a short welcome address at 9:30 AM.',
+    venue: 'Open hall with booth layout', accessibility: 'Wheelchair access', equipment: 'Microphone, PA system', registration: 'yes', coordinator: null },
+  { title: 'US-034 Demo: Alumni Networking Night', type: 'Networking', day: 21, start: '18:30', end: '21:30', attendance: 90, submittedHoursAgo: 48,
+    purpose: 'Connect graduating students with alumni mentors.', description: 'Standing reception with light refreshments and a short panel.',
+    venue: 'Banquet', accessibility: 'None', equipment: 'Projector', registration: 'yes', coordinator: null },
+  { title: 'US-034 Demo: Data Science Workshop', type: 'Workshop', day: 10, start: '13:00', end: '17:00', attendance: 40, submittedHoursAgo: 30,
+    purpose: 'Hands-on introduction to data analysis in Python.', description: 'Participants bring laptops; instructor-led exercises.',
+    venue: 'Classroom', accessibility: 'Not Required', equipment: 'Projector, Wi-Fi', registration: 'no', coordinator: null },
+  { title: 'US-034 Demo: Charity Gala Dinner', type: 'Gala', day: 35, start: '19:00', end: '23:00', attendance: 150, submittedHoursAgo: 8,
+    purpose: 'Fundraise for the community outreach programme.', description: 'Seated dinner, live band and a silent auction.',
+    venue: 'Banquet', accessibility: 'Wheelchair access, accessible parking', equipment: 'Stage lighting, sound system', registration: 'yes', coordinator: null },
+  { title: 'US-034 Demo: Leadership Seminar', type: 'Seminar', day: 17, start: '10:00', end: '12:00', attendance: 60, submittedHoursAgo: 96,
+    purpose: 'Leadership training for student society executives.', description: 'Keynote followed by a moderated Q&A.',
+    venue: 'Theater', accessibility: 'None', equipment: 'Microphone', registration: 'no', coordinator: 'coordinator2@connectsphere.local' },
+  { title: 'US-034 Demo: Robotics Showcase', type: 'Exhibition', day: 28, start: '11:00', end: '17:00', attendance: 120, submittedHoursAgo: 120,
+    purpose: 'Showcase final-year robotics projects to industry partners.', description: 'Demo stations with power points at each table.',
+    venue: 'Open hall', accessibility: 'Wheelchair access', equipment: 'Extension cords, projector screens', registration: 'not_decided', coordinator: 'coordinator2@connectsphere.local' },
+  { title: 'US-034 Demo: Career Talk Series', type: 'Talk', day: 12, start: '15:00', end: '16:30', attendance: 70, submittedHoursAgo: 60,
+    purpose: 'Industry speakers share career pathways.', description: 'Three 25-minute talks with a combined Q&A.',
+    venue: 'Theater', accessibility: 'Not Required', equipment: 'Projector, microphone', registration: 'yes', coordinator: 'coordinator3@connectsphere.local' }
+];
+
+function singaporeDate(daysFromToday) {
+  return new Date(Date.now() + 8 * 3600e3 + daysFromToday * 86400e3).toISOString().slice(0, 10);
+}
+
+async function seedDemoAssignments() {
+  const users = await db.query('SELECT id, email FROM users WHERE email = ANY($1::text[])',
+    [['organiser@connectsphere.local', ...new Set(demoAssignmentRequests.map(spec => spec.coordinator).filter(Boolean))]]);
+  const idByEmail = new Map(users.rows.map(user => [user.email, user.id]));
+  for (const spec of demoAssignmentRequests) {
+    const date = singaporeDate(spec.day);
+    // Same shape the organiser form saves and US-006 submission maps into the structured columns.
+    const draft = {
+      eventName: spec.title, startDate: date, startTime: spec.start, endDate: date, endTime: spec.end,
+      expectedAttendance: String(spec.attendance), purpose: spec.purpose, description: spec.description,
+      venueRequirements: spec.venue, accessibilityNeeds: spec.accessibility, equipmentRequirements: spec.equipment,
+      registrationNeeds: spec.registration
+    };
+    const optional = value => (['none', 'not required'].includes(value.toLowerCase()) ? '' : value);
+    const values = [
+      spec.title, spec.type, `${date}T${spec.start}:00+08:00`, `${date}T${spec.end}:00+08:00`, spec.attendance,
+      spec.purpose, spec.description, spec.venue,
+      JSON.stringify(optional(spec.accessibility) ? { notes: spec.accessibility } : {}),
+      JSON.stringify(optional(spec.equipment) ? [spec.equipment] : []),
+      spec.registration === 'not_decided' ? null : spec.registration === 'yes',
+      JSON.stringify(draft), spec.submittedHoursAgo, idByEmail.get('organiser@connectsphere.local'),
+      spec.coordinator ? idByEmail.get(spec.coordinator) : null
+    ];
+    const existing = await db.query('SELECT id FROM events WHERE title = $1 ORDER BY created_at LIMIT 1', [spec.title]);
+    if (existing.rows[0]) {
+      await db.query(
+        `UPDATE events SET title = $1, event_type = $2, preferred_start = $3, preferred_end = $4, expected_attendance = $5,
+           purpose = $6, description = $7, venue_layout_preference = $8, accessibility_requirements = $9::jsonb,
+           equipment_requirements = $10::jsonb, registration_required = $11, draft_data = $12::jsonb, status = 'submitted',
+           submitted_at = now() - make_interval(hours => $13), updated_at = now(), organiser_id = $14, assigned_coordinator_id = $15
+         WHERE id = $16`,
+        [...values, existing.rows[0].id]);
+    } else {
+      await db.query(
+        `INSERT INTO events (title, event_type, preferred_start, preferred_end, expected_attendance, purpose, description,
+           venue_layout_preference, accessibility_requirements, equipment_requirements, registration_required, draft_data,
+           status, submitted_at, created_at, organiser_id, assigned_coordinator_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10::jsonb, $11, $12::jsonb, 'submitted',
+           now() - make_interval(hours => $13), now() - make_interval(hours => $13), $14, $15)`,
+        values);
+    }
+  }
+}
+
 async function run() {
   const passwordHash = await bcrypt.hash('Password123!', 12);
   for (const [name, email, role] of demoUsers) {
@@ -355,6 +430,8 @@ async function run() {
   console.log('Demo confirmed bookings seeded.');
   await seedDemoEquipment();
   console.log('Demo equipment and reservations seeded.');
+  await seedDemoAssignments();
+  console.log('Demo event requests for coordinator assignment seeded.');
   await db.pool.end();
 }
 

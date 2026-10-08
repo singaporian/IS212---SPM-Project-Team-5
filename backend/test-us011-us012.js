@@ -1,4 +1,6 @@
-// Test script for US-011 (Assign an Event Request to Self) and US-012 (View Submitted Event Request Details)
+// Test script for US-012 (View Submitted Event Request Details) and US-034 (Lead assigns and reassigns coordinators).
+// US-034 replaced US-011 self-assignment: only the Event Coordinator Lead assigns requests now.
+// Requires seeded demo accounts (npm run seed-demo).
 // Requires: backend server running locally on the port set in .env (default 3000)
 // Run with: node test-us011-us012.js   (from inside the backend folder)
 
@@ -81,54 +83,58 @@ async function run() {
   console.log('\n--- Logging in ---');
   const coordToken = await login('coordinator@connectsphere.local');
   const coord2Token = await login('coordinator2@connectsphere.local');
+  const leadToken = await login('coordinatorlead@connectsphere.local');
   const attendeeToken = await login('attendee@connectsphere.local');
+  const coordinatorIds = Object.fromEntries((await db.query(
+    `SELECT email, id FROM users WHERE email IN ('coordinator@connectsphere.local', 'coordinator2@connectsphere.local')`)).rows.map(r => [r.email, r.id]));
+  const coordId = coordinatorIds['coordinator@connectsphere.local'];
+  const coord2Id = coordinatorIds['coordinator2@connectsphere.local'];
 
   const authed = (token) => ({ Authorization: `Bearer ${token}` });
+  const overview = async () => (await fetch(`${BASE_URL}/api/coordinator-lead/overview`, { headers: authed(leadToken) })).json();
+  const assign = (eventId, coordinatorId, currentCoordinatorId, token = leadToken) => fetch(`${BASE_URL}/api/coordinator-lead/events/${eventId}/coordinator`, {
+    method: 'PATCH', headers: { ...authed(token), 'Content-Type': 'application/json' }, body: JSON.stringify({ coordinatorId, currentCoordinatorId })
+  });
 
-  console.log('\n--- US-011: Unauthenticated / unauthorized access ---');
+  console.log('\n--- US-034: Unauthenticated / unauthorized access ---');
   {
-    const res = await fetch(`${BASE_URL}/api/events/unassigned`);
+    const res = await fetch(`${BASE_URL}/api/coordinator-lead/overview`);
     check('No token -> 401', res.status === 401, `(got ${res.status})`);
   }
+  for (const [label, token] of [['Attendee', attendeeToken], ['Coordinator', coordToken]]) {
+    const res = await fetch(`${BASE_URL}/api/coordinator-lead/overview`, { headers: authed(token) });
+    check(`${label} role -> 403`, res.status === 403, `(got ${res.status})`);
+  }
   {
-    const res = await fetch(`${BASE_URL}/api/events/unassigned`, { headers: authed(attendeeToken) });
-    check('Attendee role -> 403', res.status === 403, `(got ${res.status})`);
+    const res = await assign(oldestId, coordId, null, coordToken);
+    check('Coordinator cannot assign a request to themselves -> 403', res.status === 403, `(got ${res.status})`);
   }
 
-  console.log('\n--- US-011: Unassigned queue, sorted oldest first ---');
+  console.log('\n--- US-034: Unassigned queue, sorted oldest first ---');
   {
-    const res = await fetch(`${BASE_URL}/api/events/unassigned`, { headers: authed(coordToken) });
-    const body = await res.json();
-    const ids = body.map(e => e.id);
+    const ids = (await overview()).unassigned.map(e => e.id);
     const oldestIdx = ids.indexOf(oldestId);
     const middleIdx = ids.indexOf(middleId);
-    check('Unassigned queue reachable (200)', res.status === 200, `(got ${res.status})`);
     check('Both test events present in queue', oldestIdx !== -1 && middleIdx !== -1);
     check('Oldest event appears before middle event', oldestIdx !== -1 && middleIdx !== -1 && oldestIdx < middleIdx);
   }
 
-  console.log('\n--- US-011: Assign to self (happy path) ---');
+  console.log('\n--- US-034: Lead assigns (happy path) ---');
   {
-    const res = await fetch(`${BASE_URL}/api/events/${oldestId}/assign`, { method: 'PATCH', headers: authed(coordToken) });
+    const res = await assign(oldestId, coordId, null);
     const body = await res.json();
     check('Assign succeeds (200)', res.status === 200, `(got ${res.status})`);
-    check('Response reflects assignment', body.assigned_coordinator_id, `(got ${JSON.stringify(body)})`);
+    check('Response reflects assignment', body.event && body.event.assigned_coordinator_id === coordId, `(got ${JSON.stringify(body)})`);
   }
   {
-    const res = await fetch(`${BASE_URL}/api/events/unassigned`, { headers: authed(coordToken) });
-    const body = await res.json();
-    check('Assigned event no longer in unassigned queue', !body.some(e => e.id === oldestId));
-  }
-  {
+    check('Assigned event no longer in unassigned queue', !(await overview()).unassigned.some(e => e.id === oldestId));
     const res = await fetch(`${BASE_URL}/api/events/assigned`, { headers: authed(coordToken) });
     const body = await res.json();
-    check('Assigned event appears in my assigned list', body.some(e => e.id === oldestId));
+    check('Assigned event appears in the coordinator\'s assigned list', body.some(e => e.id === oldestId));
   }
-
-  console.log('\n--- US-011: Double-assignment conflict ---');
   {
-    const res = await fetch(`${BASE_URL}/api/events/${oldestId}/assign`, { method: 'PATCH', headers: authed(coord2Token) });
-    check('Second coordinator assigning same event -> 409', res.status === 409, `(got ${res.status})`);
+    const res = await assign(oldestId, coord2Id, null);
+    check('Assigning from an out-of-date queue -> 409', res.status === 409, `(got ${res.status})`);
   }
 
   console.log('\n--- US-012: View request details ---');
@@ -147,19 +153,16 @@ async function run() {
     check('Viewing an unassigned request -> 403', res.status === 403, `(got ${res.status})`);
   }
 
-  console.log('\n--- US-011: Unassign ---');
+  console.log('\n--- US-034: Lead reassigns ---');
   {
-    const res = await fetch(`${BASE_URL}/api/events/${oldestId}/unassign`, { method: 'PATCH', headers: authed(coord2Token) });
-    check('Non-owner unassigning -> 404', res.status === 404, `(got ${res.status})`);
-  }
-  {
-    const res = await fetch(`${BASE_URL}/api/events/${oldestId}/unassign`, { method: 'PATCH', headers: authed(coordToken) });
-    check('Owner unassigning succeeds (200)', res.status === 200, `(got ${res.status})`);
-  }
-  {
-    const res = await fetch(`${BASE_URL}/api/events/unassigned`, { headers: authed(coordToken) });
-    const body = await res.json();
-    check('Event returns to unassigned queue', body.some(e => e.id === oldestId));
+    const res = await assign(oldestId, coord2Id, coordId);
+    check('Reassign succeeds (200)', res.status === 200, `(got ${res.status})`);
+    const before = await fetch(`${BASE_URL}/api/events/${oldestId}`, { headers: authed(coordToken) });
+    check('Previous coordinator can no longer view the request -> 403', before.status === 403, `(got ${before.status})`);
+    const after = await fetch(`${BASE_URL}/api/events/${oldestId}`, { headers: authed(coord2Token) });
+    check('New coordinator can view the request (200)', after.status === 200, `(got ${after.status})`);
+    const notes = await db.query('SELECT user_id FROM notifications WHERE event_id = $1', [oldestId]);
+    check('New and previous coordinators were notified', [coordId, coord2Id].every(id => notes.rows.some(n => n.user_id === id)));
   }
 
   console.log(`\n--- Results: ${passed} passed, ${failed} failed ---\n`);

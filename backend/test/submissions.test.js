@@ -56,6 +56,9 @@ test('submission integrates with real PostgreSQL and coordinator routes', async 
     await originalPool.query(`CREATE SCHEMA "${schema}"`);
     await originalPool.query(`CREATE TABLE "${schema}".users (LIKE public.users INCLUDING ALL)`);
     await originalPool.query(`CREATE TABLE "${schema}".events (LIKE public.events INCLUDING ALL)`);
+    // US-034 Lead assignment writes notifications and an audit row for users in this schema.
+    await originalPool.query(`CREATE TABLE "${schema}".notifications (LIKE public.notifications INCLUDING ALL)`);
+    await originalPool.query(`CREATE TABLE "${schema}".event_changes (LIKE public.event_changes INCLUDING ALL)`);
     pool = new Pool({ ...originalPool.options, password: originalPool.options.password,
       options: `-c search_path=${schema},public` });
     db.pool = pool;
@@ -86,6 +89,9 @@ test('submission integrates with real PostgreSQL and coordinator routes', async 
     const submit = draft => request('/drafts/' + draft.id + '/submit', 'POST', { version: draft.version });
     const row = async id => (await pool.query('SELECT * FROM events WHERE id=$1', [id])).rows[0];
     const coordToken = token(coordinator, 'event_coordinator');
+    // US-034: submitted requests wait in the Event Coordinator Lead's unassigned queue.
+    const leadToken = token(randomUUID(), 'event_coordinator_lead');
+    const inLeadQueue = async id => (await request('/coordinator-lead/overview', 'GET', undefined, leadToken)).body.unassigned.some(item => item.id === id);
     // Lark: US-006-003 through US-006-006; invalid-clock and DEF-001 regressions.
     await t.test('US-006 rejected values give corrective errors and preserve the entire draft', async () => {
       const cases = [
@@ -158,7 +164,7 @@ test('submission integrates with real PostgreSQL and coordinator routes', async 
       assert.equal(stored.title, current.eventName);
       assert.equal(stored.expected_attendance, 1);
       assert.equal((await pool.query('SELECT count(*) FROM events WHERE id=$1', [draft.id])).rows[0].count, '1');
-      assert.ok((await request('/events/unassigned', 'GET', undefined, coordToken)).body.some(item => item.id === draft.id));
+      assert.ok(await inLeadQueue(draft.id));
       assert.equal((await request(path, 'POST', { ...body, draft: { ...current, eventName: 'Different retry' } })).status, 409);
     });
     // Lark: US-006-003, US-006-004, US-006-005, US-006-006.
@@ -188,7 +194,7 @@ test('submission integrates with real PostgreSQL and coordinator routes', async 
       assert.deepEqual(results[0].body, results[1].body);
       assert.equal((await row(id)).status, 'submitted');
       assert.equal((await pool.query('SELECT count(*) FROM events WHERE id=$1', [id])).rows[0].count, '1');
-      assert.ok((await request('/events/unassigned', 'GET', undefined, coordToken)).body.some(item => item.id === id));
+      assert.ok(await inLeadQueue(id));
     });
     // Organiser five-minute timing regression; DEF-001 ordering retained.
     await t.test('Organiser midnight direct submission preserves Singapore dates and minute values', async () => {
@@ -220,7 +226,7 @@ test('submission integrates with real PostgreSQL and coordinator routes', async 
       assert.equal(result.status, 422);
       for (const key of Object.keys(complete)) assert.ok(result.body.fields[key]);
       assert.deepEqual(await row(draft.id), before);
-      assert.ok(!(await request('/events/unassigned', 'GET', undefined, coordToken)).body.some(item => item.id === draft.id));
+      assert.ok(!(await inLeadQueue(draft.id)));
     });
     // Lark: US-006-001, US-006-002. Assignment assertions also cover the separate coordinator workflow.
     await t.test('success preserves every field and feeds the existing coordinator workflow', async () => {
@@ -251,8 +257,9 @@ test('submission integrates with real PostgreSQL and coordinator routes', async 
       const organiserEvents = await request('/events/mine');
       assert.equal(organiserEvents.status, 200);
       assert.ok(organiserEvents.body.some(item => item.id === draft.id));
-      assert.ok((await request('/events/unassigned', 'GET', undefined, coordToken)).body.some(item => item.id === draft.id));
-      assert.equal((await request('/events/' + draft.id + '/assign', 'PATCH', {}, coordToken)).status, 200);
+      assert.ok(await inLeadQueue(draft.id));
+      assert.equal((await request('/coordinator-lead/events/' + draft.id + '/coordinator', 'PATCH',
+        { coordinatorId: coordinator, currentCoordinatorId: null }, leadToken)).status, 200);
       const detail = await request('/events/' + draft.id, 'GET', undefined, coordToken);
       assert.equal(detail.status, 200);
       assert.deepEqual(detail.body.draft_data, draft.draft_data);
