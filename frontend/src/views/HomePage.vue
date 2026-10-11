@@ -100,8 +100,9 @@
             </div>
             <p v-if="bookingError" class="text-danger small">{{ bookingError }}</p>
             <p v-else-if="!bookingRequests.length" class="text-muted small mb-0">No venue booking requests submitted yet.</p>
-            <ul v-else class="list-unstyled mb-0">
-              <li v-for="request in bookingRequests" :key="request.id" class="booking-request-item" :class="{ 'booking-request-selected': selectedBookingId === request.id }" tabindex="0" role="button" @click="toggleBookingDetails(request.id)" @keydown.enter="toggleBookingDetails(request.id)">
+            <p v-else-if="bookingRequests.length > 5" class="text-muted small mb-2">Showing the latest 5 of {{ bookingRequests.length }} requests.</p>
+            <ul v-if="bookingRequests.length" class="list-unstyled mb-0">
+              <li v-for="request in recentBookingRequests" :key="request.id" class="booking-request-item" :class="{ 'booking-request-selected': selectedBookingId === request.id }" tabindex="0" role="button" @click="toggleBookingDetails(request.id)" @keydown.enter="toggleBookingDetails(request.id)">
                 <div class="d-flex justify-content-between gap-2">
                   <div>
                     <div class="fw-semibold">{{ request.event_title }}</div>
@@ -137,8 +138,9 @@
             </div>
             <p v-if="supportError" class="text-danger small">{{ supportError }}</p>
             <p v-else-if="!supportRequirements.length" class="text-muted small mb-0">No technical support requirements submitted yet.</p>
-            <ul v-else class="list-unstyled mb-0">
-              <li v-for="item in supportRequirements" :key="item.id" class="support-summary-item" :class="{ 'support-summary-selected': selectedSupportId === item.id }" tabindex="0" role="button" @click="toggleSupportDetails(item.id)" @keydown.enter="toggleSupportDetails(item.id)">
+            <p v-else-if="supportRequirements.length > 5" class="text-muted small mb-2">Showing the latest 5 of {{ supportRequirements.length }} requirements.</p>
+            <ul v-if="supportRequirements.length" class="list-unstyled mb-0">
+              <li v-for="item in recentSupportRequirements" :key="item.id" class="support-summary-item" :class="{ 'support-summary-selected': selectedSupportId === item.id }" tabindex="0" role="button" @click="toggleSupportDetails(item.id)" @keydown.enter="toggleSupportDetails(item.id)">
                 <div class="d-flex justify-content-between gap-2">
                   <div><strong>{{ item.event_title }}</strong><div class="small text-muted">{{ item.staff_required }} staff · {{ item.equipment_requirements.length }} equipment type{{ item.equipment_requirements.length === 1 ? '' : 's' }}</div></div>
                   <div class="d-flex gap-1"><span v-if="item.updated" class="badge bg-info text-dark">Updated</span><span v-if="item.late_request" class="badge bg-warning text-dark">Late</span></div>
@@ -179,6 +181,8 @@ export default {
     canSearchVenues() { return ['event_coordinator', 'venue_staff'].includes(this.role) },
     canCreateRequest() { return ['event_organiser'].includes(this.role) },
     canManageEquipment() { return this.role === 'technical_support_staff' },
+    recentBookingRequests() { return this.bookingRequests.slice(0, 5) },
+    recentSupportRequirements() { return this.supportRequirements.slice(0, 5) },
     isCoordinatorLead() { return this.role === 'event_coordinator_lead' },
     isSafetyOfficer() { return this.role === 'safety_officer' },
     roleLabel() {
