@@ -1,23 +1,10 @@
 const express = require('express');
 const db = require('./db');
+const { holdConflicts } = require('./holdAvailability');
 const auth = require('./auth');
 
 // Team-confirmed lifecycle policy: approved arrangements reserve the venue.
-const { occupiesVenue } = require('./venueOccupancy');
-
-function occupiedInterval(booking) {
-  // Missing values add no buffer; do not use the domain model's 30-minute defaults.
-  return {
-    start: new Date(new Date(booking.start_time).getTime() - Number(booking.setup_minutes ?? 0) * 60000).toISOString(),
-    end: new Date(new Date(booking.end_time).getTime() + Number(booking.turnaround_minutes ?? 0) * 60000).toISOString()
-  };
-}
-
-function overlaps(first, second) {
-  // Implementation convention: strict overlap excludes exact touching.
-  // This boundary is not a customer/team-confirmed rule or manual acceptance criterion.
-  return new Date(first.start) < new Date(second.end) && new Date(first.end) > new Date(second.start);
-}
+const { occupiesVenue, occupiedInterval, overlaps } = require('./venueOccupancy');
 
 function reviewConflicts(request, bookings, unavailability) {
   const occupied = occupiedInterval(request);
@@ -71,9 +58,10 @@ router.get('/:id/review', auth.authenticate, auth.requireRoles('venue_staff'), a
       ORDER BY start_time, id`, bounds);
     const hours = await db.query(`SELECT day_of_week, opens_at::text, closes_at::text
       FROM venue_operating_hours WHERE venue_id = $1 ORDER BY day_of_week`, [request.venue_id]);
-    const conflicts = reviewConflicts(request, bookings.rows, unavailability.rows);
+    const conflicts = [...reviewConflicts(request, bookings.rows, unavailability.rows), ...await holdConflicts(db, request)];
     if (req.query.summary === '1') return res.json({
       expected_attendance: request.expected_attendance,
+      hold_conflicts: conflicts.filter(item => item.type === 'hold').length,
       reserved_conflicts: conflicts.filter(item => item.type === 'booking').length,
       unavailable_conflicts: conflicts.filter(item => item.type === 'unavailability').length
     });

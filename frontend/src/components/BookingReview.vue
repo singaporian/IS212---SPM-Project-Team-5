@@ -12,6 +12,7 @@
       <p class="small text-muted">Occupied: {{ formatRange(review.occupied.start, review.occupied.end) }} (Singapore time)</p>
       <p role="status">{{ review.conflicts.some(c => c.type === 'booking') ? 'Warning: Reserved booking overlaps occupied period' : 'No reserved booking conflict' }}</p>
       <p role="status">{{ review.conflicts.some(c => c.type === 'unavailability') ? 'Warning: Venue unavailable during requested period' : 'No recorded unavailability conflict' }}</p>
+      <p role="status">{{ review.conflicts.some(c => c.type === 'hold') ? 'Warning: Active tentative hold overlaps occupied period' : 'No active tentative hold conflict' }}</p>
       <button v-if="!fullPage" class="btn btn-outline-primary btn-sm" :aria-expanded="expanded" :aria-controls="'review-details-' + bookingId" @click="toggleDetails">{{ expanded ? 'Hide details' : 'Review details' }}</button>
       <div v-if="fullPage || expanded" :id="'review-details-' + bookingId" class="review-details">
       <h4 class="h6">Booking Request</h4>
@@ -45,11 +46,11 @@
       <ul v-else aria-label="Recorded operating hours"><li v-for="hours in operatingHours()" :key="hours">{{ hours }}</li></ul>
       <h4 class="h6">Availability &amp; Conflicts</h4>
       <div v-if="review.conflicts.length" class="alert alert-warning" role="status">
-        <ul class="mb-0"><li v-for="conflict in review.conflicts" :key="conflict.type + conflict.id">{{ conflict.type === 'booking' ? (conflict.status === 'approved' ? 'Approved — venue reserved' : 'Confirmed booking') : 'Recorded unavailability' }}: {{ conflict.title }} — {{ formatRange(conflict.start, conflict.end) }}{{ conflict.type === 'booking' ? ' (including recorded setup and turnaround)' : '' }}</li></ul>
+        <ul class="mb-0"><li v-for="conflict in review.conflicts" :key="conflict.type + conflict.id">{{ conflict.type === 'booking' ? (conflict.status === 'approved' ? 'Approved — venue reserved' : 'Confirmed booking') : (conflict.type === 'hold' ? 'Active tentative hold' : 'Recorded unavailability') }}: {{ conflict.title }} — {{ formatRange(conflict.start, conflict.end) }}{{ conflict.type === 'booking' ? ' (including recorded setup and turnaround)' : '' }}</li></ul>
       </div>
       <p v-else role="status">No overlapping reserved bookings or recorded unavailability found.</p>
       <h4 class="h6">Bookings around this slot</h4>
-      <p class="small text-muted">Conflict checks include approved and confirmed bookings and recorded unavailability. Other booking statuses are shown for context. Occupied intervals include recorded setup and turnaround.</p>
+      <p class="small text-muted">Conflict checks include approved and confirmed bookings, active unexpired tentative holds and recorded unavailability. Other booking statuses are shown for context. Occupied intervals include recorded setup and turnaround.</p>
       <p v-if="!review.bookings.length">No other bookings recorded for these dates.</p>
       <ul v-else><li v-for="booking in review.bookings" :key="booking.id">{{ booking.event_title || 'Booking' }} — {{ statusLabel(booking.status) }}; {{ formatRange(booking.start_time, booking.end_time) }}. Occupied: {{ formatRange(booking.occupied.start, booking.occupied.end) }}.<span v-if="booking.status === 'pending'" class="d-block text-muted">Context only; pending status does not reserve the venue.</span></li></ul>
       <h4 class="h6">Recorded unavailability around this slot</h4>

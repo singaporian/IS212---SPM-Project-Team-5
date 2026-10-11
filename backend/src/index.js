@@ -6,6 +6,7 @@ const fs = require('fs');
 const path = require('path');
 const db = require('./db');
 const auth = require('./auth');
+const { activeHoldSql, holdConflicts, processHoldExpiries } = require('./holdAvailability');
 const { Venue, Booking } = require('./domain');
 
 dotenv.config();
@@ -19,6 +20,7 @@ app.use('/api/equipment', require('./equipment').router);
 app.use('/api/equipment', require('./equipmentReservations').router);
 app.use('/api', require('./submissions').router);
 app.use('/api/bookings', require('./bookingReview').router);
+app.use('/api/venue-holds', require('./venueHolds').router);
 
 app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
 
@@ -48,6 +50,7 @@ app.get('/api/auth/me', auth.authenticate, async (req, res) => {
 
 app.get('/api/notifications', auth.authenticate, async (req, res) => {
   try {
+    if (req.auth.role === 'event_coordinator') await processHoldExpiries(db, { coordinatorId: req.auth.sub });
     const result = await db.query(
       `SELECT id, event_id, message, read, created_at
        FROM notifications WHERE user_id = $1
@@ -90,6 +93,7 @@ app.get('/api/venues/count', auth.authenticate, async (req, res) => {
 
 app.get('/api/venues', auth.authenticate, auth.requireRoles('event_coordinator', 'venue_staff'), async (req, res) => {
   try {
+    await processHoldExpiries(db);
     const {
       search,
       date,
@@ -168,6 +172,11 @@ app.get('/api/venues', auth.authenticate, auth.requireRoles('event_coordinator',
           AND b.status = 'confirmed'
           AND b.start_time - (b.setup_minutes * interval '1 minute') < ($${endParam}::timestamptz + ($${turnaroundParam} * interval '1 minute'))
           AND b.end_time + (b.turnaround_minutes * interval '1 minute') > ($${startParam}::timestamptz - ($${setupParam} * interval '1 minute'))
+      )`);
+      filters.push(`NOT EXISTS (
+        SELECT 1 FROM venue_holds h WHERE h.venue_id = v.id AND ${activeHoldSql('h')}
+        AND h.start_time - h.setup_minutes * interval '1 minute' < ($${endParam}::timestamptz + $${turnaroundParam} * interval '1 minute')
+        AND h.end_time + h.turnaround_minutes * interval '1 minute' > ($${startParam}::timestamptz - $${setupParam} * interval '1 minute')
       )`);
       filters.push(`NOT EXISTS (
         SELECT 1 FROM venue_unavailabilities vu
@@ -476,28 +485,41 @@ app.patch('/api/bookings/:id/decision', auth.authenticate, auth.requireRoles('ve
   if (!['approved', 'rejected', 'alternative_suggested'].includes(decision)) return res.status(400).json({ error: 'Invalid booking decision' });
   if (decision === 'rejected' && !reason.trim()) return res.status(400).json({ error: 'A rejection reason is required' });
   if (decision === 'alternative_suggested' && (!alternativeStartTime || !alternativeEndTime)) return res.status(400).json({ error: 'An alternative start and end time are required' });
+  let client;
   try {
-    const result = await db.query(
+    client = await db.pool.connect();
+    await client.query('BEGIN');
+    if (decision === 'approved') {
+      await client.query('LOCK TABLE bookings, venue_unavailabilities, venue_holds IN SHARE ROW EXCLUSIVE MODE');
+      const booking = (await client.query('SELECT * FROM bookings WHERE id=$1', [req.params.id])).rows[0];
+      if (booking && (await holdConflicts(client, booking)).length) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error: 'An active tentative hold blocks this occupied slot. Wait for the hold to expire before approval.' });
+      }
+    }
+    const result = await client.query(
       `UPDATE bookings SET status = $1, decision_reason = $2, decision_comment = $3,
              alternative_start_time = $4, alternative_end_time = $5, decided_by = $6, decided_at = now()
        WHERE id = $7 AND status = 'pending'
        RETURNING id, event_id, status, decision_reason, decision_comment, alternative_start_time, alternative_end_time, decided_at`,
       [decision, reason.trim() || null, comment.trim() || null, alternativeStartTime || null, alternativeEndTime || null, req.auth.sub, req.params.id]
     );
-    if (!result.rows[0]) return res.status(404).json({ error: 'Pending booking request not found' });
+    if (!result.rows[0]) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Pending booking request not found' }); }
     const resultRow = result.rows[0];
     // US-034: tell the event's current coordinator, who may have taken over from the one who requested the booking.
-    await db.query(
+    await client.query(
       `INSERT INTO notifications (user_id, event_id, message)
        SELECT COALESCE(e.assigned_coordinator_id, b.requested_by), b.event_id, $1
        FROM bookings b LEFT JOIN events e ON e.id = b.event_id WHERE b.id = $2`,
       [`Venue booking request ${decision.replace('_', ' ')}${reason ? `: ${reason}` : ''}`, req.params.id]
     );
+    await client.query('COMMIT');
     res.json(resultRow);
   } catch (error) {
+    if (client) await client.query('ROLLBACK');
     console.error(error);
     res.status(500).json({ error: 'Unable to save booking decision. Please retry.' });
-  }
+  } finally { if (client) client.release(); }
 });
 
 // US-013: approve or reject a submitted request assigned to this coordinator
