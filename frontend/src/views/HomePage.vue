@@ -37,6 +37,7 @@
 
             <div class="mt-3">
               <ul class="list-unstyled">
+                  <li v-if="role === 'event_coordinator'"><router-link to="/venue/holds">Tentative Venue Holds</router-link></li>
                   <li v-if="!venues.length && canSearchVenues" class="text-muted">Use Find Venues to search the venue directory.</li>
                   <li v-if="canManageEquipment" class="d-flex flex-wrap gap-2">
                     <router-link class="btn btn-accent" to="/equipment/new"><i class="bi bi-plus-lg"></i> Add Equipment</router-link>
@@ -66,6 +67,7 @@
         <div class="card quick-actions mb-3">
           <div class="card-body">
               <h6>Quick Actions</h6>
+              <router-link v-if="role === 'venue_staff'" class="btn btn-primary w-100 mb-2" to="/venue/holds">Tentative Venue Holds</router-link>
               <router-link v-if="canCreateRequest" class="btn btn-outline-primary btn-sm w-100 mb-2" to="/requests/new">Start Draft</router-link>
               <router-link v-if="canManageEquipment" class="btn btn-outline-primary btn-sm w-100 mb-2" to="/equipment/new">Add Equipment</router-link>
               <router-link v-if="role === 'event_coordinator'" class="btn btn-outline-primary btn-sm w-100 mb-2" to="/technical-support/requirements">Technical Support Requirements</router-link>

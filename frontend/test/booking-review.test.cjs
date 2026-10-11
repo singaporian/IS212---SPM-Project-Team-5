@@ -119,3 +119,15 @@ test('TC-US019-FE-06: US-019 dedicated page renders review details and back navi
     assert.ok(html.includes('No operating hours recorded.'));
   }
  });
+
+// US-038 integration: holds must not be mislabeled as confirmed bookings or unavailability.
+test('TC-US038-03 active tentative hold conflict stays explicitly labelled in review', async () => {
+  const data = payload();
+  data.conflicts = [{ type: 'hold', id: 'hold', title: 'Held workshop', start: data.occupied.start, end: data.occupied.end }];
+  const state = instance(async () => Response.json(data));
+  await state.load();
+  const html = await render(state);
+  assert.ok(html.includes('Warning: Active tentative hold overlaps occupied period'));
+  assert.ok(html.includes('Active tentative hold: Held workshop'));
+  assert.ok(html.includes('No recorded unavailability conflict'));
+});

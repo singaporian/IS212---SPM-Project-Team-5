@@ -1,5 +1,7 @@
 const bcrypt = require('bcryptjs');
 const db = require('./db');
+const { seedVenueScenarios, singaporeDate } = require('./demoVenueScenarios');
+const seedNow = new Date();
 
 const demoUsers = [
   ['Event Organiser', 'organiser@connectsphere.local', 'event_organiser'],
@@ -22,8 +24,8 @@ const demoVenues = [
     accessibility: ['wheelchair ramps', 'accessible parking'],
     supportedLayouts: ['Theater', 'Classroom', 'Banquet', 'Boardroom'],
     unavailablePeriods: [
-      { start: '2026-09-15T10:00:00+08:00', end: '2026-09-15T14:00:00+08:00', reason: 'Scheduled maintenance' },
-      { start: '2026-10-12T09:00:00+08:00', end: '2026-10-12T12:00:00+08:00', reason: 'Fire safety inspection' }
+      { start: `${singaporeDate(2, seedNow)}T10:00:00+08:00`, end: `${singaporeDate(2, seedNow)}T14:00:00+08:00`, reason: 'Scheduled maintenance' },
+      { start: `${singaporeDate(29, seedNow)}T09:00:00+08:00`, end: `${singaporeDate(29, seedNow)}T12:00:00+08:00`, reason: 'Fire safety inspection' }
     ],
     imageUrl: 'https://live.staticflickr.com/7411/16237273980_3f78d66bec_b.jpg'
   },
@@ -35,8 +37,8 @@ const demoVenues = [
     accessibility: ['wheelchair ramps'],
     supportedLayouts: ['Theater', 'Banquet'],
     unavailablePeriods: [
-      { start: '2026-09-18T18:00:00+08:00', end: '2026-09-18T21:00:00+08:00', reason: 'Private function' },
-      { start: '2026-11-06T13:00:00+08:00', end: '2026-11-06T17:00:00+08:00', reason: 'Audio equipment servicing' }
+      { start: `${singaporeDate(5, seedNow)}T18:00:00+08:00`, end: `${singaporeDate(5, seedNow)}T21:00:00+08:00`, reason: 'Private function' },
+      { start: `${singaporeDate(54, seedNow)}T13:00:00+08:00`, end: `${singaporeDate(54, seedNow)}T17:00:00+08:00`, reason: 'Audio equipment servicing' }
     ],
     imageUrl: 'https://live.staticflickr.com/7411/16237273980_3f78d66bec_b.jpg'
   },
@@ -48,8 +50,8 @@ const demoVenues = [
     accessibility: ['wheelchair ramps'],
     supportedLayouts: ['Theater', 'Classroom', 'Banquet'],
     unavailablePeriods: [
-      { start: '2026-09-20T09:00:00+08:00', end: '2026-09-20T12:00:00+08:00', reason: 'AV system upgrade' },
-      { start: '2026-12-03T10:00:00+08:00', end: '2026-12-03T15:00:00+08:00', reason: 'Floor maintenance' }
+      { start: `${singaporeDate(7, seedNow)}T09:00:00+08:00`, end: `${singaporeDate(7, seedNow)}T12:00:00+08:00`, reason: 'AV system upgrade' },
+      { start: `${singaporeDate(81, seedNow)}T10:00:00+08:00`, end: `${singaporeDate(81, seedNow)}T15:00:00+08:00`, reason: 'Floor maintenance' }
     ],
     imageUrl: 'https://live.staticflickr.com/7411/16237273980_3f78d66bec_b.jpg'
   },
@@ -61,8 +63,8 @@ const demoVenues = [
     accessibility: ['wheelchair ramps'],
     supportedLayouts: ['Theater', 'Banquet', 'Boardroom'],
     unavailablePeriods: [
-      { start: '2026-09-22T15:00:00+08:00', end: '2026-09-22T19:00:00+08:00', reason: 'Floor refurbishment' },
-      { start: '2027-01-08T08:00:00+08:00', end: '2027-01-08T11:00:00+08:00', reason: 'Lighting system inspection' }
+      { start: `${singaporeDate(9, seedNow)}T15:00:00+08:00`, end: `${singaporeDate(9, seedNow)}T19:00:00+08:00`, reason: 'Floor refurbishment' },
+      { start: `${singaporeDate(117, seedNow)}T08:00:00+08:00`, end: `${singaporeDate(117, seedNow)}T11:00:00+08:00`, reason: 'Lighting system inspection' }
     ],
     imageUrl: 'https://live.staticflickr.com/7411/16237273980_3f78d66bec_b.jpg'
   },
@@ -74,8 +76,8 @@ const demoVenues = [
     accessibility: ['wheelchair ramps'],
     supportedLayouts: ['Theater', 'Classroom', 'Banquet'],
     unavailablePeriods: [
-      { start: '2026-09-16T08:00:00+08:00', end: '2026-09-16T11:00:00+08:00', reason: 'Cleaning and inspection' },
-      { start: '2026-10-27T16:00:00+08:00', end: '2026-10-27T20:00:00+08:00', reason: 'Private function' }
+      { start: `${singaporeDate(3, seedNow)}T08:00:00+08:00`, end: `${singaporeDate(3, seedNow)}T11:00:00+08:00`, reason: 'Cleaning and inspection' },
+      { start: `${singaporeDate(44, seedNow)}T16:00:00+08:00`, end: `${singaporeDate(44, seedNow)}T20:00:00+08:00`, reason: 'Private function' }
     ],
     imageUrl: 'https://live.staticflickr.com/7411/16237273980_3f78d66bec_b.jpg'
   },
@@ -87,8 +89,8 @@ const demoVenues = [
     accessibility: ['wheelchair ramps'],
     supportedLayouts: ['Theater', 'Classroom', 'Boardroom'],
     unavailablePeriods: [
-      { start: '2026-09-24T12:00:00+08:00', end: '2026-09-24T16:00:00+08:00', reason: 'Lighting maintenance' },
-      { start: '2026-11-19T09:00:00+08:00', end: '2026-11-19T13:00:00+08:00', reason: 'Projector replacement' }
+      { start: `${singaporeDate(11, seedNow)}T12:00:00+08:00`, end: `${singaporeDate(11, seedNow)}T16:00:00+08:00`, reason: 'Lighting maintenance' },
+      { start: `${singaporeDate(67, seedNow)}T09:00:00+08:00`, end: `${singaporeDate(67, seedNow)}T13:00:00+08:00`, reason: 'Projector replacement' }
     ],
     imageUrl: 'https://live.staticflickr.com/7411/16237273980_3f78d66bec_b.jpg'
   },
@@ -100,8 +102,8 @@ const demoVenues = [
     accessibility: ['wheelchair ramps'],
     supportedLayouts: ['Theater', 'Banquet'],
     unavailablePeriods: [
-      { start: '2026-09-19T16:00:00+08:00', end: '2026-09-19T20:00:00+08:00', reason: 'Private function' },
-      { start: '2026-12-18T14:00:00+08:00', end: '2026-12-18T18:00:00+08:00', reason: 'Annual maintenance' }
+      { start: `${singaporeDate(6, seedNow)}T16:00:00+08:00`, end: `${singaporeDate(6, seedNow)}T20:00:00+08:00`, reason: 'Private function' },
+      { start: `${singaporeDate(96, seedNow)}T14:00:00+08:00`, end: `${singaporeDate(96, seedNow)}T18:00:00+08:00`, reason: 'Annual maintenance' }
     ],
     imageUrl: 'https://live.staticflickr.com/7411/16237273980_3f78d66bec_b.jpg'
   },
@@ -113,8 +115,8 @@ const demoVenues = [
     accessibility: ['wheelchair ramps'],
     supportedLayouts: ['Theater', 'Classroom', 'Banquet', 'Boardroom'],
     unavailablePeriods: [
-      { start: '2026-09-25T09:00:00+08:00', end: '2026-09-25T13:00:00+08:00', reason: 'Scheduled maintenance' },
-      { start: '2027-01-22T10:00:00+08:00', end: '2027-01-22T14:00:00+08:00', reason: 'Air-conditioning maintenance' }
+      { start: `${singaporeDate(12, seedNow)}T09:00:00+08:00`, end: `${singaporeDate(12, seedNow)}T13:00:00+08:00`, reason: 'Scheduled maintenance' },
+      { start: `${singaporeDate(131, seedNow)}T10:00:00+08:00`, end: `${singaporeDate(131, seedNow)}T14:00:00+08:00`, reason: 'Air-conditioning maintenance' }
     ],
     imageUrl: 'https://live.staticflickr.com/7411/16237273980_3f78d66bec_b.jpg'
   },
@@ -126,8 +128,8 @@ const demoVenues = [
     accessibility: ['wheelchair ramps'],
     supportedLayouts: ['Theater', 'Classroom', 'Banquet'],
     unavailablePeriods: [
-      { start: '2026-09-17T14:00:00+08:00', end: '2026-09-17T18:00:00+08:00', reason: 'Carpet replacement' },
-      { start: '2026-12-09T08:00:00+08:00', end: '2026-12-09T11:00:00+08:00', reason: 'Electrical inspection' }
+      { start: `${singaporeDate(4, seedNow)}T14:00:00+08:00`, end: `${singaporeDate(4, seedNow)}T18:00:00+08:00`, reason: 'Carpet replacement' },
+      { start: `${singaporeDate(87, seedNow)}T08:00:00+08:00`, end: `${singaporeDate(87, seedNow)}T11:00:00+08:00`, reason: 'Electrical inspection' }
     ],
     imageUrl: 'https://live.staticflickr.com/7411/16237273980_3f78d66bec_b.jpg'
   },
@@ -139,16 +141,16 @@ const demoVenues = [
     accessibility: ['wheelchair ramps'],
     supportedLayouts: ['Theater', 'Banquet', 'Boardroom'],
     unavailablePeriods: [
-      { start: '2026-09-21T10:00:00+08:00', end: '2026-09-21T15:00:00+08:00', reason: 'Safety inspection' },
-      { start: '2027-01-29T17:00:00+08:00', end: '2027-01-29T21:00:00+08:00', reason: 'Private function' }
+      { start: `${singaporeDate(8, seedNow)}T10:00:00+08:00`, end: `${singaporeDate(8, seedNow)}T15:00:00+08:00`, reason: 'Safety inspection' },
+      { start: `${singaporeDate(138, seedNow)}T17:00:00+08:00`, end: `${singaporeDate(138, seedNow)}T21:00:00+08:00`, reason: 'Private function' }
     ],
     imageUrl: 'https://live.staticflickr.com/7411/16237273980_3f78d66bec_b.jpg'
   }
 ];
 
 const operatingDays = [0, 1, 2, 3, 4, 5, 6];
-const availableFrom = '2026-09-13';
-const availableUntil = '2027-01-31';
+const availableFrom = singaporeDate(0, seedNow);
+const availableUntil = singaporeDate(365, seedNow);
 const US023_PURPOSE = 'Demo event for US-023 equipment reservations';
 
 // The coordinator who requested an event's bookings is the one assigned to it (US-034 shows bookings by assignment).
@@ -314,16 +316,12 @@ const demoAssignmentRequests = [
     venue: 'Theater', accessibility: 'Not Required', equipment: 'Projector, microphone', registration: 'yes', coordinator: 'coordinator3@connectsphere.local' }
 ];
 
-function singaporeDate(daysFromToday) {
-  return new Date(Date.now() + 8 * 3600e3 + daysFromToday * 86400e3).toISOString().slice(0, 10);
-}
-
 async function seedDemoAssignments() {
   const users = await db.query('SELECT id, email FROM users WHERE email = ANY($1::text[])',
     [['organiser@connectsphere.local', ...new Set(demoAssignmentRequests.map(spec => spec.coordinator).filter(Boolean))]]);
   const idByEmail = new Map(users.rows.map(user => [user.email, user.id]));
   for (const spec of demoAssignmentRequests) {
-    const date = singaporeDate(spec.day);
+    const date = singaporeDate(spec.day, seedNow);
     // Same shape the organiser form saves and US-006 submission maps into the structured columns.
     const draft = {
       eventName: spec.title, startDate: date, startTime: spec.start, endDate: date, endTime: spec.end,
@@ -432,6 +430,9 @@ async function run() {
   console.log('Demo equipment and reservations seeded.');
   await seedDemoAssignments();
   console.log('Demo event requests for coordinator assignment seeded.');
+  const scenarios = await seedVenueScenarios(db.pool, seedNow);
+  console.log('Future venue review and hold scenarios seeded (Singapore time):');
+  console.log(JSON.stringify(scenarios, null, 2));
   await db.pool.end();
 }
 

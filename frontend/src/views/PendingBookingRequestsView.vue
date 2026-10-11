@@ -14,6 +14,7 @@
         <div class="inbox-status">
           <span class="badge bg-warning text-dark">{{ statusLabel(summaries[request.id]?.status || request.status) }}</span>
           <template v-if="summaries[request.id]">
+            <p>{{ summaries[request.id].hold_conflicts ? 'Warning: Active tentative hold conflict' : 'No active tentative hold conflict' }}</p>
             <p>Attendance: {{ summaries[request.id].expected_attendance ?? 'Not recorded' }}</p>
             <p>{{ summaries[request.id].reserved_conflicts ? 'Warning: Reserved booking conflict' : 'No reserved booking conflict' }}</p>
             <p>{{ summaries[request.id].unavailable_conflicts ? 'Warning: Recorded venue unavailability' : 'No recorded unavailability conflict' }}</p>

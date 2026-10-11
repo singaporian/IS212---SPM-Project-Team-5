@@ -99,7 +99,7 @@ test('US-019 review API returns current requirements/availability without changi
       assert.equal(result.body.bookings.length, 1);
       assert.deepEqual(result.body.conflicts, []);
       const summary = await get(requestId, token('venue_staff'), true);
-      assert.deepEqual(summary.body, { expected_attendance: 25, reserved_conflicts: 0, unavailable_conflicts: 0 });
+      assert.deepEqual(summary.body, { expected_attendance: 25, reserved_conflicts: 0, unavailable_conflicts: 0, hold_conflicts: 0 });
     });
     await t.test('refresh detects confirmed bookings/unavailability, includes approved reservations and causes no writes', async () => {
       const approved = await booking('approved'), confirmed = await booking('confirmed');
@@ -118,7 +118,7 @@ test('US-019 review API returns current requirements/availability without changi
       assert.deepEqual(result.body.conflicts.map(item => item.id).sort(), [approved, confirmed, period].sort());
       assert.ok(result.body.bookings.some(item => item.id === approved && item.status === 'approved'));
       const summary = await get(requestId, token('venue_staff'), true);
-      assert.deepEqual(summary.body, { expected_attendance: 25, reserved_conflicts: 2, unavailable_conflicts: 1 });
+      assert.deepEqual(summary.body, { expected_attendance: 25, reserved_conflicts: 2, unavailable_conflicts: 1, hold_conflicts: 0 });
       assert.deepEqual(await snapshot(), before);
     });
     await t.test('overnight review retrieves periods on the following Singapore date', async () => {

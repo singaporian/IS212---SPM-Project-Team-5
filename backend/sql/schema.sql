@@ -221,3 +221,26 @@ CREATE TABLE IF NOT EXISTS event_change_requests (
   created_at timestamptz DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS event_change_requests_event_idx ON event_change_requests (event_id);
+
+-- US-038: holds reference an existing request; no duplicate booking is created.
+CREATE TABLE IF NOT EXISTS venue_holds (
+ id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+ booking_id uuid NOT NULL REFERENCES bookings(id),
+ event_id uuid NOT NULL REFERENCES events(id),
+ venue_id uuid NOT NULL REFERENCES venues(id),
+ start_time timestamptz NOT NULL,
+ end_time timestamptz NOT NULL CHECK (end_time > start_time),
+ setup_minutes integer NOT NULL DEFAULT 0 CHECK (setup_minutes >= 0),
+ turnaround_minutes integer NOT NULL DEFAULT 0 CHECK (turnaround_minutes >= 0),
+ status text NOT NULL DEFAULT 'active' CHECK (status IN ('active','released')),
+ expiry_at timestamptz NOT NULL,
+ created_by uuid NOT NULL REFERENCES users(id),
+ created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+ updated_by uuid NOT NULL REFERENCES users(id),
+ updated_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+ expiry_notified_at timestamptz
+);
+CREATE INDEX IF NOT EXISTS venue_holds_availability ON venue_holds (venue_id, expiry_at) WHERE status = 'active';
+-- Upgrade the earlier local US-038 draft without deleting existing hold/history data.
+ALTER TABLE venue_holds DROP CONSTRAINT IF EXISTS venue_holds_check1;
+ALTER TABLE venue_holds ADD COLUMN IF NOT EXISTS expiry_notified_at timestamptz;
