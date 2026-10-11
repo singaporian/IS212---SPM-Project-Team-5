@@ -10,6 +10,30 @@ Always branch off `main`. Format your branches as: `name/role/user-story-ID/brie
 4. Request at least one peer review. - should ownself check instead?
 5. Once approved and all checks pass, squash and merge into `main`.
 
+## Continuous Integration
+
+The GitHub Actions workflow at `.github/workflows/ci.yml` runs on every pull request targeting `main` and every push to `main`. It:
+
+1. Starts PostgreSQL 15.
+2. Installs backend dependencies and initializes the schema.
+3. Runs the complete backend test suite.
+4. Installs frontend dependencies.
+5. Runs frontend tests.
+6. Builds the frontend.
+
+To require these checks before merging, configure branch protection on GitHub:
+
+1. Open **Settings > Branches > Add branch protection rule**.
+2. Set the branch pattern to `main`.
+3. Enable **Require a pull request before merging**.
+4. Enable **Require status checks to pass before merging**.
+5. Select the CI check named `test`.
+6. Save the rule.
+
+After that, a pull request cannot merge into `main` until the CI job passes.
+
+Tests should cover both the new functionality and regression behavior. For example, a booking change should test multiple venues, conflict handling, and independent decisions, while also confirming existing authentication, drafts, equipment, and event workflows still pass.
+
 
 ## Start the project (recommended)
 
