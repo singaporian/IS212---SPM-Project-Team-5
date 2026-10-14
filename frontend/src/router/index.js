@@ -23,9 +23,12 @@ import SupportRequirementsView from '../views/SupportRequirementsView.vue'
 import TechnicalSupportRequirementsView from '../views/TechnicalSupportRequirementsView.vue'
 import TechnicalSupportRequestsView from '../views/TechnicalSupportRequestsView.vue'
 import EventChangeRequestView from '../views/EventChangeRequestView.vue'
+import VenueUnavailabilityView from '../views/VenueUnavailabilityView.vue'
+import AffectedBookingsView from '../views/AffectedBookingsView.vue'
 
 const routes = [
   { path: '/venue/holds', name: 'venue-holds', component: VenueHoldsView, meta: { requiresAuth: true, roles: ['venue_staff', 'event_coordinator'] } },
+  { path: '/venue/unavailability', name: 'venue-unavailability', component: VenueUnavailabilityView, meta: { requiresAuth: true, roles: ['venue_staff'] } },
   { path: '/bookings/pending/:id', name: 'venue-booking-review', component: VenueBookingReviewView, meta: { requiresAuth: true, roles: ['venue_staff'] } },
   { path: '/requests/submitted', name: 'submitted-event-requests', component: SubmittedRequestsView, meta: { requiresAuth: true, roles: ['event_organiser'] } },
   { path: '/requests/submitted/:id', name: 'submitted-event-request', component: SubmittedRequestsView, meta: { requiresAuth: true, roles: ['event_organiser'] } },
@@ -45,6 +48,7 @@ const routes = [
   { path: '/bookings/new', name: 'new-booking-request', component: BookingRequestView, meta: { requiresAuth: true, roles: ['event_coordinator'] } },
   { path: '/bookings/batch', name: 'batch-booking-request', component: BatchBookingRequestView, meta: { requiresAuth: true, roles: ['event_coordinator'] } },
   { path: '/bookings', name: 'booking-requests', component: BookingRequestsView, meta: { requiresAuth: true, roles: ['event_coordinator'] } },
+  { path: '/bookings/affected', name: 'affected-bookings', component: AffectedBookingsView, meta: { requiresAuth: true, roles: ['event_coordinator'] } },
   { path: '/bookings/pending', name: 'pending-booking-requests', component: PendingBookingRequestsView, meta: { requiresAuth: true, roles: ['venue_staff'] } },
   { path: '/technical-support/requirements', name: 'support-requirements', component: SupportRequirementsView, meta: { requiresAuth: true, roles: ['event_coordinator'] } },
   { path: '/technical-support/requests', name: 'support-requests', component: TechnicalSupportRequestsView, meta: { requiresAuth: true, roles: ['event_coordinator'] } },

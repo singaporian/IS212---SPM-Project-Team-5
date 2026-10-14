@@ -33,8 +33,6 @@
             <div class="col-md-3"><label class="form-label">Event date<input v-model="form.date" class="form-control" type="date" required /></label></div>
             <div class="col-md-3"><label class="form-label">Start time<input v-model="form.startTime" class="form-control" type="time" required /></label></div>
             <div class="col-md-3"><label class="form-label">End time<input v-model="form.endTime" class="form-control" :class="{ 'is-invalid': timeValidationError }" type="time" required /><div v-if="timeValidationError" class="invalid-feedback">{{ timeValidationError }}</div></label></div>
-            <div class="col-md-3"><label class="form-label">Setup minutes<input v-model.number="form.setupMinutes" class="form-control" type="number" min="0" required /></label></div>
-            <div class="col-md-3"><label class="form-label">Turnaround minutes<input v-model.number="form.turnaroundMinutes" class="form-control" type="number" min="0" required /></label></div>
             <div class="col-12"><label class="form-label">Venue requirements<textarea v-model="form.requirements" class="form-control" rows="3" placeholder="Layout, accessibility, facilities, or other requirements"></textarea></label></div>
           </div>
           <div v-if="error" class="alert alert-danger mt-3">{{ error }}</div>
@@ -47,7 +45,6 @@
             <dt class="col-sm-4">Event</dt><dd class="col-sm-8">{{ selectedEvent?.title || '—' }}</dd>
             <dt class="col-sm-4">Venue</dt><dd class="col-sm-8">{{ selectedVenue?.name || '—' }}</dd>
             <dt class="col-sm-4">Date and time</dt><dd class="col-sm-8">{{ form.date }} from {{ form.startTime }} to {{ form.endTime }}</dd>
-            <dt class="col-sm-4">Setup / turnaround</dt><dd class="col-sm-8">{{ form.setupMinutes }} / {{ form.turnaroundMinutes }} minutes</dd>
             <dt class="col-sm-4">Requirements</dt><dd class="col-sm-8">{{ form.requirements || 'None specified' }}</dd>
           </dl>
 
