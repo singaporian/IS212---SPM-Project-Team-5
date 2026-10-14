@@ -490,7 +490,13 @@ app.post('/api/bookings/requests', auth.authenticate, auth.requireRoles('event_c
 // Coordinator view of their submitted venue booking requests.
 app.get('/api/bookings/mine', auth.authenticate, auth.requireRoles('event_coordinator'), async (req, res) => {
   const result = await db.query(
-    `SELECT b.*, v.name AS venue_name, e.title AS event_title
+    `SELECT b.*, v.name AS venue_name, e.title AS event_title,
+            EXISTS (
+              SELECT 1 FROM venue_unavailabilities vu
+              WHERE vu.venue_id = b.venue_id
+                AND b.start_time - (b.setup_minutes * interval '1 minute') < vu.end_time
+                AND b.end_time + (b.turnaround_minutes * interval '1 minute') > vu.start_time
+            ) AS affected_by_unavailability
      FROM bookings b JOIN venues v ON v.id = b.venue_id JOIN events e ON e.id = b.event_id
      WHERE e.assigned_coordinator_id = $1 ORDER BY b.created_at DESC`,
     [req.auth.sub]
