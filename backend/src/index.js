@@ -8,6 +8,7 @@ const db = require('./db');
 const auth = require('./auth');
 const { activeHoldSql, holdConflicts, processHoldExpiries } = require('./holdAvailability');
 const { Venue, Booking } = require('./domain');
+const { occupiedInterval, overlaps } = require('./venueOccupancy');
 
 dotenv.config();
 const app = express();
@@ -46,6 +47,74 @@ app.get('/api/auth/me', auth.authenticate, async (req, res) => {
   const result = await db.query('SELECT id, name, email, role FROM users WHERE id = $1', [req.auth.sub]);
   if (!result.rows[0]) return res.status(401).json({ error: 'User no longer exists' });
   res.json({ user: result.rows[0] });
+});
+
+app.post('/api/venues/:id/unavailability', auth.authenticate, auth.requireRoles('venue_staff'), async (req, res) => {
+  const startTime = new Date(req.body.startTime);
+  const endTime = new Date(req.body.endTime);
+  const reason = typeof req.body.reason === 'string' ? req.body.reason.trim() : '';
+  if (!uuidPattern.test(req.params.id) || !Number.isFinite(startTime.getTime()) || !Number.isFinite(endTime.getTime()) || endTime <= startTime) return res.status(400).json({ error: 'Enter a valid unavailability period with an end after the start' });
+  if (!reason) return res.status(400).json({ error: 'A reason is required' });
+  try {
+    const venue = await db.query('SELECT id, name FROM venues WHERE id = $1', [req.params.id]);
+    if (!venue.rows[0]) return res.status(404).json({ error: 'Venue not found' });
+    const result = await db.query(
+      `INSERT INTO venue_unavailabilities (venue_id, start_time, end_time, reason, created_by)
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING id, venue_id, start_time, end_time, reason, created_by, created_at`,
+      [req.params.id, startTime.toISOString(), endTime.toISOString(), reason, req.auth.sub]
+    );
+    const affected = await db.query(
+      `SELECT b.id, b.event_id, b.start_time, b.end_time, b.status, b.setup_minutes, b.turnaround_minutes,
+              e.title AS event_title, COALESCE(e.assigned_coordinator_id, b.requested_by) AS coordinator_id
+       FROM bookings b JOIN events e ON e.id = b.event_id
+       WHERE b.venue_id = $1 AND b.status IN ('pending', 'approved', 'confirmed')
+         AND b.start_time - (b.setup_minutes * interval '1 minute') < $3::timestamptz
+         AND b.end_time + (b.turnaround_minutes * interval '1 minute') > $2::timestamptz`,
+      [req.params.id, startTime.toISOString(), endTime.toISOString()]
+    );
+    const relevant = affected.rows.filter((booking) => overlaps(occupiedInterval(booking), { start: startTime.toISOString(), end: endTime.toISOString() }));
+    for (const booking of relevant.filter((item) => item.coordinator_id)) {
+      await db.query(
+        `INSERT INTO notifications (user_id, event_id, message) VALUES ($1, $2, $3)`,
+        [booking.coordinator_id, booking.event_id, `Venue ${venue.rows[0].name} is unavailable for ${reason}; replacement arrangements are required for ${booking.event_title}`]
+      );
+    }
+    res.status(201).json({ ...result.rows[0], venue_name: venue.rows[0].name, affected_bookings: relevant });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Unable to record venue unavailability' });
+  }
+});
+
+app.get('/api/venues/unavailability', auth.authenticate, auth.requireRoles('venue_staff'), async (req, res) => {
+  const result = await db.query(
+    `SELECT vu.*, v.name AS venue_name FROM venue_unavailabilities vu JOIN venues v ON v.id = vu.venue_id
+     WHERE vu.end_time >= now() ORDER BY vu.start_time ASC`
+  );
+  res.json(result.rows);
+});
+
+app.get('/api/bookings/affected', auth.authenticate, auth.requireRoles('event_coordinator'), async (req, res) => {
+  try {
+    const result = await db.query(
+      `SELECT b.id, b.event_id, b.venue_id, b.start_time, b.end_time, b.status, b.setup_minutes, b.turnaround_minutes,
+              b.required_capacity, b.venue_requirements, e.title AS event_title, v.name AS venue_name,
+              vu.start_time AS unavailable_start, vu.end_time AS unavailable_end, vu.reason AS unavailable_reason
+       FROM bookings b JOIN events e ON e.id = b.event_id JOIN venues v ON v.id = b.venue_id
+       JOIN venue_unavailabilities vu ON vu.venue_id = b.venue_id
+       WHERE COALESCE(e.assigned_coordinator_id, b.requested_by) = $1
+         AND b.status IN ('pending', 'approved', 'confirmed')
+         AND b.start_time - (b.setup_minutes * interval '1 minute') < vu.end_time
+         AND b.end_time + (b.turnaround_minutes * interval '1 minute') > vu.start_time
+       ORDER BY vu.start_time ASC, b.start_time ASC`,
+      [req.auth.sub]
+    );
+    res.json(result.rows);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Unable to load affected bookings' });
+  }
 });
 
 app.get('/api/notifications', auth.authenticate, async (req, res) => {
@@ -287,7 +356,7 @@ app.post('/api/bookings/requests/batch', auth.authenticate, auth.requireRoles('e
     client = await db.pool.connect();
     await client.query('BEGIN');
     const eventResult = await client.query(
-      `SELECT id, title, expected_attendance FROM events WHERE id = $1 AND assigned_coordinator_id = $2 AND status = 'submitted'`,
+      `SELECT id, title, expected_attendance FROM events WHERE id = $1 AND assigned_coordinator_id = $2 AND status IN ('submitted', 'approved', 'planning')`,
       [req.body.eventId, req.auth.sub]
     );
     if (!eventResult.rows[0]) {
@@ -363,7 +432,7 @@ app.post('/api/bookings/requests', auth.authenticate, auth.requireRoles('event_c
   try { input = parseBookingInput(req.body); } catch (error) { return res.status(error.status || 400).json({ error: error.message }); }
   try {
     const eventResult = await db.query(
-      `SELECT id, title, expected_attendance FROM events WHERE id = $1 AND assigned_coordinator_id = $2 AND status = 'submitted'`,
+      `SELECT id, title, expected_attendance FROM events WHERE id = $1 AND assigned_coordinator_id = $2 AND status IN ('submitted', 'approved', 'planning')`,
       [req.body.eventId, req.auth.sub]
     );
     if (!eventResult.rows[0]) return res.status(404).json({ error: 'Event not found or not assigned to you' });

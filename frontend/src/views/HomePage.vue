@@ -68,11 +68,14 @@
           <div class="card-body">
               <h6>Quick Actions</h6>
               <router-link v-if="role === 'venue_staff'" class="btn btn-primary w-100 mb-2" to="/venue/holds">Tentative Venue Holds</router-link>
+              <router-link v-if="role === 'venue_staff'" class="btn btn-outline-primary btn-sm w-100 mb-2" to="/bookings/pending">Pending Venue Booking Requests</router-link>
+              <router-link v-if="role === 'venue_staff'" class="btn btn-outline-primary btn-sm w-100 mb-2" to="/venue/unavailability">Mark Venue Unavailable</router-link>
               <router-link v-if="canCreateRequest" class="btn btn-outline-primary btn-sm w-100 mb-2" to="/requests/new">Start Draft</router-link>
               <router-link v-if="canManageEquipment" class="btn btn-outline-primary btn-sm w-100 mb-2" to="/equipment/new">Add Equipment</router-link>
               <router-link v-if="role === 'event_coordinator'" class="btn btn-outline-primary btn-sm w-100 mb-2" to="/technical-support/requirements">Technical Support Requirements</router-link>
               <router-link v-if="canManageEquipment" class="btn btn-outline-secondary btn-sm w-100 mb-2" to="/technical-support/queue">Support Requirements Queue</router-link>
               <router-link v-if="role === 'event_coordinator'" class="btn btn-outline-secondary btn-sm w-100 mb-2" to="/coordinator/requests">Assigned Event Requests</router-link>
+              <router-link v-if="role === 'event_coordinator'" class="btn btn-outline-warning btn-sm w-100 mb-2" to="/bookings/affected">Affected Venue Bookings</router-link>
               <router-link v-else-if="role === 'venue_staff'" class="btn btn-outline-secondary btn-sm w-100 mb-2" to="/venue/bookings">{{ primaryRoleAction }}</router-link>
               <router-link v-else-if="isCoordinatorLead" class="btn btn-outline-secondary btn-sm w-100 mb-2" to="/coordinator-lead/assignments">{{ primaryRoleAction }}</router-link>
               <router-link v-else-if="canCreateRequest" class="btn btn-outline-secondary btn-sm w-100 mb-2" to="/requests/drafts">My Drafts</router-link>
@@ -101,7 +104,7 @@
             <p v-if="bookingError" class="text-danger small">{{ bookingError }}</p>
             <p v-else-if="!bookingRequests.length" class="text-muted small mb-0">No venue booking requests submitted yet.</p>
             <p v-else-if="bookingRequests.length > 5" class="text-muted small mb-2">Showing the latest 5 of {{ bookingRequests.length }} requests.</p>
-            <ul v-if="bookingRequests.length" class="list-unstyled mb-0">
+            <ul v-if="bookingRequests.length" class="list-unstyled mb-0 summary-list">
               <li v-for="request in recentBookingRequests" :key="request.id" class="booking-request-item" :class="{ 'booking-request-selected': selectedBookingId === request.id }" tabindex="0" role="button" @click="toggleBookingDetails(request.id)" @keydown.enter="toggleBookingDetails(request.id)">
                 <div class="d-flex justify-content-between gap-2">
                   <div>
@@ -139,7 +142,7 @@
             <p v-if="supportError" class="text-danger small">{{ supportError }}</p>
             <p v-else-if="!supportRequirements.length" class="text-muted small mb-0">No technical support requirements submitted yet.</p>
             <p v-else-if="supportRequirements.length > 5" class="text-muted small mb-2">Showing the latest 5 of {{ supportRequirements.length }} requirements.</p>
-            <ul v-if="supportRequirements.length" class="list-unstyled mb-0">
+            <ul v-if="supportRequirements.length" class="list-unstyled mb-0 summary-list">
               <li v-for="item in recentSupportRequirements" :key="item.id" class="support-summary-item" :class="{ 'support-summary-selected': selectedSupportId === item.id }" tabindex="0" role="button" @click="toggleSupportDetails(item.id)" @keydown.enter="toggleSupportDetails(item.id)">
                 <div class="d-flex justify-content-between gap-2">
                   <div><strong>{{ item.event_title }}</strong><div class="small text-muted">{{ item.staff_required }} staff · {{ item.equipment_requirements.length }} equipment type{{ item.equipment_requirements.length === 1 ? '' : 's' }}</div></div>
@@ -345,4 +348,7 @@ export default {
 .support-summary-item { border-bottom: 1px solid #eef0f4; padding: .75rem .5rem; cursor: pointer; border-radius: .5rem }
 .support-summary-item:hover, .support-summary-item:focus, .support-summary-selected { background: #f8f9ff; outline: none }
 .support-summary-details { border-top: 1px solid #e8ebf2; padding-top: .5rem; color: #52606d; font-size: .82rem; line-height: 1.6 }
+.summary-list { max-height: 290px; overflow-y: auto; padding-right: .35rem; }
+.summary-list::-webkit-scrollbar { width: 6px; }
+.summary-list::-webkit-scrollbar-thumb { border-radius: 6px; background: #cbd5e1; }
 </style>

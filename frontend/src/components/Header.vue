@@ -112,8 +112,9 @@ export default {
     },
     notificationTarget(notification) {
       const message = notification.message || ''
-      if (this.user.role === 'venue_staff' && message.startsWith('New venue booking request')) return '/bookings/pending'
+      if (this.user.role === 'venue_staff' && message.toLowerCase().includes('venue booking request')) return '/bookings/pending'
       if (this.user.role === 'event_coordinator' && message.startsWith('Venue booking request')) return '/bookings'
+      if (this.user.role === 'event_coordinator' && message.startsWith('Venue ')) return '/bookings/affected'
       if (this.user.role === 'event_coordinator' && message.startsWith('Event request') && /(re)?assigned to you/.test(message)) return '/coordinator/requests'
       if (this.user.role === 'technical_support_staff' && message.startsWith('Technical support requirements updated')) return '/technical-support/queue'
       return null

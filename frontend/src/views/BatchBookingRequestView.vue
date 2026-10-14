@@ -7,7 +7,7 @@
       <p class="text-muted">Arrange multiple spaces for one event. Each venue is checked and reviewed independently.</p>
       <div v-if="success" class="alert alert-success">{{ success }} <router-link to="/bookings" class="alert-link ms-1">View all bookings</router-link></div>
       <form v-if="!showSummary && !success" @submit.prevent="review">
-        <label class="form-label">Event<select v-model="eventId" class="form-select" required @change="applyEventCapacity"><option value="">Select an assigned submitted event</option><option v-for="event in events" :key="event.id" :value="event.id">{{ event.title }} (expected attendance: {{ event.expected_attendance ?? 'not specified' }})</option></select></label>
+        <label class="form-label">Event<select v-model="eventId" class="form-select" required @change="applyEventCapacity"><option value="">Select an assigned active event</option><option v-for="event in events" :key="event.id" :value="event.id">{{ event.title }} ({{ event.status }}, expected attendance: {{ event.expected_attendance ?? 'not specified' }})</option></select></label>
         <div v-for="(row, index) in rows" :key="row.key" class="booking-row mt-4">
           <div class="d-flex justify-content-between align-items-center mb-3"><h2 class="h5 mb-0">Venue booking {{ index + 1 }}</h2><button v-if="rows.length > 1" class="btn btn-sm btn-outline-danger" type="button" @click="removeRow(index)">Remove</button></div>
           <div class="row g-3">
@@ -16,8 +16,6 @@
             <div class="col-md-3"><label class="form-label">Date<input v-model="row.date" class="form-control" type="date" required></label></div>
             <div class="col-md-3"><label class="form-label">Start time<input v-model="row.startTime" class="form-control" type="time" required></label></div>
             <div class="col-md-3"><label class="form-label">End time<input v-model="row.endTime" class="form-control" type="time" required></label></div>
-            <div class="col-md-3"><label class="form-label">Setup minutes<input v-model.number="row.setupMinutes" class="form-control" type="number" min="0" required></label></div>
-            <div class="col-md-3"><label class="form-label">Turnaround minutes<input v-model.number="row.turnaroundMinutes" class="form-control" type="number" min="0" required></label></div>
             <div class="col-12"><label class="form-label">Venue requirements<textarea v-model="row.requirements" class="form-control" rows="2" placeholder="Layout, accessibility, facilities"></textarea></label></div>
             <div v-if="row.error" class="col-12"><div class="alert alert-danger py-2 mb-0">{{ row.error }}</div></div>
           </div>
@@ -29,7 +27,7 @@
       <div v-if="showSummary && !success" class="mt-4">
         <h2 class="h5">Review all venue bookings</h2>
         <p class="text-muted">{{ selectedEvent?.title }} will receive {{ rows.length }} venue booking request{{ rows.length === 1 ? '' : 's' }}.</p>
-        <div v-for="(row, index) in rows" :key="row.key" class="summary-row mb-3"><div class="d-flex justify-content-between"><strong>{{ index + 1 }}. {{ venueName(row.venueId) }}</strong><span>{{ row.date }} {{ row.startTime }}–{{ row.endTime }}</span></div><div class="small text-muted">Required capacity {{ row.requiredCapacity }} · Setup {{ row.setupMinutes }} min · Turnaround {{ row.turnaroundMinutes }} min · {{ row.requirements || 'No additional requirements' }}</div><div v-if="row.conflicts.length" class="alert alert-warning py-2 mt-2 mb-0"><strong>Conflict for this venue.</strong><ul class="small mb-0"><li v-for="conflict in row.conflicts" :key="conflict.booking_id">{{ conflict.event_title }} at {{ conflict.venue_name }}: {{ formatDate(conflict.start_time) }}–{{ formatDate(conflict.end_time) }} ({{ conflict.status }})</li></ul></div></div>
+        <div v-for="(row, index) in rows" :key="row.key" class="summary-row mb-3"><div class="d-flex justify-content-between"><strong>{{ index + 1 }}. {{ venueName(row.venueId) }}</strong><span>{{ row.date }} {{ row.startTime }}–{{ row.endTime }}</span></div><div class="small text-muted">Required capacity {{ row.requiredCapacity }} · {{ row.requirements || 'No additional requirements' }}</div><div v-if="row.conflicts.length" class="alert alert-warning py-2 mt-2 mb-0"><strong>Conflict for this venue.</strong><ul class="small mb-0"><li v-for="conflict in row.conflicts" :key="conflict.booking_id">{{ conflict.event_title }} at {{ conflict.venue_name }}: {{ formatDate(conflict.start_time) }}–{{ formatDate(conflict.end_time) }} ({{ conflict.status }})</li></ul></div></div>
         <div v-if="error" class="alert alert-danger">{{ error }}</div>
         <div class="d-flex gap-2"><button class="btn btn-outline-secondary" type="button" @click="showSummary = false">Go back to edit</button><button class="btn btn-accent" type="button" :disabled="submitting" @click="submit">{{ conflicts.length ? 'Acknowledge conflicts and submit all' : 'Confirm and submit all' }}</button></div>
       </div>
@@ -82,7 +80,14 @@ export default {
       this.submitting = false
     }
   },
-  mounted() { this.loadOptions() }
+  async mounted() {
+    await this.loadOptions()
+    const eventId = this.$route.query.eventId
+    if (eventId && this.events.some((event) => event.id === eventId)) {
+      this.eventId = eventId
+      this.applyEventCapacity()
+    }
+  }
 }
 </script>
 
