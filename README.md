@@ -256,6 +256,12 @@ The batch endpoint is `POST /api/bookings/requests/batch`.
 
 The event-wide `expected_attendance` value comes from the Event Organiser's submitted event request. The batch form uses it as the default **Required capacity** for each venue row, while the Coordinator can reduce it for breakout rooms or other partial-space arrangements. Each venue is checked independently against that row's required capacity.
 
+## Venue Unavailability and Replacement Venues (US-020 / US-037)
+
+Venue Staff can record an unavailable venue period at `/venue/unavailability`. Affected bookings remain preserved, and the responsible Coordinator receives a notification. Coordinators can view affected bookings at `/bookings/affected` and request a replacement venue for the same event through the batch booking flow.
+
+The integration test in `backend/test/replacement.venue.test.js` covers the affected-booking notification, preservation of the original booking, and creation of an independent replacement booking using an isolated database schema.
+
 
 ## Notifications (US-002)
 
