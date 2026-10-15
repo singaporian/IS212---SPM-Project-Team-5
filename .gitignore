@@ -22,3 +22,6 @@ npm-debug.log*
 .idea/
 Thumbs.db
 .DS_Store
+# Playwright output
+e2e/test-results/
+e2e/playwright-report/

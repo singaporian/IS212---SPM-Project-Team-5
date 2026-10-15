@@ -222,6 +222,13 @@ CREATE TABLE IF NOT EXISTS event_change_requests (
 );
 CREATE INDEX IF NOT EXISTS event_change_requests_event_idx ON event_change_requests (event_id);
 
+-- US-032: who decided a change request and when; arrangements to reconsider after an approved move.
+-- Flags only identify affected arrangements; booking/reservation status is never changed by them.
+ALTER TABLE event_change_requests ADD COLUMN IF NOT EXISTS decided_by uuid REFERENCES users(id) ON DELETE SET NULL;
+ALTER TABLE event_change_requests ADD COLUMN IF NOT EXISTS decided_at timestamptz;
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS requires_reconsideration boolean NOT NULL DEFAULT false;
+ALTER TABLE equipment_reservations ADD COLUMN IF NOT EXISTS requires_reconsideration boolean NOT NULL DEFAULT false;
+
 -- US-038: holds reference an existing request; no duplicate booking is created.
 CREATE TABLE IF NOT EXISTS venue_holds (
  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),

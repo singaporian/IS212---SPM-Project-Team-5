@@ -73,3 +73,24 @@ jobs:
       - name: Build frontend
         working-directory: frontend
         run: npm run build
+
+      # US-032 onwards: Playwright end-to-end tests against the real backend, frontend and database.
+      - name: Install end-to-end test dependencies
+        working-directory: e2e
+        run: npm install --no-audit --no-fund
+
+      - name: Install Playwright browser
+        working-directory: e2e
+        run: npx playwright install --with-deps chromium
+
+      - name: Run end-to-end tests
+        working-directory: e2e
+        run: npm test
+
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: e2e/playwright-report
+          retention-days: 7
