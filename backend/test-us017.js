@@ -74,6 +74,21 @@ async function seedTestBooking(title, venueId, status, index) {
   return { eventId: event.rows[0].id, bookingId: booking.rows[0].id };
 }
 
+async function setVenueDefaults(venueId, setupMinutes, turnaroundMinutes) {
+  await db.query(
+    `UPDATE venues SET default_setup_minutes = $1, default_turnaround_minutes = $2 WHERE id = $3`,
+    [setupMinutes, turnaroundMinutes, venueId]
+  );
+}
+
+async function getVenueDefaults(venueId) {
+  const result = await db.query(
+    `SELECT default_setup_minutes, default_turnaround_minutes FROM venues WHERE id = $1`,
+    [venueId]
+  );
+  return result.rows[0];
+}
+
 async function run() {
   console.log('\n--- Setting up test data ---');
   await resetTestData();
@@ -123,6 +138,70 @@ async function run() {
   check('Venue filter includes only the selected venue', filteredBookings.every((booking) => booking.venue_id === venueOne.id));
   check('Venue filter includes its confirmed fixture', filteredBookings.some((booking) => booking.id === confirmedOne.bookingId));
   check('Venue filter excludes its pending fixture', !filteredBookings.some((booking) => booking.id === pendingOne.bookingId));
+
+  console.log('\n--- US-017 (Week 7 change): venue default setup/turnaround ---');
+  const originalDefaults = await getVenueDefaults(venueOne.id);
+
+  const baseEvent = await db.query(
+    `SELECT start_time, end_time FROM bookings WHERE id = $1`,
+    [confirmedOne.bookingId]
+  );
+  const gapStart = new Date(baseEvent.rows[0].end_time);
+  gapStart.setMinutes(gapStart.getMinutes() + 20); // only a 20-minute gap after confirmedOne ends
+  const gapEnd = new Date(gapStart);
+  gapEnd.setHours(gapEnd.getHours() + 1);
+
+  const closeEvent = await db.query(
+    `INSERT INTO events (title, status, expected_attendance) VALUES ('TEST_US017_CloseGap', 'approved', 30) RETURNING id`
+  );
+  const closeBookingRow = await db.query(
+    `INSERT INTO bookings (event_id, venue_id, start_time, end_time, status, setup_minutes, turnaround_minutes)
+     VALUES ($1, $2, $3, $4, 'confirmed', 10, 10)
+     RETURNING id`,
+    [closeEvent.rows[0].id, venueOne.id, gapStart.toISOString(), gapEnd.toISOString()]
+  );
+
+  // Case A: venue's default is loose (15 + 15 = 30 min required), 20-min gap is insufficient -> should flag
+  await setVenueDefaults(venueOne.id, 15, 15);
+  let res = await fetch(`${BASE_URL}/api/bookings?venueId=${venueOne.id}`, { headers: authed(venueToken) });
+  let rows = await res.json();
+  let first = rows.find((b) => b.id === confirmedOne.bookingId);
+  let second = rows.find((b) => b.id === closeBookingRow.rows[0].id);
+  check(
+    'Response includes venue default_setup_minutes and default_turnaround_minutes',
+    first?.default_setup_minutes === 15 && first?.default_turnaround_minutes === 15,
+    `(got ${JSON.stringify(first)})`
+  );
+  const requiredGapTight = Number(first?.default_turnaround_minutes || 0) + Number(second?.default_setup_minutes || 0);
+  const actualGapMinutes = (new Date(second.start_time) - new Date(first.end_time)) / 60000;
+  check(
+    'A 20-minute gap is correctly identified as insufficient against a 30-minute venue requirement',
+    actualGapMinutes < requiredGapTight,
+    `(gap=${actualGapMinutes}min, required=${requiredGapTight}min)`
+  );
+
+  // Case B: venue's default is relaxed (5 + 5 = 10 min required), same 20-min gap is now sufficient -> should NOT flag
+  await setVenueDefaults(venueOne.id, 5, 5);
+  res = await fetch(`${BASE_URL}/api/bookings?venueId=${venueOne.id}`, { headers: authed(venueToken) });
+  rows = await res.json();
+  first = rows.find((b) => b.id === confirmedOne.bookingId);
+  second = rows.find((b) => b.id === closeBookingRow.rows[0].id);
+  const requiredGapRelaxed = Number(first?.default_turnaround_minutes || 0) + Number(second?.default_setup_minutes || 0);
+  check(
+    'Lowering the venue default to 10 minutes makes the same 20-minute gap sufficient',
+    actualGapMinutes >= requiredGapRelaxed,
+    `(gap=${actualGapMinutes}min, required=${requiredGapRelaxed}min)`
+  );
+  check(
+    'Changing the venue default changed the returned required-gap calculation (confirms live data, not stale per-booking values)',
+    requiredGapTight !== requiredGapRelaxed,
+    `(tight=${requiredGapTight}, relaxed=${requiredGapRelaxed})`
+  );
+
+  // Restore the venue's original defaults so re-running this script doesn't leave altered venue data
+  if (originalDefaults) {
+    await setVenueDefaults(venueOne.id, originalDefaults.default_setup_minutes, originalDefaults.default_turnaround_minutes);
+  }
 
   console.log(`\nResults: ${passed} passed, ${failed} failed`);
   await db.pool.end();
