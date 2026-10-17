@@ -4,8 +4,8 @@ const assert = require('node:assert/strict');
 const { randomUUID } = require('node:crypto');
 const express = require('express');
 const jwt = require('jsonwebtoken');
-const db = require('../src/db');
-const { router, validateAssignment } = require('../src/coordinatorAssignments');
+const db = require('../../src/db');
+const { router, validateAssignment } = require('../../src/coordinatorAssignments');
 
 test('assignment input requires a coordinator and the coordinator the Lead last saw', () => {
   const coordinatorId = randomUUID();

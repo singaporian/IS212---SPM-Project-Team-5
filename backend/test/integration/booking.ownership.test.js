@@ -3,7 +3,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { randomUUID } = require('node:crypto');
 const jwt = require('jsonwebtoken');
-const db = require('../src/db');
+const db = require('../../src/db');
 
 test('after reassignment the new coordinator sees the event\'s bookings and receives Venue Staff decisions', async t => {
   const client = await db.pool.connect();
@@ -27,7 +27,7 @@ test('after reassignment the new coordinator sees the event\'s bookings and rece
       release() {}
     }) };
 
-    server = require('../src/index').listen(0, '127.0.0.1');
+    server = require('../../src/index').listen(0, '127.0.0.1');
     await new Promise(resolve => server.once('listening', resolve));
     const base = 'http://127.0.0.1:' + server.address().port + '/api';
     const token = (sub, role) => jwt.sign({ sub, role }, process.env.JWT_SECRET || 'local-development-secret-change-me');

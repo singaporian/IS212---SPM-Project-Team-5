@@ -3,9 +3,9 @@ const assert = require('node:assert/strict');
 const { randomUUID } = require('node:crypto');
 const express = require('express');
 const jwt = require('jsonwebtoken');
-const db = require('../src/db');
-const { router, parseChangeRequestInput } = require('../src/changeRequests');
-const { EventRequest } = require('../src/domain');
+const db = require('../../src/db');
+const { router, parseChangeRequestInput } = require('../../src/changeRequests');
+const { EventRequest } = require('../../src/domain');
 
 // ---------- Unit: input validation (AC-008-002) ----------
 test('parseChangeRequestInput accepts valid fields', () => {

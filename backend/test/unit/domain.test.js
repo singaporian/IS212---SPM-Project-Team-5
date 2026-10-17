@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { User, EventRequest, Venue, Booking } = require('../src/domain');
+const { User, EventRequest, Venue, Booking } = require('../../src/domain');
 
 test('User exposes role-based domain decisions', () => {
   assert.equal(new User({ role: 'event_organiser' }).canCreateEventRequest(), true);

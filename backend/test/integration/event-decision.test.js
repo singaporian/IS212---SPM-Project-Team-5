@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const { randomUUID } = require('node:crypto');
 const { spawn } = require('node:child_process');
 const jwt = require('jsonwebtoken');
-const db = require('../src/db');
+const db = require('../../src/db');
 
 async function waitForServer(url, timeoutMs = 15000) {
   const started = Date.now();
@@ -39,7 +39,7 @@ test('event decision endpoint approves, records audit, and blocks invalid re-dec
   );
 
   const server = spawn('node', ['src/index.js'], {
-    cwd: __dirname + '/..',
+    cwd: __dirname + '/../..',
     env: { ...process.env, PORT: '3101', JWT_SECRET: 'test-secret' },
     stdio: ['ignore', 'pipe', 'pipe']
   });

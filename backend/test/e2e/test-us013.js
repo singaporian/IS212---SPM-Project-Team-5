@@ -1,10 +1,10 @@
 // Test script for US-013 (Approve or Reject Event Request)
 // Requires: backend server running locally on the port set in .env (default 3000)
-// Run with: node test-us013.js   (from inside the backend folder)
+// Run with: node test/e2e/test-us013.js   (from inside the backend folder)
 
 require('dotenv').config();
 const bcrypt = require('bcryptjs');
-const db = require('./src/db');
+const db = require('../../src/db');
 
 const BASE_URL = `http://localhost:${process.env.PORT || 3000}`;
 const PASSWORD = 'Password123!';
