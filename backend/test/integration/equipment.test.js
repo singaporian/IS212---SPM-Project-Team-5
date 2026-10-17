@@ -3,8 +3,8 @@ const assert = require('node:assert/strict');
 const { randomUUID } = require('node:crypto');
 const express = require('express');
 const jwt = require('jsonwebtoken');
-const db = require('../src/db');
-const { router, validateEquipment, EQUIPMENT_TYPES } = require('../src/equipment');
+const db = require('../../src/db');
+const { router, validateEquipment, EQUIPMENT_TYPES } = require('../../src/equipment');
 
 const valid = { name: 'Wireless microphone', type: 'Audio', quantity: 4, specifications: { 'Frequency range': '470-530 MHz' } };
 

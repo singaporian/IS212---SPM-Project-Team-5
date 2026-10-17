@@ -41,7 +41,7 @@ Status: implementation accepted; pending final manual/integration verification. 
 
 ## Automated coverage
 
-- backend/test/booking.review.test.js: approved/confirmed classification with pending records retained as context; self/other-venue exclusion; both buffer directions; missing/zero buffers; strict-overlap boundary convention (not acceptance policy); combined buffers; cross-midnight precision; blocked periods; real API/database details and refresh; no writes/notifications; roles and failures.
+- backend/test/integration/booking.review.test.js: approved/confirmed classification with pending records retained as context; self/other-venue exclusion; both buffer directions; missing/zero buffers; strict-overlap boundary convention (not acceptance policy); combined buffers; cross-midnight precision; blocked periods; real API/database details and refresh; no writes/notifications; roles and failures.
 - frontend/test/booking-review.test.cjs: actual rendered details, separate values, AM/PM and minute precision, current conflicts/pending display, GET-only refresh and error/retry behaviour.
 - Run full backend/frontend suites and frontend build to retain US-006 and DEF-001 coverage with the organiser CHG-001 revert from main.
 

@@ -34,6 +34,16 @@ After that, a pull request cannot merge into `main` until the CI job passes.
 
 Tests should cover both the new functionality and regression behavior. For example, a booking change should test multiple venues, conflict handling, and independent decisions, while also confirming existing authentication, drafts, equipment, and event workflows still pass.
 
+### Test layout
+
+Backend tests live in `backend/test/`, grouped by what they need to run:
+
+- `unit/`: pure logic with no database, network or server. Run with `npm run test:unit`.
+- `integration/`: API and SQL tests against PostgreSQL. Run with `npm run test:integration`.
+- `e2e/`: manual end-to-end scripts that need the backend running, e.g. `node test/e2e/test-us013.js`. They are not part of `npm test`.
+
+`npm test` runs `unit/` and `integration/`; this is what CI runs. Frontend tests live in `frontend/test/` and run with `npm test` in `frontend`.
+
 
 ## Start the project (recommended)
 
@@ -111,7 +121,7 @@ The backend contains four domain classes in `backend/src/domain/index.js`:
 - `Venue` encapsulates suitability checks for capacity, facilities, layouts, and accessibility.
 - `Booking` encapsulates booking status and overlap checks, including setup and turnaround buffers.
 
-Routes continue to use the existing PostgreSQL/API response shapes. The classes provide domain behavior without replacing the current persistence layer. Their behavior is covered by `backend/test/domain.test.js`.
+Routes continue to use the existing PostgreSQL/API response shapes. The classes provide domain behavior without replacing the current persistence layer. Their behavior is covered by `backend/test/unit/domain.test.js`.
 
 Notes:
 - The backend expects Postgres on the host port `55432` by default (mapped to container 5432). See `backend/.env` if you need to change it.
@@ -260,7 +270,7 @@ The event-wide `expected_attendance` value comes from the Event Organiser's subm
 
 Venue Staff can record an unavailable venue period at `/venue/unavailability`. Affected bookings remain preserved, and the responsible Coordinator receives a notification. Coordinators can view affected bookings at `/bookings/affected` and request a replacement venue for the same event through the batch booking flow.
 
-The integration test in `backend/test/replacement.venue.test.js` covers the affected-booking notification, preservation of the original booking, and creation of an independent replacement booking using an isolated database schema.
+The integration test in `backend/test/integration/replacement.venue.test.js` covers the affected-booking notification, preservation of the original booking, and creation of an independent replacement booking using an isolated database schema.
 
 
 ## Notifications (US-002)
@@ -295,7 +305,7 @@ API endpoints (Event Coordinator Lead only):
 - `GET /api/coordinator-lead/overview` returns `{ unassigned, assignments, coordinators }`.
 - `PATCH /api/coordinator-lead/events/:id/coordinator` takes `{ "coordinatorId": "<uuid>", "currentCoordinatorId": "<uuid> | null" }`. `currentCoordinatorId` is the Coordinator the Lead saw on the request (`null` for an unassigned request). If someone else changed the assignment in the meantime, the request is refused with 409 and nothing is changed.
 
-No schema migration is needed. Run `npm run seed-demo` to load the demo requests. Run `npm test` in `backend` and `frontend` to run the tests: `backend/test/coordinator.assignments.test.js` and `frontend/test/assign-coordinator.test.cjs`. With the backend running, `node test-us011-us012.js` in `backend` runs an end-to-end check of assignment, reassignment and access.
+No schema migration is needed. Run `npm run seed-demo` to load the demo requests. Run `npm test` in `backend` and `frontend` to run the tests: `backend/test/integration/coordinator.assignments.test.js` and `frontend/test/assign-coordinator.test.cjs`. With the backend running, `node test/e2e/test-us011-us012.js` in `backend` runs an end-to-end check of assignment, reassignment and access.
 
 ## Review and Process a Change Request (US-032)
 
@@ -310,8 +320,7 @@ API (Event Coordinator only):
 - `GET /api/events/change-requests/pending`: pending requests for the coordinator's events, each with `proposed_changes` and `current`.
 - `PATCH /api/events/change-requests/:id/decision` with `{ "decision": "approved" | "rejected" }`. Returns the new status and `reconsider: { bookings, equipment }`. 404 for another coordinator's or unknown request, 409 if already processed.
 
-Run `npm run init-db` in `backend` once to add the new columns. Tests: `backend/test/change.request.review.test.js`, `frontend/test/change-request-review.test.cjs` and the Playwright suite in `e2e/`:
-
+Run `npm run init-db` in `backend` once to add the new columns. Tests: `backend/test/unit/change.request.review.test.js`, `backend/test/integration/change.request.review.test.js`, `frontend/test/change-request-review.test.cjs` and the Playwright suite in `e2e/`:
 ```bash
 cd e2e
 npm install
@@ -320,3 +329,4 @@ npm test
 ```
 
 The end-to-end tests start the backend and frontend themselves (or reuse ones already running locally) and need the database from `docker compose up -d db`. The full test plan and AC traceability are in `docs/testing/US-032-test-plan.md`.
+

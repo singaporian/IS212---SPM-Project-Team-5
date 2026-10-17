@@ -3,8 +3,8 @@ const assert = require('node:assert/strict');
 const { randomUUID } = require('node:crypto');
 const express = require('express');
 const jwt = require('jsonwebtoken');
-const db = require('../src/db');
-const { router, validateDraft } = require('../src/drafts');
+const db = require('../../src/db');
+const { router, validateDraft } = require('../../src/drafts');
 
 test('draft validation accepts incomplete values and rejects invalid populated fields', () => {
   for (const input of [{}, { startTime: '12:05' }, { startDate: '2099-01-01' },
