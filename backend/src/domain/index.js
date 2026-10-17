@@ -140,7 +140,8 @@ class EventRequest {
       status: this.status,
       organiser_id: this.organiserId,
       assigned_coordinator_id: this.assignedCoordinatorId,
-      ...Object.fromEntries(Object.entries(this).filter(([key]) => !['id', 'title', 'status', 'organiserId', 'assignedCoordinatorId'].includes(key)))
+      // fromRow() also keeps the raw organiser_id/assigned_coordinator_id columns; skip them so a reassignment is not overwritten.
+      ...Object.fromEntries(Object.entries(this).filter(([key]) => !['id', 'title', 'status', 'organiserId', 'assignedCoordinatorId', 'organiser_id', 'assigned_coordinator_id'].includes(key)))
     };
   }
 }

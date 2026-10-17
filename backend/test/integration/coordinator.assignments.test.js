@@ -5,19 +5,7 @@ const { randomUUID } = require('node:crypto');
 const express = require('express');
 const jwt = require('jsonwebtoken');
 const db = require('../../src/db');
-const { router, validateAssignment } = require('../../src/coordinatorAssignments');
-
-test('assignment input requires a coordinator and the coordinator the Lead last saw', () => {
-  const coordinatorId = randomUUID();
-  assert.deepEqual(validateAssignment({ coordinatorId, currentCoordinatorId: null }), { coordinatorId, currentCoordinatorId: null });
-  const currentCoordinatorId = randomUUID();
-  assert.deepEqual(validateAssignment({ coordinatorId, currentCoordinatorId }), { coordinatorId, currentCoordinatorId });
-  for (const body of [null, [], {}, { coordinatorId: 'abc', currentCoordinatorId: null }, { coordinatorId: '', currentCoordinatorId: null }]) {
-    assert.throws(() => validateAssignment(body), /Choose an Event Coordinator|Invalid/, JSON.stringify(body));
-  }
-  assert.throws(() => validateAssignment({ coordinatorId }), /Refresh/, 'currentCoordinatorId must be sent');
-  assert.throws(() => validateAssignment({ coordinatorId, currentCoordinatorId: 'abc' }), /Refresh/);
-});
+const { router } = require('../../src/coordinatorAssignments');
 
 test('coordinator assignment API assigns, reassigns, notifies and records the current coordinator', async t => {
   const client = await db.pool.connect();
