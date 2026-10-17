@@ -32,6 +32,40 @@ test('EventRequest lets the Lead assign and reassign active requests only (US-03
   }
 });
 
+test('EventRequest counts only requests a Coordinator still works on as active (US-034)', () => {
+  for (const status of ['submitted', 'clarification_requested', 'approved', 'planning', 'confirmed']) {
+    assert.equal(new EventRequest({ title: 'Active', status }).isActive(), true, status);
+  }
+  for (const status of ['draft', 'rejected', 'completed', 'cancelled']) {
+    assert.equal(new EventRequest({ title: 'Closed', status }).isActive(), false, status);
+  }
+  const fresh = new EventRequest({ title: 'New' });
+  assert.deepEqual([fresh.status, fresh.organiserId, fresh.assignedCoordinatorId, fresh.isActive()], ['draft', null, null, false]);
+});
+
+test('EventRequest gives access only to the currently assigned Coordinator (US-034)', () => {
+  const request = new EventRequest({ title: 'Demo', status: 'submitted' });
+  assert.equal(request.canBeViewedBy('coordinator-1'), false, 'nobody before assignment');
+  request.assignCoordinator('coordinator-1');
+  assert.equal(request.canBeViewedBy('coordinator-1'), true);
+  request.assignCoordinator('coordinator-2');
+  assert.equal(request.canBeViewedBy('coordinator-1'), false, 'the previous Coordinator loses access on reassignment');
+  assert.equal(request.canBeViewedBy('coordinator-2'), true);
+  assert.equal(request.isAssignedTo('coordinator-1'), false);
+});
+
+test('EventRequest reads and writes the stored current Coordinator (US-034)', () => {
+  const row = { id: 'event-1', title: 'Demo', status: 'approved', organiser_id: 'organiser-1', assigned_coordinator_id: 'coordinator-1', expected_attendance: 50 };
+  const request = EventRequest.fromRow(row);
+  assert.equal(request.organiserId, 'organiser-1');
+  assert.equal(request.assignedCoordinatorId, 'coordinator-1');
+  assert.equal(request.expected_attendance, 50, 'other columns are kept');
+  assert.deepEqual(request.toJSON(), row, 'round-trips to the stored column names');
+  request.assignCoordinator('coordinator-2');
+  assert.deepEqual(request.toJSON(), { ...row, assigned_coordinator_id: 'coordinator-2' });
+  assert.ok(!('assignedCoordinatorId' in request.toJSON()) && !('organiserId' in request.toJSON()), 'no duplicate camelCase fields');
+});
+
 test('Venue evaluates event suitability', () => {
   const venue = new Venue({ capacity: 100, facilities: ['projector'], supportedLayouts: ['theatre'] });
   assert.equal(venue.isSuitableFor({ expectedAttendance: 80, requiredFacilities: ['projector'], requiredLayouts: ['theatre'] }), true);
