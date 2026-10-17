@@ -70,12 +70,14 @@
               <router-link v-if="role === 'venue_staff'" class="btn btn-primary w-100 mb-2" to="/venue/holds">Tentative Venue Holds</router-link>
               <router-link v-if="role === 'venue_staff'" class="btn btn-outline-primary btn-sm w-100 mb-2" to="/bookings/pending">Pending Venue Booking Requests</router-link>
               <router-link v-if="role === 'venue_staff'" class="btn btn-outline-primary btn-sm w-100 mb-2" to="/venue/unavailability">Mark Venue Unavailable</router-link>
+              <router-link v-if="role === 'venue_staff'" class="btn btn-outline-primary btn-sm w-100 mb-2" to="/venue/preparation">Preparation Status</router-link>
               <router-link v-if="canCreateRequest" class="btn btn-outline-primary btn-sm w-100 mb-2" to="/requests/new">Start Draft</router-link>
               <router-link v-if="canManageEquipment" class="btn btn-outline-primary btn-sm w-100 mb-2" to="/equipment/new">Add Equipment</router-link>
               <router-link v-if="role === 'event_coordinator'" class="btn btn-outline-primary btn-sm w-100 mb-2" to="/technical-support/requirements">Technical Support Requirements</router-link>
               <router-link v-if="canManageEquipment" class="btn btn-outline-secondary btn-sm w-100 mb-2" to="/technical-support/queue">Support Requirements Queue</router-link>
               <router-link v-if="role === 'event_coordinator'" class="btn btn-outline-secondary btn-sm w-100 mb-2" to="/coordinator/requests">Assigned Event Requests</router-link>
               <router-link v-if="role === 'event_coordinator'" class="btn btn-outline-warning btn-sm w-100 mb-2" to="/bookings/affected">Affected Venue Bookings</router-link>
+              <router-link v-if="role === 'event_coordinator'" class="btn btn-outline-primary btn-sm w-100 mb-2" to="/coordinator/preparation">Venue Preparation</router-link>
               <router-link v-if="role === 'event_coordinator'" class="btn btn-outline-primary btn-sm w-100 mb-2" to="/coordinator/change-requests">Review Change Requests</router-link>
               <router-link v-else-if="role === 'venue_staff'" class="btn btn-outline-secondary btn-sm w-100 mb-2" to="/venue/bookings">{{ primaryRoleAction }}</router-link>
               <router-link v-else-if="isCoordinatorLead" class="btn btn-outline-secondary btn-sm w-100 mb-2" to="/coordinator-lead/assignments">{{ primaryRoleAction }}</router-link>

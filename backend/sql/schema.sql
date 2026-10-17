@@ -251,3 +251,9 @@ CREATE INDEX IF NOT EXISTS venue_holds_availability ON venue_holds (venue_id, ex
 -- Upgrade the earlier local US-038 draft without deleting existing hold/history data.
 ALTER TABLE venue_holds DROP CONSTRAINT IF EXISTS venue_holds_check1;
 ALTER TABLE venue_holds ADD COLUMN IF NOT EXISTS expiry_notified_at timestamptz;
+
+
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS preparation_status text NOT NULL DEFAULT 'not_started'; -- US-021: preparation status per venue booking (Week 7 #3: each venue of an event is independent).
+ALTER TABLE bookings DROP CONSTRAINT IF EXISTS bookings_preparation_status_check;
+ALTER TABLE bookings ADD CONSTRAINT bookings_preparation_status_check
+  CHECK (preparation_status IN ('not_started', 'in_progress', 'ready'));

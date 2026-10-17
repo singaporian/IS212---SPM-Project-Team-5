@@ -201,6 +201,9 @@ class Venue {
   }
 }
 
+// US-021: preparation status of one venue booking; the database CHECK constraint uses the same values.
+const PREPARATION_STATUSES = Object.freeze(['not_started', 'in_progress', 'ready']);
+
 class Booking {
   constructor({ id, eventId, venueId, startTime, endTime, status = 'pending', setupMinutes = 30, turnaroundMinutes = 30 }) {
     this.id = id;
@@ -284,4 +287,4 @@ class ChangeRequest {
     };
   }
 }
-module.exports = { User, EventRequest, Venue, Booking, ChangeRequest, EVENT_STATUS, ACTIVE_STATUSES, MAJOR_CHANGE_LABELS };
+module.exports = { User, EventRequest, Venue, Booking, ChangeRequest, EVENT_STATUS, ACTIVE_STATUSES, MAJOR_CHANGE_LABELS, PREPARATION_STATUSES };

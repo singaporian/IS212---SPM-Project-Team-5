@@ -38,12 +38,12 @@ function createFixtures() {
     return { id: rows[0].id, email, password: PASSWORD };
   }
 
-  async function event({ title, organiser, coordinator }) {
+  async function event({ title, organiser, coordinator, status = 'planning' }) {
     const { rows } = await pool.query(
       `INSERT INTO events (title, status, organiser_id, assigned_coordinator_id, expected_attendance,
                            preferred_start, preferred_end, venue_layout_preference, equipment_requirements)
-       VALUES ($1, 'planning', $2, $3, 100, $4, $5, 'Theatre', '["projector"]'::jsonb) RETURNING id`,
-      [`${title} ${run}`, organiser.id, coordinator.id, sgt('2099-03-01', '09:00'), sgt('2099-03-01', '12:00')]);
+       VALUES ($1, $6, $2, $3, 100, $4, $5, 'Theatre', '["projector"]'::jsonb) RETURNING id`,
+      [`${title} ${run}`, organiser.id, coordinator.id, sgt('2099-03-01', '09:00'), sgt('2099-03-01', '12:00'), status]);
     events.push(rows[0].id);
     return { id: rows[0].id, title: `${title} ${run}` };
   }
@@ -63,6 +63,17 @@ function createFixtures() {
     return { venueName: venue.rows[0].name, equipmentName: item.rows[0].name, bookingId: booking.rows[0].id, reservationId: reservation.rows[0].id };
   }
 
+  // US-021: one confirmed venue booking in its own venue, so an event can have several.
+  async function venueBooking(eventRef, coordinator, label) {
+    const venue = await pool.query(`INSERT INTO venues (name, capacity) VALUES ($1, 200) RETURNING id, name`, [`E2E ${label} ${run}`]);
+    venues.push(venue.rows[0].id);
+    const booking = await pool.query(
+      `INSERT INTO bookings (event_id, venue_id, requested_by, start_time, end_time, status)
+       VALUES ($1, $2, $3, $4, $5, 'confirmed') RETURNING id`,
+      [eventRef.id, venue.rows[0].id, coordinator.id, sgt('2099-03-01', '09:00'), sgt('2099-03-01', '12:00')]);
+    return { venueName: venue.rows[0].name, bookingId: booking.rows[0].id };
+  }
+
   async function changeRequest(eventRef, organiser, proposed) {
     const { rows } = await pool.query(
       `INSERT INTO event_change_requests (event_id, organiser_id, proposed_changes) VALUES ($1, $2, $3::jsonb) RETURNING id`,
@@ -79,7 +90,7 @@ function createFixtures() {
     if (users.length) await pool.query('DELETE FROM users WHERE id = ANY($1::uuid[])', [users]);
   }
 
-  return { run, user, event, arrangements, changeRequest, row, cleanup, sgt };
+  return { run, user, event, arrangements, venueBooking, changeRequest, row, cleanup, sgt };
 }
 
 module.exports = { pool, createFixtures };
