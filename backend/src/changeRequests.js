@@ -235,6 +235,17 @@ function currentValues(row) {
   };
 }
 
+// Builds "UPDATE events SET ..." for the approved columns plus the organiser's draft copy. $1 is the event id.
+function buildEventUpdate(columns, draft) {
+  const names = Object.keys(columns);
+  const assignments = names.map((name, i) => `${name} = $${i + 2}${name === 'equipment_requirements' ? '::jsonb' : ''}`);
+  const values = names.map((name) => (name === 'equipment_requirements' ? JSON.stringify(columns[name]) : columns[name]));
+  return {
+    sql: `UPDATE events SET ${[...assignments, `draft_data = $${names.length + 2}::jsonb`, 'updated_at = now()'].join(', ')} WHERE id = $1`,
+    values: [...values, JSON.stringify(draft)]
+  };
+}
+
 // AC-032-001: pending requests for events assigned to the signed-in coordinator, with current values.
 router.get('/change-requests/pending', ...coordinatorOnly, async (req, res) => {
   try {
@@ -279,26 +290,20 @@ router.patch('/change-requests/:id/decision', ...coordinatorOnly, async (req, re
     );
     if (!found.rows[0]) throw Object.assign(new Error('Change request not found.'), { status: 404 });
     const changeRequest = ChangeRequest.fromRow(found.rows[0]);
-    const event = EventRequest.fromRow({ ...found.rows[0], id: found.rows[0].event_id });    if (!changeRequest.canBeDecided()) {
+    const event = EventRequest.fromRow({ ...found.rows[0], id: found.rows[0].event_id });
+    if (!changeRequest.canBeDecided()) {
       throw Object.assign(new Error('This change request has already been processed.'), { status: 409 });
     }
 
     const reconsider = { bookings: [], equipment: [] };
+    const moved = decision === 'approved' && changeRequest.movesEvent(event); // compare against the times before the update
 
-       if (decision === 'approved') {
-      const moved = changeRequest.movesEvent(event); // compare against the times before the update
-
-      // AC-032-004: write the approved values onto the event.
-      const columns = changeRequest.toEventColumns();
-      const names = Object.keys(columns);
-      const assignments = names.map((name, i) => `${name} = $${i + 2}${name === 'equipment_requirements' ? '::jsonb' : ''}`);
-      const values = names.map((name) => (name === 'equipment_requirements' ? JSON.stringify(columns[name]) : columns[name]));
-      // Keep the organiser's form copy (draft_data) in step, using US-010's helper.
+    if (decision === 'approved') {
+      // AC-032-004: write the approved values onto the event, and keep the organiser's
+      // form copy (draft_data) in step using US-010's helper.
       const draft = applyChangesToDraft(found.rows[0].draft_data, changeRequest.proposedChanges);
-      await client.query(
-        `UPDATE events SET ${[...assignments, `draft_data = $${names.length + 2}::jsonb`, 'updated_at = now()'].join(', ')} WHERE id = $1`,
-        [event.id, ...values, JSON.stringify(draft)]
-      );
+      const update = buildEventUpdate(changeRequest.toEventColumns(), draft);
+      await client.query(update.sql, [event.id, ...update.values]);
     }
 
     await client.query(
@@ -306,7 +311,7 @@ router.patch('/change-requests/:id/decision', ...coordinatorOnly, async (req, re
       [decision, req.auth.sub, changeRequest.id]
     );
 
-    if (decision === 'approved' && changeRequest.movesEvent(event)) {
+    if (moved) {
       // AC-032-005: identify, don't cancel. Status, times and quantities are left exactly as they were.
       const bookings = await client.query(
         `UPDATE bookings SET requires_reconsideration = true

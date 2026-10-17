@@ -5,7 +5,8 @@
 | Epic | Event Change Requests (Week 4 core feature) |
 | User story | US-032 — As an Event Coordinator, I want to review and process change requests for my assigned events, so that approved changes are applied and affected arrangements are reconsidered. |
 | Branch | wenxuan/developer/US-032/review-change-request |
-| Approach | TDD: every case below was written and run red before the implementation existed |
+| Pull request | #31 |
+| Approach | TDD: tests written and run red before the implementation existed |
 | Depends on | US-008 (organiser submits change request), US-010 (major changes are cancel-and-resubmit, never reach this story) |
 
 ## 1. Acceptance criteria
@@ -27,77 +28,74 @@
 - Week 7 #1/#2: affected arrangements are identified, not silently removed. AC-032-005 flags them; booking and reservation status are not changed.
 - Out of scope (not raised by the customer for this story): mandatory rejection reason, history of previous values, organiser notification of the outcome (Notification System story).
 
-## 2. Design under test
+## 2. Code under test
 
-| Layer | Unit under test |
+| Layer | Code |
 | --- | --- |
-| Domain | `ChangeRequest.canBeDecided()`, `ChangeRequest.toEventColumns()`, `ChangeRequest.movesEvent(event)`, `parseChangeRequestDecision(body)` |
-| API | `GET /api/events/change-requests/pending`, `PATCH /api/events/change-requests/:id/decision` (event coordinator only) |
+| Domain | `ChangeRequest.canBeDecided()`, `ChangeRequest.toEventColumns()`, `ChangeRequest.movesEvent(event)` in `backend/src/domain/index.js`; `parseChangeRequestDecision(body)` in `backend/src/changeRequests.js` |
+| API | `GET /api/events/change-requests/pending`, `PATCH /api/events/change-requests/:id/decision` (event coordinator only) in `backend/src/changeRequests.js` |
 | Schema | `event_change_requests.decided_by/decided_at`; `bookings.requires_reconsideration`; `equipment_reservations.requires_reconsideration` |
-| UI | `/coordinator/change-requests` (`ChangeRequestReviewView.vue`) |
+| Reused | `applyChangesToDraft()` from US-010, to keep `events.draft_data` (read by the organiser's detail page) in step on approval |
+| UI | `/coordinator/change-requests` (`frontend/src/views/ChangeRequestReviewView.vue`) |
 
 ## 3. Test cases
 
-### Unit — `backend/test/change.request.review.test.js`
+Unit and integration tests are written against a **function or endpoint**; their AC link is recorded here. Only the E2E (functional) tests are named after ACs. Ids are kept from the original TDD red run, so gaps show tests removed in the refactor (section 6).
 
-| Test case | AC | Scenario | Expected |
+### Unit — `backend/test/unit/change.request.review.test.js`
+No database, server or test doubles.
+
+| Test case | Function | Cases | Expected | AC |
+| --- | --- | --- | --- | --- |
+| UT-02 | `parseChangeRequestDecision(body)` | `approved`, ` rejected ` (padded), `cancelled`, empty, missing body, `null`, array, number | approved/rejected accepted and trimmed; everything else throws a 400 error | 002 |
+| UT-04 | `ChangeRequest.movesEvent(event)` | new date; same day later; no times; same times; same times where the event holds Date objects (as PostgreSQL returns) | true only when the start or end is a different moment | 005 |
+
+### Integration — `backend/test/integration/change.request.review.test.js`
+Real router, auth middleware and SQL against temporary copies of the tables inside a transaction that is rolled back (same harness as US-010). IT-10 makes one SQL statement fail on purpose.
+
+| Test case | Endpoint | Scenario | Expected | AC |
+| --- | --- | --- | --- | --- |
+| IT-01 | `GET /change-requests/pending` | Coordinator A lists; data includes B's event and already-processed requests | Only A's pending requests, each with current and proposed values | 001 |
+| IT-03 | `PATCH …/decision` | Approve a layout + equipment change | Event columns updated, and the organiser's form copy (`draft_data`) too; request `approved` with `decided_by`/`decided_at` | 002, 004 |
+| IT-04 | `PATCH …/decision` | Reject a time + layout change | Whole event row unchanged; request `rejected` | 002, 003 |
+| IT-05 | `PATCH …/decision` | Approve a layout-only change, then a same-length time move, on an event with a booking and a reservation | Layout-only flags nothing; the move flags both, with status, times and quantity unchanged; another event not flagged; response lists the flagged arrangements | 005 |
+| IT-07 | `PATCH …/decision` | Decide an already approved / rejected request | 409; request and event unchanged | 006 |
+| IT-08 | `PATCH …/decision` | Coordinator B decides A's request | 404; nothing changes | 001 |
+| IT-10 | `PATCH …/decision` | Database fails on the bookings update, after the event and request were updated | 500 with retry message; event, request and booking unchanged; a retry succeeds | 007 |
+
+### Frontend unit — `frontend/test/change-request-review.test.cjs`
+The page's API call is replaced by a stub that returns one sample request.
+
+| Test case | Function | Scenario | Expected | AC |
+| --- | --- | --- | --- | --- |
+| FE-01 | `ChangeRequestReviewView.vue` `load()`, `changes()`, time formatting | Request moving 1 Mar 9:00–12:00 to 5 Mar 2:00–5:00 PM and changing layout | Both time ranges and both layouts shown, in Singapore time; attendance and equipment rows not shown | 001 |
+
+### End-to-end (functional, Playwright) — `e2e/tests/us032-review-change-request.spec.js`
+Real browser, frontend, backend and PostgreSQL. Fixtures seed an organiser, a coordinator, a planning event with a confirmed booking and an equipment reservation, and a pending change request.
+
+| Test case | Journey | Expected | AC |
 | --- | --- | --- | --- |
-| TC-US032-UT-01 | 006 | `canBeDecided()` for pending / approved / rejected | Only pending is true |
-| TC-US032-UT-02 | 002 | `parseChangeRequestDecision` with `approved`, `rejected`, padded value, `cancelled`, missing, non-object body | Approved/rejected accepted (trimmed); everything else is a 400 error |
-| TC-US032-UT-03 | 004 | `toEventColumns()` for each proposed field | Maps to `preferred_start`, `preferred_end`, `expected_attendance`, `venue_layout_preference`, `equipment_requirements`; omitted fields are not touched |
-| TC-US032-UT-04 | 005 | `movesEvent()` — new date same length; layout-only; equipment-only; same start/end proposed | Only a different start or end counts as a move |
+| E2E-01 | Coordinator signs in, opens Review Change Requests, sees current vs proposed time, approves | Card disappears; message lists the booking and equipment to reconsider; database shows the new time and both flags | 001, 002, 004, 005 |
 
-### Integration — `backend/test/change.request.review.test.js`
-Real router, real auth middleware, real SQL against temporary copies of the tables (rolled back after each run), following the US-010 test harness.
-
-| Test case | AC | Scenario | Expected |
-| --- | --- | --- | --- |
-| TC-US032-IT-01 | 001 | Coordinator A lists pending requests | Only A's events' pending requests; each row has current and proposed values; B's and already-processed requests excluded |
-| TC-US032-IT-02 | 001 | Organiser / venue staff call the list or decision endpoints | 403 |
-| TC-US032-IT-03 | 002, 004 | A approves a layout + equipment change | 200; event updated; request `approved` with `decided_by`/`decided_at` |
-| TC-US032-IT-04 | 002, 003 | A rejects a request | 200; request `rejected`; every event column unchanged |
-| TC-US032-IT-05 | 005 | A approves a same-duration move on an event with a confirmed booking and an equipment reservation | Both flagged `requires_reconsideration`; booking status, times and reservation quantity unchanged; nothing deleted; another event's booking not flagged; response lists the flagged arrangements |
-| TC-US032-IT-06 | 005 | A approves a layout-only change on an event with bookings | Nothing flagged |
-| TC-US032-IT-07 | 006 | Approve or reject an already-approved / already-rejected request | 409; request and event unchanged |
-| TC-US032-IT-08 | 001, 006 | Coordinator B decides A's request; unknown id; malformed id | 404; nothing changes |
-| TC-US032-IT-09 | 002 | Invalid decision value | 400; nothing changes |
-| TC-US032-IT-10 | 007 | Database write fails after the event update (forced failure on the flagging step) | 500 with retry message; event, request, bookings all unchanged; a retry succeeds |
-
-### Frontend logic — `frontend/test/change-request-review.test.cjs`
-
-| Test case | AC | Scenario | Expected |
-| --- | --- | --- | --- |
-| TC-US032-FE-01 | 001 | Load and render a request moving 09:00 → 14:00 SGT and changing layout | Current and proposed values both rendered, unchanged fields not listed |
-| TC-US032-FE-02 | 002, 005 | Approve succeeds and the response lists flagged arrangements | PATCH sent with `{ decision: 'approved' }`; item removed; success message names the arrangements to reconsider |
-| TC-US032-FE-03 | 007 | First PATCH fails (500), retry succeeds | Error shown, no success message, request still listed and its pending decision kept; retry sends the same decision and succeeds |
-
-### End-to-end (Playwright) — `e2e/tests/us032-review-change-request.spec.js`
-Runs the real backend, Vite frontend and PostgreSQL in Chromium. Fixtures seed an organiser, two coordinators, a planning event with a confirmed booking and an equipment reservation, and pending change requests.
-
-| Test case | AC | Journey | Expected |
-| --- | --- | --- | --- |
-| TC-US032-E2E-01 | 001, 002, 004, 005 | Coordinator signs in, opens Change Requests, sees current vs proposed time, approves | Request disappears; message lists the venue booking and equipment to reconsider; database shows the new time and both flags |
-| TC-US032-E2E-02 | 002, 003 | Coordinator rejects a layout change | Request disappears; event layout unchanged in the database |
-| TC-US032-E2E-03 | 007 | First decision request fails (intercepted, 500), then retry | Error shown with request still listed; retry succeeds; exactly one decision recorded |
-| TC-US032-E2E-04 | 001 | Coordinator B signs in | A's change requests are not shown |
 
 ## 4. Acceptance-criteria traceability
 
 | AC | Unit | Integration | Frontend | E2E |
 | --- | --- | --- | --- | --- |
-| AC-032-001 | — | IT-01, IT-02, IT-08 | FE-01 | E2E-01, E2E-04 |
-| AC-032-002 | UT-02 | IT-03, IT-04, IT-09 | FE-02 | E2E-01, E2E-02 |
-| AC-032-003 | — | IT-04 | — | E2E-02 |
-| AC-032-004 | UT-03 | IT-03 | — | E2E-01 |
-| AC-032-005 | UT-04 | IT-05, IT-06 | FE-02 | E2E-01 |
-| AC-032-006 | UT-01 | IT-07, IT-08 | — | — |
-| AC-032-007 | — | IT-10 | FE-03 | E2E-03 |
+| AC-032-001 | — | IT-01, IT-08 | FE-01 | E2E-01 |
+| AC-032-002 | UT-02 | IT-03, IT-04 | — | E2E-01 |
+| AC-032-003 | — | IT-04 | — | — |
+| AC-032-004 | — | IT-03 | — | E2E-01 |
+| AC-032-005 | UT-04 | IT-05 | — | E2E-01 |
+| AC-032-006 | — | IT-07 | — | — |
+| AC-032-007 | — | IT-10 | — | — |
 
 ## 5. How to run
 
 ```bash
 # Backend unit + integration (needs PostgreSQL with schema initialised)
 cd backend && npm run init-db && npm test
+# On Node 20 or older (Windows): node --test test/unit test/integration
 
 # Frontend logic tests and build
 cd frontend && npm test && npm run build
@@ -106,10 +104,42 @@ cd frontend && npm test && npm run build
 cd e2e && npm install && npx playwright install chromium && npm test
 ```
 
-## 6. Execution log
+## 6. Test pruning: tests removed after green
 
-Results are recorded in section 7 after each phase (red, then green).
+The red run had 21 tests. After the feature passed, tests were trimmed to remove redundancy. Every AC is still covered (section 4). 
 
-## 7. Results
+| Removed | Reason |
+| --- | --- |
+| UT-01 `canBeDecided()` | One-line status check; IT-07 proves the rule through the API |
+| UT-03 `toEventColumns()` | Simple field mapping; IT-03 proves the values land in the event |
+| IT-02 role checks | Tests the shared `requireRoles` middleware, not US-032 code |
+| IT-06 non-move flags nothing | Folded into IT-05 as its first step |
+| IT-08 unknown / malformed ids (trimmed) | Not in the ACs; kept only the other-coordinator case |
+| IT-09 invalid decision | Covered directly by UT-02 |
+| FE-02 success message | E2E-01 checks the same message in a real browser |
+| FE-03 retry on the page | IT-10 proves nothing is half-saved and retry succeeds; the retry button was checked manually |
+| E2E-02 reject journey | IT-04 proves AC3 |
+| E2E-03 failed save + retry journey | AC7's core (nothing half-saved, no false success) is proven by IT-10; retry button checked manually |
+| E2E-04 other coordinator's view | IT-01 proves the same rule |
 
-_Pending._
+The backend tests also moved from one file (`backend/test/change.request.review.test.js`) into `backend/test/unit/` and `backend/test/integration/`, the team layout since PR #32, so `npm test` and CI run them.
+
+Result: 11 tests (unit 2, integration 7, frontend 1, E2E 1), plus the integration wrapper.
+
+## 7. Bugs found by the tests
+
+| Bug | Found by | Fix |
+| --- | --- | --- |
+| Approval returned 200 but updated no event rows: the event was looked up with the change request's id | IT-03, IT-05, IT-10 (red after `feat`) | Build the event from `event_id` (`fix(US-032): update the event, not the change request id`) |
+| Approval updated the event columns but not `draft_data`, so the organiser's detail page kept showing old values | Manual check of the organiser page; IT-03 extended first (red) | Update `draft_data` with `applyChangesToDraft()` in the same statement (`fix(US-032): keep the organiser's view in sync`) |
+
+## 8. Results
+
+| Stage | Commit | Backend | Frontend | E2E |
+| --- | --- | --- | --- | --- |
+| Red (tests only) | `4f171ca` | 0/15 | 0/3 | 0/4 |
+| Green (after feat) | `5727f70` | 15/15 | 3/3 | 4/4 |
+| Test pruning (split and trimmed) | `799cb0d` | IT-03 red  | 1/1 | 1/1 |
+| Green  |3254855  | all pass | 1/1 | 1/1 |
+| Refactor codes | <-> | all pass | 1/1 | 1/1 |
+| CI on PR #31 | `3254855` | ✅ | ✅ | ✅ |
