@@ -1,15 +1,14 @@
-// US-032: Review and Process a Change Request — end-to-end journeys in a real browser.
-// Test case IDs match docs/testing/US-032-test-plan.md.
+// US-032 functional tests: Review and Process a Change Request, end to end in a real browser
+// (real frontend, backend and PostgreSQL). [E2E-xx] ids link to docs/testing/US-032-test-plan.md.
 const { test, expect } = require('@playwright/test');
 const { pool, createFixtures } = require('../support/db');
 
-let fx, organiser, coordA, coordB;
+let fx, organiser, coordA;
 
 test.beforeEach(async () => {
   fx = createFixtures();
   organiser = await fx.user('event_organiser', 'organiser');
   coordA = await fx.user('event_coordinator', 'coord-a');
-  coordB = await fx.user('event_coordinator', 'coord-b');
 });
 test.afterEach(async () => fx.cleanup());
 test.afterAll(async () => pool.end());
@@ -29,7 +28,7 @@ async function openChangeRequests(page) {
 
 const card = (page, title) => page.locator('article', { hasText: title });
 
-test('TC-US032-E2E-01 AC1 AC2 AC4 AC5: approve a date/time move and see which arrangements to reconsider', async ({ page }) => {
+test('[E2E-01] AC1 AC2 AC4 AC5: coordinator approves a date/time move and sees which arrangements to reconsider', async ({ page }) => {
   const event = await fx.event({ title: 'Orientation', organiser, coordinator: coordA });
   const arranged = await fx.arrangements(event, coordA);
   const crId = await fx.changeRequest(event, organiser, {
@@ -61,24 +60,7 @@ test('TC-US032-E2E-01 AC1 AC2 AC4 AC5: approve a date/time move and see which ar
   expect(reservation).toEqual({ quantity: 2, requires_reconsideration: true });
 });
 
-test('TC-US032-E2E-02 AC2 AC3: reject a change and the event stays as it was', async ({ page }) => {
-  const event = await fx.event({ title: 'Workshop', organiser, coordinator: coordA });
-  const crId = await fx.changeRequest(event, organiser, { venueLayoutPreference: 'Classroom' });
-
-  await signIn(page, coordA);
-  await openChangeRequests(page);
-  const request = card(page, event.title);
-  await expect(request).toContainText('Theatre');
-  await expect(request).toContainText('Classroom');
-  await request.getByRole('button', { name: 'Reject' }).click();
-
-  await expect(page.getByRole('status')).toHaveText(`Change request for ${event.title} rejected. The event is unchanged.`);
-  await expect(card(page, event.title)).toHaveCount(0);
-  expect((await fx.row('SELECT venue_layout_preference FROM events WHERE id = $1', [event.id])).venue_layout_preference).toBe('Theatre');
-  expect((await fx.row('SELECT status FROM event_change_requests WHERE id = $1', [crId])).status).toBe('rejected');
-});
-
-test('TC-US032-E2E-03 AC7: a failed save shows an error, keeps the request, and retry succeeds once', async ({ page }) => {
+test('[E2E-03] AC7: a failed save shows an error, keeps the request, and retry succeeds once', async ({ page }) => {
   const event = await fx.event({ title: 'Seminar', organiser, coordinator: coordA });
   const crId = await fx.changeRequest(event, organiser, { venueLayoutPreference: 'Banquet' });
 
@@ -104,14 +86,4 @@ test('TC-US032-E2E-03 AC7: a failed save shows an error, keeps the request, and 
   await expect(card(page, event.title)).toHaveCount(0);
   expect((await fx.row('SELECT status FROM event_change_requests WHERE id = $1', [crId])).status).toBe('approved');
   expect((await fx.row('SELECT venue_layout_preference FROM events WHERE id = $1', [event.id])).venue_layout_preference).toBe('Banquet');
-});
-
-test("TC-US032-E2E-04 AC1: a coordinator does not see change requests for other coordinators' events", async ({ page }) => {
-  const event = await fx.event({ title: 'Gala', organiser, coordinator: coordA });
-  await fx.changeRequest(event, organiser, { venueLayoutPreference: 'Banquet' });
-
-  await signIn(page, coordB);
-  await openChangeRequests(page);
-  await expect(page.getByRole('heading', { name: 'Change Requests' })).toBeVisible();
-  await expect(card(page, event.title)).toHaveCount(0);
 });

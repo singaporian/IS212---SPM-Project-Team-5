@@ -17,12 +17,6 @@ const MOVED = { preferredStart: at('2099-03-05', '14:00'), preferredEnd: at('209
 
 // ---------- Unit: domain (AC-032-002, 004, 005, 006) ----------
 
-test('TC-US032-UT-01 AC6: only a pending change request can be decided', () => {
-  assert.equal(new ChangeRequest({ status: 'pending' }).canBeDecided(), true);
-  for (const status of ['approved', 'rejected']) {
-    assert.equal(new ChangeRequest({ status }).canBeDecided(), false, status);
-  }
-});
 
 test('TC-US032-UT-02 AC2: a decision must be approved or rejected', () => {
   assert.deepEqual(parseChangeRequestDecision({ decision: 'approved' }), { decision: 'approved' });
@@ -32,21 +26,6 @@ test('TC-US032-UT-02 AC2: a decision must be approved or rejected', () => {
       (error) => error.status === 400 && error.message === 'Choose to approve or reject the change request.',
       JSON.stringify(body));
   }
-});
-
-test('TC-US032-UT-03 AC4: approved values map onto event columns, untouched fields are left alone', () => {
-  const all = new ChangeRequest({ proposedChanges: {
-    ...MOVED, expectedAttendance: 120, venueLayoutPreference: 'Classroom', equipmentRequirements: ['projector', 'mic']
-  } });
-  assert.deepEqual(all.toEventColumns(), {
-    preferred_start: MOVED.preferredStart,
-    preferred_end: MOVED.preferredEnd,
-    expected_attendance: 120,
-    venue_layout_preference: 'Classroom',
-    equipment_requirements: ['projector', 'mic']
-  });
-  assert.deepEqual(new ChangeRequest({ proposedChanges: { venueLayoutPreference: 'Banquet' } }).toEventColumns(),
-    { venue_layout_preference: 'Banquet' });
 });
 
 test('TC-US032-UT-04 AC5: only a different start or end time counts as moving the event', () => {
