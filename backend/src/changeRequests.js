@@ -279,8 +279,7 @@ router.patch('/change-requests/:id/decision', ...coordinatorOnly, async (req, re
     );
     if (!found.rows[0]) throw Object.assign(new Error('Change request not found.'), { status: 404 });
     const changeRequest = ChangeRequest.fromRow(found.rows[0]);
-    const event = EventRequest.fromRow(found.rows[0]);
-    if (!changeRequest.canBeDecided()) {
+    const event = EventRequest.fromRow({ ...found.rows[0], id: found.rows[0].event_id });    if (!changeRequest.canBeDecided()) {
       throw Object.assign(new Error('This change request has already been processed.'), { status: 409 });
     }
 
