@@ -3,7 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { randomUUID } = require('node:crypto');
-const { validateReservation, mergeWindows, windowsOverlap, peakCommitted, checkEquipmentConflict, reserveEquipment } = require('../../src/equipmentReservations');
+const { validateReservation, mergeWindows, windowsOverlap, peakCommitted, checkEquipmentConflict, reserveEquipment, describeAvailability } = require('../../src/equipmentReservations');
 
 const w = (start, end) => ({ start: `2099-03-01T${start}:00Z`, end: `2099-03-01T${end}:00Z` });
 
@@ -12,6 +12,7 @@ const LAUNCH = { id: 'launch', title: 'Product Launch', status: 'approved', wind
 // Another live event's reservation of the microphones.
 const held = (title, quantity, ...windows) => ({ equipment_id: MIC.id, event_id: title, title, quantity, windows });
 const check = overrides => checkEquipmentConflict({ item: MIC, event: LAUNCH, others: [], alreadyReserved: 0, ...overrides });
+const attempt = (db, overrides = {}) => reserveEquipment(db.query, { eventId: LAUNCH.id, equipmentId: MIC.id, quantity: 1, ...overrides }, 'staff-1');
 
 // Answers the queries reserveEquipment makes and records every insert.
 function fakeDb({ item = MIC, event = LAUNCH, existing = null, others = [] } = {}) {
@@ -198,5 +199,120 @@ test('US-026: reserveEquipment rejects over-allocation without saving anything',
     await assert.rejects(reserveEquipment(db.query, { eventId: LAUNCH.id, equipmentId: MIC.id, quantity: 1 }, 'staff-1'),
       { status: 409, conflict: { available: 0, requested: 1, overlappingEvents: [] } });
     assert.equal(db.inserts.length, 0);
+  });
+});
+
+test('US-026: reserveEquipment refuses equipment or events that cannot be reserved', async t => {
+  await t.test('equipment that does not exist', async () => {
+    const db = fakeDb();
+    await assert.rejects(attempt(db, { equipmentId: 'unknown' }), { status: 404, message: 'Equipment not found.' });
+    assert.equal(db.inserts.length, 0);
+  });
+
+  await t.test('equipment that is not in service', async () => {
+    const db = fakeDb({ item: { ...MIC, status: 'retired' } });
+    await assert.rejects(attempt(db), { status: 409, message: '"Wireless microphone" is not in service, so it cannot be reserved.' });
+    assert.equal(db.inserts.length, 0);
+  });
+
+  await t.test('an event that does not exist', async () => {
+    const db = fakeDb();
+    await assert.rejects(attempt(db, { eventId: 'unknown' }), { status: 404, message: 'Event not found.' });
+    assert.equal(db.inserts.length, 0);
+  });
+
+  await t.test('an event that has not been approved', async () => {
+    for (const status of ['draft', 'submitted', 'rejected', 'cancelled', 'completed']) {
+      const db = fakeDb({ event: { ...LAUNCH, status } });
+      await assert.rejects(attempt(db), { status: 409, message: '"Product Launch" is not an approved event, so equipment cannot be reserved for it.' }, status);
+      assert.equal(db.inserts.length, 0, status);
+    }
+  });
+
+  await t.test('an approved event without an approved venue booking', async () => {
+    const db = fakeDb({ event: { ...LAUNCH, windows: [] } });
+    await assert.rejects(attempt(db), { status: 409, message: /has no approved venue booking yet/ });
+    assert.equal(db.inserts.length, 0);
+  });
+
+  await t.test('an event that ends exactly now has already ended', async t => {
+    t.mock.timers.enable({ apis: ['Date'], now: Date.parse(LAUNCH.windows[0].end) });
+    const db = fakeDb();
+    await assert.rejects(attempt(db), { status: 409, message: '"Product Launch" has already ended.' });
+    assert.equal(db.inserts.length, 0);
+  });
+});
+
+test('US-026: reserveEquipment accepts approved events that have not ended', async t => {
+  await t.test('approved, planning and confirmed events can all be reserved for', async () => {
+    for (const status of ['approved', 'planning', 'confirmed']) {
+      const db = fakeDb({ event: { ...LAUNCH, status } });
+      assert.equal((await attempt(db)).created, true, status);
+    }
+  });
+
+  await t.test('an event one millisecond before it ends can still be reserved for', async t => {
+    t.mock.timers.enable({ apis: ['Date'], now: Date.parse(LAUNCH.windows[0].end) - 1 });
+    assert.equal((await attempt(fakeDb())).created, true);
+  });
+
+  await t.test('an event whose first booking is over but whose last booking is still to come', async () => {
+    const db = fakeDb({ event: { ...LAUNCH, windows: [{ start: '2000-01-01T09:00:00Z', end: '2000-01-01T10:00:00Z' }, w('10:00', '12:00')] } });
+    assert.equal((await attempt(db)).created, true);
+  });
+});
+
+// ---------- describeAvailability ----------
+test('US-026: describeAvailability shows how many units are free during the chosen event', async t => {
+  await t.test('counts overlapping reservations, this event\'s own reservation and what is left', () => {
+    const others = [
+      held('Morning Conference', 2, w('09:00', '11:00')),
+      held('Evening Seminar', 4, w('17:00', '18:00')),
+      { equipment_id: 'projector', event_id: 'Workshop', title: 'Workshop', quantity: 3, windows: [w('10:00', '12:00')] }
+    ];
+    const reservation = { id: 'reservation-1', equipment_id: MIC.id, event_id: LAUNCH.id, quantity: 1, status: 'reserved', updated_at: '2099-01-01T00:00:00Z' };
+    assert.deepEqual(describeAvailability(MIC, LAUNCH, others, reservation), {
+      id: 'mic', name: 'Wireless microphone', equipment_type: 'Audio', status: 'available', total_quantity: 4,
+      committed_elsewhere: 2, reserved_for_event: 1, available: 1,
+      reservation: { id: 'reservation-1', quantity: 1, status: 'reserved', updated_at: '2099-01-01T00:00:00Z' },
+      overlapping_events: [{ id: 'Morning Conference', title: 'Morning Conference', quantity: 2 }]
+    });
+  });
+
+  await t.test('equipment not yet reserved for this event', () => {
+    const result = describeAvailability(MIC, LAUNCH, [], undefined);
+    assert.equal(result.reservation, null);
+    assert.equal(result.reserved_for_event, 0);
+    assert.equal(result.available, 4);
+    assert.deepEqual(result.overlapping_events, []);
+  });
+
+  await t.test('never shows a negative number of free units', () => {
+    const result = describeAvailability(MIC, LAUNCH, [held('Morning Conference', 5, w('09:00', '11:00'))], { id: 'reservation-1', quantity: 1, status: 'reserved' });
+    assert.equal(result.available, 0);
+  });
+});
+
+// ---------- Single-unit wording ----------
+test('US-026: messages use the singular for a single unit', async t => {
+  const projector = { ...MIC, id: 'projector', name: 'Projector' };
+
+  await t.test('conflict message for an item with only one unit in stock', () => {
+    const result = check({ item: { ...projector, total_quantity: 1 }, requested: 2 });
+    assert.equal(result.message,
+      'Reservation conflict: only 1 "Projector" unit is available during "Product Launch". Only 1 unit is in inventory.');
+  });
+
+  await t.test('conflict message when one unit is committed elsewhere and one is already reserved', () => {
+    const result = check({ item: { ...projector, total_quantity: 2 }, others: [held('Morning Conference', 1, w('09:00', '11:00'))],
+      alreadyReserved: 1, requested: 1 });
+    assert.equal(result.message,
+      'Reservation conflict: only 0 "Projector" units are available during "Product Launch". ' +
+      '1 of 2 is already committed to overlapping events: "Morning Conference" (1). 1 is already reserved for this event.');
+  });
+
+  await t.test('confirmation for reserving one unit', async () => {
+    const result = await attempt(fakeDb());
+    assert.equal(result.message, 'Reserved 1 "Wireless microphone" unit for "Product Launch". 1 now reserved for this event.');
   });
 });

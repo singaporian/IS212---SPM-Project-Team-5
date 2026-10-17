@@ -287,4 +287,4 @@ router.delete('/reservations/:id', async (req, res) => {
   }
 });
 
-module.exports = { router, validateReservation, mergeWindows, windowsOverlap, peakCommitted, checkEquipmentConflict, reserveEquipment, RESERVABLE_EVENT_STATUSES };
+module.exports = { router, validateReservation, mergeWindows, windowsOverlap, peakCommitted, checkEquipmentConflict, reserveEquipment, describeAvailability, RESERVABLE_EVENT_STATUSES };
