@@ -104,9 +104,9 @@ cd frontend && npm test && npm run build
 cd e2e && npm install && npx playwright install chromium && npm test
 ```
 
-## 6. Refactor: tests removed after green
+## 6. Test pruning: tests removed after green
 
-The red run had 21 tests. After the feature passed, tests were trimmed so each one can be explained, keeping one test per behaviour at the layer that proves it best, the failure case, and two functional tests. Every AC is still covered (section 4).
+The red run had 21 tests. After the feature passed, tests were trimmed to remove redundancy. Every AC is still covered (section 4). 
 
 | Removed | Reason |
 | --- | --- |
@@ -114,17 +114,17 @@ The red run had 21 tests. After the feature passed, tests were trimmed so each o
 | UT-03 `toEventColumns()` | Simple field mapping; IT-03 proves the values land in the event |
 | IT-02 role checks | Tests the shared `requireRoles` middleware, not US-032 code |
 | IT-06 non-move flags nothing | Folded into IT-05 as its first step |
-| IT-08 unknown / malformed ids | Not in the ACs; kept only the other-coordinator case |
+| IT-08 unknown / malformed ids (trimmed) | Not in the ACs; kept only the other-coordinator case |
 | IT-09 invalid decision | Covered directly by UT-02 |
 | FE-02 success message | E2E-01 checks the same message in a real browser |
-| FE-03 retry on the page | E2E-03 covers the same journey end to end |
+| FE-03 retry on the page | IT-10 proves nothing is half-saved and retry succeeds; the retry button was checked manually |
 | E2E-02 reject journey | IT-04 proves AC3 |
+| E2E-03 failed save + retry journey | AC7's core (nothing half-saved, no false success) is proven by IT-10; retry button checked manually |
 | E2E-04 other coordinator's view | IT-01 proves the same rule |
-| E2E-03 failed save + retry journey | AC7's core (nothing half-saved, no false success) is proven by IT-10; on failure the card stays, so the coordinator can decide again. Retry button checked manually |
 
 The backend tests also moved from one file (`backend/test/change.request.review.test.js`) into `backend/test/unit/` and `backend/test/integration/`, the team layout since PR #32, so `npm test` and CI run them.
 
-Result: 12 tests (unit 2, frontend 1, integration 7, E2E 2) plus the integration wrapper.
+Result: 11 tests (unit 2, integration 7, frontend 1, E2E 1), plus the integration wrapper.
 
 ## 7. Bugs found by the tests
 
@@ -135,10 +135,11 @@ Result: 12 tests (unit 2, frontend 1, integration 7, E2E 2) plus the integration
 
 ## 8. Results
 
-| Stage | Commit | Backend | Frontend | E2E | Evidence |
-| --- | --- | --- | --- | --- | --- |
-| Red (tests only) | `4f171ca` | 0/15 | 0/1 | 0/4 | |
-| Green (after feat + id fix) | `5727f70` | 15/15 | 3/3 | 4/4 | |
-| Refactor (tests split and trimmed) | | IT-03 red on new `draft_data` check | 1/1 | 2/2 | |
-| Green (after draft_data fix) | | all pass | 1/1 | 2/2 | |
-| CI on PR #31 | | | | | |
+| Stage | Commit | Backend | Frontend | E2E |
+| --- | --- | --- | --- | --- |
+| Red (tests only) | `4f171ca` | 0/15 | 0/3 | 0/4 |
+| Green (after feat) | `5727f70` | 15/15 | 3/3 | 4/4 |
+| Test pruning (split and trimmed) | `799cb0d` | IT-03 red  | 1/1 | 1/1 |
+| Green  |3254855  | all pass | 1/1 | 1/1 |
+| Refactor codes | <-> | all pass | 1/1 | 1/1 |
+| CI on PR #31 | `3254855` | ✅ | ✅ | ✅ |
