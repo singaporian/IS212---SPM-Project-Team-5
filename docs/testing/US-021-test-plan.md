@@ -97,5 +97,4 @@ Coverage (unit + integration, US-021 tests only, Node 20 `--experimental-test-co
 `backend/src/preparation.js` 92.68% lines, 64.71% branches, 100% functions.
 Uncovered: lines 40–42 and 77–79, the `catch` blocks of the two list endpoints (load failure), and the
 404 branches for a malformed or unknown booking id. Not covered because they are not in the ACs; the save
-failure (AC6) is covered by IT-06. Frontend `PreparationStatusView.vue` is not measured by `node --test`
-coverage because the test reads it as text.
+failure (AC6) is covered by IT-06. 
