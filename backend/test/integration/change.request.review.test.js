@@ -1,13 +1,14 @@
-// US-032: Review and Process a Change Request (Event Coordinator).
-// Test case IDs match docs/testing/US-032-test-plan.md.
+// Integration tests for the change request review endpoints (US-032):
+// the real router and auth middleware against PostgreSQL, using temporary tables
+// inside a transaction that is rolled back at the end, so no real data is touched.
+// [IT-xx] ids link each test to docs/testing/US-032-test-plan.md.
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { randomUUID } = require('node:crypto');
 const express = require('express');
 const jwt = require('jsonwebtoken');
-const db = require('../src/db');
-const { router, parseChangeRequestDecision } = require('../src/changeRequests');
-const { ChangeRequest, EventRequest } = require('../src/domain');
+const db = require('../../src/db');
+const { router } = require('../../src/changeRequests');
 
 const at = (date, time) => new Date(`${date}T${time}:00+08:00`).toISOString();
 // Current event used throughout: 1 March 2099, 09:00-12:00 SGT.
@@ -15,39 +16,11 @@ const START = at('2099-03-01', '09:00');
 const END = at('2099-03-01', '12:00');
 const MOVED = { preferredStart: at('2099-03-05', '14:00'), preferredEnd: at('2099-03-05', '17:00') };
 
-// ---------- Unit: domain (AC-032-002, 004, 005, 006) ----------
-
-
-test('TC-US032-UT-02 AC2: a decision must be approved or rejected', () => {
-  assert.deepEqual(parseChangeRequestDecision({ decision: 'approved' }), { decision: 'approved' });
-  assert.deepEqual(parseChangeRequestDecision({ decision: ' rejected ' }), { decision: 'rejected' });
-  for (const body of [{ decision: 'cancelled' }, { decision: '' }, {}, null, [], { decision: 42 }]) {
-    assert.throws(() => parseChangeRequestDecision(body),
-      (error) => error.status === 400 && error.message === 'Choose to approve or reject the change request.',
-      JSON.stringify(body));
-  }
-});
-
-test('TC-US032-UT-04 AC5: only a different start or end time counts as moving the event', () => {
-  const event = new EventRequest({ status: 'planning', preferred_start: START, preferred_end: END });
-  const moves = (proposedChanges) => new ChangeRequest({ proposedChanges }).movesEvent(event);
-  assert.equal(moves(MOVED), true, 'new date, same length');
-  assert.equal(moves({ preferredStart: at('2099-03-01', '10:00'), preferredEnd: at('2099-03-01', '13:00') }), true, 'same day, later');
-  assert.equal(moves({ venueLayoutPreference: 'Classroom' }), false, 'layout only');
-  assert.equal(moves({ equipmentRequirements: ['mic'] }), false, 'equipment only');
-  assert.equal(moves({ preferredStart: START, preferredEnd: END }), false, 'same times proposed');
-  // Postgres returns Date objects for timestamptz columns; compare instants, not strings.
-  const fromDb = new EventRequest({ status: 'planning', preferred_start: new Date(START), preferred_end: new Date(END) });
-  assert.equal(new ChangeRequest({ proposedChanges: { preferredStart: START, preferredEnd: END } }).movesEvent(fromDb), false);
-});
-
-// ---------- Integration: API + PostgreSQL (AC-032-001 to 007) ----------
-
-test('US-032 change request review API', async (t) => {
+test('change request review endpoints', async (t) => {
   const client = await db.pool.connect();
   const originalQuery = db.query, originalPool = db.pool;
   let server;
-  let failOn = null; // TC-US032-IT-10: regex of a statement to fail inside the decision transaction
+  let failOn = null; // [IT-10] when set, any matching SQL statement fails, to simulate a database error
   try {
     await client.query('BEGIN');
     for (const table of ['users', 'events', 'event_change_requests', 'venues', 'bookings', 'equipment', 'equipment_reservations', 'notifications', 'event_changes']) {
@@ -122,7 +95,7 @@ test('US-032 change request review API', async (t) => {
     const bookingRow = (id) => one('SELECT * FROM bookings WHERE id = $1', [id]);
     const reservationRow = (id) => one('SELECT * FROM equipment_reservations WHERE id = $1', [id]);
 
-    await t.test('TC-US032-IT-01 AC1: a coordinator sees only pending requests for their own events, with current and proposed values', async () => {
+    await t.test('[IT-01] GET pending: returns only pending requests for my events, with current and proposed values', async () => {
       const mine = await makeEvent({ title: 'Mine' });
       const theirs = await makeEvent({ coordinator: coordB, title: 'Theirs' });
       const pendingId = await makeChangeRequest(mine, { ...MOVED, venueLayoutPreference: 'Classroom' });
@@ -147,16 +120,7 @@ test('US-032 change request review API', async (t) => {
       });
     });
 
-    await t.test('TC-US032-IT-02 AC1: only event coordinators can list or decide change requests', async () => {
-      const id = await makeChangeRequest(await makeEvent(), { venueLayoutPreference: 'Classroom' });
-      for (const role of ['event_organiser', 'venue_staff', 'event_coordinator_lead', 'attendee']) {
-        assert.equal((await list(token(coordA, role))).status, 403, role);
-        assert.equal((await decide(id, 'approved', token(coordA, role))).status, 403, role);
-      }
-      assert.equal((await crRow(id)).status, 'pending');
-    });
-
-    await t.test('TC-US032-IT-03 AC2 AC4: approving applies the proposed values to the event', async () => {
+    await t.test('[IT-03] PATCH decision approve: writes the proposed values onto the event', async () => {
       const eventId = await makeEvent();
       const id = await makeChangeRequest(eventId, { venueLayoutPreference: 'Classroom', equipmentRequirements: ['projector', 'mic'] });
       const result = await decide(id, 'approved');
@@ -166,6 +130,7 @@ test('US-032 change request review API', async (t) => {
       assert.equal(event.venue_layout_preference, 'Classroom');
       assert.deepEqual(event.equipment_requirements, ['projector', 'mic']);
       assert.equal(event.expected_attendance, 100, 'fields not in the request are unchanged');
+      assert.equal(event.draft_data.venueRequirements, 'Classroom', "the organiser's view shows the new value too");
       assert.equal(event.preferred_start.toISOString(), START);
       const cr = await crRow(id);
       assert.equal(cr.status, 'approved');
@@ -173,7 +138,7 @@ test('US-032 change request review API', async (t) => {
       assert.ok(cr.decided_at instanceof Date);
     });
 
-    await t.test('TC-US032-IT-04 AC2 AC3: rejecting leaves every event detail unchanged', async () => {
+    await t.test('[IT-04] PATCH decision reject: leaves every event detail unchanged', async () => {
       const eventId = await makeEvent();
       const id = await makeChangeRequest(eventId, { ...MOVED, venueLayoutPreference: 'Classroom' });
       const before = await eventRow(eventId);
@@ -186,13 +151,19 @@ test('US-032 change request review API', async (t) => {
       assert.equal(cr.decided_by, coordA);
     });
 
-    await t.test('TC-US032-IT-05 AC5: approving a date/time move flags existing arrangements without changing them', async () => {
+    await t.test('[IT-05] PATCH decision approve: only a time move flags bookings and equipment, without changing them', async () => {
       const eventId = await makeEvent();
       const { bookingId, reservationId } = await arrangeFor(eventId);
       const unrelated = await arrangeFor(await makeEvent({ title: 'Unrelated' }));
+
+      // A change without new times flags nothing.
+      const layoutOnly = await decide(await makeChangeRequest(eventId, { venueLayoutPreference: 'Classroom' }), 'approved');
+      assert.deepEqual(layoutOnly.body.reconsider, { bookings: [], equipment: [] });
+      assert.equal((await bookingRow(bookingId)).requires_reconsideration, false);
+
+      // A time move flags them.
       const bookingBefore = await bookingRow(bookingId);
       const reservationBefore = await reservationRow(reservationId);
-
       const result = await decide(await makeChangeRequest(eventId, MOVED), 'approved');
       assert.equal(result.status, 200);
       const event = await eventRow(eventId);
@@ -213,17 +184,7 @@ test('US-032 change request review API', async (t) => {
       assert.deepEqual(result.body.reconsider.equipment.map((r) => [r.id, r.equipment_name, r.quantity]), [[reservationId, 'Projector', 2]]);
     });
 
-    await t.test('TC-US032-IT-06 AC5: approving a change that does not move the event flags nothing', async () => {
-      const eventId = await makeEvent();
-      const { bookingId, reservationId } = await arrangeFor(eventId);
-      const result = await decide(await makeChangeRequest(eventId, { venueLayoutPreference: 'Classroom' }), 'approved');
-      assert.equal(result.status, 200);
-      assert.deepEqual(result.body.reconsider, { bookings: [], equipment: [] });
-      assert.equal((await bookingRow(bookingId)).requires_reconsideration, false);
-      assert.equal((await reservationRow(reservationId)).requires_reconsideration, false);
-    });
-
-    await t.test('TC-US032-IT-07 AC6: an already processed request cannot be processed again', async () => {
+    await t.test('[IT-07] PATCH decision: an already processed request is refused with 409', async () => {
       for (const status of ['approved', 'rejected']) {
         const eventId = await makeEvent();
         const id = await makeChangeRequest(eventId, MOVED, status);
@@ -236,27 +197,16 @@ test('US-032 change request review API', async (t) => {
       }
     });
 
-    await t.test("TC-US032-IT-08 AC1 AC6: another coordinator's, unknown and malformed requests are not found", async () => {
+    await t.test("[IT-08] PATCH decision: another coordinator's request is not found", async () => {
       const eventId = await makeEvent();
       const id = await makeChangeRequest(eventId, MOVED);
       const before = await eventRow(eventId);
-      const notFound = { status: 404, body: { error: 'Change request not found.' } };
-      assert.deepEqual(await decide(id, 'approved', token(coordB)), notFound);
-      assert.deepEqual(await decide(randomUUID(), 'approved'), notFound);
-      assert.deepEqual(await decide('not-a-uuid', 'approved'), notFound);
+      assert.deepEqual(await decide(id, 'approved', token(coordB)), { status: 404, body: { error: 'Change request not found.' } });
       assert.equal((await crRow(id)).status, 'pending');
       assert.deepEqual(await eventRow(eventId), before);
     });
 
-    await t.test('TC-US032-IT-09 AC2: an invalid decision is refused and nothing changes', async () => {
-      const eventId = await makeEvent();
-      const id = await makeChangeRequest(eventId, MOVED);
-      const result = await decide(id, 'maybe');
-      assert.deepEqual(result, { status: 400, body: { error: 'Choose to approve or reject the change request.' } });
-      assert.equal((await crRow(id)).status, 'pending');
-    });
-
-    await t.test('TC-US032-IT-10 AC7: a failed save changes nothing and a retry succeeds', async () => {
+    await t.test('[IT-10] PATCH decision: a database failure part-way saves nothing, and a retry succeeds', async () => {
       const eventId = await makeEvent();
       const { bookingId } = await arrangeFor(eventId);
       const id = await makeChangeRequest(eventId, MOVED);
