@@ -583,7 +583,7 @@ Once every request has been assigned, the queue says so.
 
 These are checked by the automated tests (`npm test` in `backend` and `frontend`) because they can't be set up from the browser:
 
-- **A Venue Staff decision on a booking notifies the event's current Coordinator.** The app has no screen yet where Venue Staff approve or reject a booking. `backend/test/booking.ownership.test.js` confirms that, after a reassignment, the new Coordinator receives the decision notification and the previous one does not.
+- **A Venue Staff decision on a booking notifies the event's current Coordinator.** The app has no screen yet where Venue Staff approve or reject a booking. `backend/test/integration/booking.ownership.test.js` confirms that, after a reassignment, the new Coordinator receives the decision notification and the previous one does not.
 - **Server or database failures** during assignment: a clear error appears, nothing is changed, and retrying works.
 - **Closed requests** (rejected, completed, cancelled, draft) cannot be assigned even if someone tries to send the request directly.
 - **Roles other than the Lead** cannot view or change assignments.

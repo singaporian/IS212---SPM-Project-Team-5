@@ -2,8 +2,8 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { randomUUID } = require('node:crypto');
 const jwt = require('jsonwebtoken');
-const db = require('../src/db');
-const { occupiedInterval, reviewConflicts } = require('../src/bookingReview');
+const db = require('../../src/db');
+const { occupiedInterval, reviewConflicts } = require('../../src/bookingReview');
 
 const sample = { id: 'request', venue_id: 'venue', start_time: '2026-10-15T10:03:00+08:00', end_time: '2026-10-15T11:07:00+08:00' };
 
@@ -71,7 +71,7 @@ test('US-019 review API returns current requirements/availability without changi
     await booking('pending');
     // Deliberately outside these hours: operating data is displayed, never a conflict rule.
     await client.query(`INSERT INTO venue_operating_hours (venue_id, day_of_week, opens_at, closes_at) VALUES ($1,4,'15:03','23:59')`, [venue]);
-    server = require('../src/index').listen(0, '127.0.0.1');
+    server = require('../../src/index').listen(0, '127.0.0.1');
     await new Promise(resolve => server.once('listening', resolve));
     const token = role => jwt.sign({ sub: randomUUID(), role }, process.env.JWT_SECRET || 'local-development-secret-change-me');
     async function get(id = requestId, bearer = token('venue_staff'), summary = false) {

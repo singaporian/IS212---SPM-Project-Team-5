@@ -4,9 +4,9 @@ const assert = require('node:assert/strict');
 const { randomUUID } = require('node:crypto');
 const express = require('express');
 const jwt = require('jsonwebtoken');
-const db = require('../src/db');
-const { router, applyChangesToDraft } = require('../src/changeRequests');
-const { EventRequest } = require('../src/domain');
+const db = require('../../src/db');
+const { router, applyChangesToDraft } = require('../../src/changeRequests');
+const { EventRequest } = require('../../src/domain');
 
 // Current event used by the unit tests: 100 people, 09:00-12:00 SGT (3 hours).
 const current = new EventRequest({
