@@ -20,17 +20,21 @@ function parsePreparationStatus(body) {
 const router = express.Router();
 const staffOnly = [auth.authenticate, auth.requireRoles('venue_staff')];
 
-// AC1: one row per venue booking of a confirmed (safety-approved, ADR-0001) upcoming event.
+function listPreparationRows(coordinatorId = null) {
+  return db.query(
+    `SELECT b.id, b.event_id, e.title AS event_title, v.name AS venue_name,
+            b.start_time, b.end_time, b.preparation_status
+     FROM bookings b JOIN events e ON e.id = b.event_id JOIN venues v ON v.id = b.venue_id
+     WHERE e.status = $1 AND b.status = ANY($2::text[]) AND b.start_time > now()
+       AND ($3::uuid IS NULL OR e.assigned_coordinator_id = $3)
+     ORDER BY b.start_time, v.name`,
+    [EVENT_STATUS.CONFIRMED, OCCUPYING_STATUSES, coordinatorId]
+  );
+}
+//US21-AC1: one row per venue booking of a confirmed (safety-approved) upcoming event.
 router.get('/bookings', ...staffOnly, async (req, res) => {
   try {
-    const result = await db.query(
-      `SELECT b.id, b.event_id, e.title AS event_title, v.name AS venue_name,
-              b.start_time, b.end_time, b.preparation_status
-       FROM bookings b JOIN events e ON e.id = b.event_id JOIN venues v ON v.id = b.venue_id
-       WHERE e.status = $1 AND b.status = ANY($2::text[]) AND b.start_time > now()
-       ORDER BY b.start_time, v.name`,
-      [EVENT_STATUS.CONFIRMED, OCCUPYING_STATUSES]
-    );
+    const result = await listPreparationRows();
     res.json(result.rows);
   } catch (error) {
     console.error(error);
@@ -38,7 +42,7 @@ router.get('/bookings', ...staffOnly, async (req, res) => {
   }
 });
 
-// AC2, AC4, AC5, AC6: save the status of one venue booking only.
+//US21- AC2, AC4, AC5, AC6: save the status of one venue booking only.
 router.patch('/bookings/:id', ...staffOnly, async (req, res) => {
   let status;
   try { status = parsePreparationStatus(req.body); }
@@ -67,15 +71,7 @@ router.patch('/bookings/:id', ...staffOnly, async (req, res) => {
 // AC3: the assigned Coordinator sees each venue's status for their own events only.
 router.get('/mine', auth.authenticate, auth.requireRoles('event_coordinator'), async (req, res) => {
   try {
-    const result = await db.query(
-      `SELECT b.id, b.event_id, e.title AS event_title, v.name AS venue_name,
-              b.start_time, b.end_time, b.preparation_status
-       FROM bookings b JOIN events e ON e.id = b.event_id JOIN venues v ON v.id = b.venue_id
-       WHERE e.status = $1 AND b.status = ANY($2::text[]) AND b.start_time > now()
-         AND e.assigned_coordinator_id = $3
-       ORDER BY b.start_time, v.name`,
-      [EVENT_STATUS.CONFIRMED, OCCUPYING_STATUSES, req.auth.sub]
-    );
+       const result = await listPreparationRows(req.auth.sub);
     res.json(result.rows);
   } catch (error) {
     console.error(error);
