@@ -271,7 +271,7 @@ router.patch('/change-requests/:id/decision', ...coordinatorOnly, async (req, re
     // Lock the request and its event so two decisions cannot both succeed (AC-032-006).
     const found = await client.query(
       `SELECT cr.id, cr.event_id, cr.organiser_id, cr.proposed_changes, cr.status, cr.created_at,
-              e.preferred_start, e.preferred_end, e.title
+              e.preferred_start, e.preferred_end, e.title, e.draft_data
        FROM event_change_requests cr JOIN events e ON e.id = cr.event_id
        WHERE cr.id = $1 AND e.assigned_coordinator_id = $2
        FOR UPDATE OF cr, e`,
@@ -284,7 +284,8 @@ router.patch('/change-requests/:id/decision', ...coordinatorOnly, async (req, re
     }
 
     const reconsider = { bookings: [], equipment: [] };
-    if (decision === 'approved') {
+
+       if (decision === 'approved') {
       const moved = changeRequest.movesEvent(event); // compare against the times before the update
 
       // AC-032-004: write the approved values onto the event.
@@ -292,9 +293,11 @@ router.patch('/change-requests/:id/decision', ...coordinatorOnly, async (req, re
       const names = Object.keys(columns);
       const assignments = names.map((name, i) => `${name} = $${i + 2}${name === 'equipment_requirements' ? '::jsonb' : ''}`);
       const values = names.map((name) => (name === 'equipment_requirements' ? JSON.stringify(columns[name]) : columns[name]));
+      // Keep the organiser's form copy (draft_data) in step, using US-010's helper.
+      const draft = applyChangesToDraft(found.rows[0].draft_data, changeRequest.proposedChanges);
       await client.query(
-        `UPDATE events SET ${[...assignments, 'updated_at = now()'].join(', ')} WHERE id = $1`,
-        [event.id, ...values]
+        `UPDATE events SET ${[...assignments, `draft_data = $${names.length + 2}::jsonb`, 'updated_at = now()'].join(', ')} WHERE id = $1`,
+        [event.id, ...values, JSON.stringify(draft)]
       );
     }
 
