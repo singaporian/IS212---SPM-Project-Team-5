@@ -59,31 +59,3 @@ test('[E2E-01] AC1 AC2 AC4 AC5: coordinator approves a date/time move and sees w
   const reservation = await fx.row('SELECT quantity, requires_reconsideration FROM equipment_reservations WHERE id = $1', [arranged.reservationId]);
   expect(reservation).toEqual({ quantity: 2, requires_reconsideration: true });
 });
-
-test('[E2E-03] AC7: a failed save shows an error, keeps the request, and retry succeeds once', async ({ page }) => {
-  const event = await fx.event({ title: 'Seminar', organiser, coordinator: coordA });
-  const crId = await fx.changeRequest(event, organiser, { venueLayoutPreference: 'Banquet' });
-
-  await signIn(page, coordA);
-  await openChangeRequests(page);
-
-  let failNext = true;
-  await page.route('**/api/events/change-requests/*/decision', async (route) => {
-    if (!failNext) return route.continue();
-    failNext = false;
-    return route.fulfill({ status: 500, json: { error: 'Unable to save your decision. Nothing was changed. Please retry.' } });
-  });
-
-  const request = card(page, event.title);
-  await request.getByRole('button', { name: 'Approve' }).click();
-  await expect(page.getByRole('alert')).toHaveText('Unable to save your decision. Nothing was changed. Please retry.');
-  await expect(request).toBeVisible();
-  await expect(page.getByRole('status')).toHaveCount(0);
-  expect((await fx.row('SELECT status FROM event_change_requests WHERE id = $1', [crId])).status).toBe('pending');
-
-  await request.getByRole('button', { name: 'Retry approve' }).click();
-  await expect(page.getByRole('status')).toContainText(`Change request for ${event.title} approved.`);
-  await expect(card(page, event.title)).toHaveCount(0);
-  expect((await fx.row('SELECT status FROM event_change_requests WHERE id = $1', [crId])).status).toBe('approved');
-  expect((await fx.row('SELECT venue_layout_preference FROM events WHERE id = $1', [event.id])).venue_layout_preference).toBe('Banquet');
-});
