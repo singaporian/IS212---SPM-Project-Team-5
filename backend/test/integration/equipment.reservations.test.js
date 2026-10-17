@@ -4,8 +4,8 @@ const assert = require('node:assert/strict');
 const { randomUUID } = require('node:crypto');
 const express = require('express');
 const jwt = require('jsonwebtoken');
-const db = require('../src/db');
-const { router, validateReservation, mergeWindows, windowsOverlap, peakCommitted } = require('../src/equipmentReservations');
+const db = require('../../src/db');
+const { router, validateReservation, mergeWindows, windowsOverlap, peakCommitted } = require('../../src/equipmentReservations');
 
 const w = (start, end) => ({ start: `2099-03-01T${start}:00Z`, end: `2099-03-01T${end}:00Z` });
 

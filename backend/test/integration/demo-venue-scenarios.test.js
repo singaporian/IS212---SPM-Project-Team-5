@@ -2,9 +2,9 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { randomUUID } = require('node:crypto');
 const { Pool } = require('pg');
-const db = require('../src/db');
-const { scenarios, singaporeDate, seedVenueScenarios } = require('../src/demoVenueScenarios');
-const { holdConflicts } = require('../src/holdAvailability');
+const db = require('../../src/db');
+const { scenarios, singaporeDate, seedVenueScenarios } = require('../../src/demoVenueScenarios');
+const { holdConflicts } = require('../../src/holdAvailability');
 test('demo dates follow Singapore day across year rollover and preserve fixture identities', () => {
   const now = new Date('2026-12-31T16:30:00Z');
   assert.equal(singaporeDate(0, now), '2027-01-01');

@@ -3,8 +3,8 @@ const assert = require('node:assert/strict');
 const { randomUUID } = require('node:crypto');
 const { Pool } = require('pg');
 const jwt = require('jsonwebtoken');
-const db = require('../src/db');
-const { validateSubmission } = require('../src/submissions');
+const db = require('../../src/db');
+const { validateSubmission } = require('../../src/submissions');
 const complete = { eventName: 'Student workshop', startDate: '2026-10-01', startTime: '10:00',
   endDate: '2026-10-01', endTime: '11:00', expectedAttendance: '25' };
 
@@ -72,7 +72,7 @@ test('submission integrates with real PostgreSQL and coordinator routes', async 
     }
     const token = (id = owner, role = 'event_organiser') => jwt.sign({ sub: id, role },
       process.env.JWT_SECRET || 'local-development-secret-change-me');
-    server = require('../src/index').listen(0, '127.0.0.1');
+    server = require('../../src/index').listen(0, '127.0.0.1');
     await new Promise(resolve => server.once('listening', resolve));
     async function request(path, method = 'GET', body, bearer = token()) {
       const response = await fetch(`http://127.0.0.1:${server.address().port}/api${path}`, {

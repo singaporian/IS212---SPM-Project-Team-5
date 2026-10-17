@@ -48,7 +48,7 @@ US-033 and US-039 stashes remain untouched. US-035 venue configuration is not im
 
 Additional technical regressions: role authorization/assignment changes; removed action endpoints return 404; competing placement/approval; current booking/unavailability conflicts; no notification before expiry; unassigned events; historical resolved rows excluded; notification marker rollback. These are not additional customer ACs.
 
-Automated evidence: backend/test/venue-holds.test.js, frontend/test/venue-holds.test.cjs, and US-038 hold display case in frontend/test/booking-review.test.cjs. Backend tests use isolated PostgreSQL schemas and real concurrent connections.
+Automated evidence: backend/test/integration/venue-holds.test.js, frontend/test/venue-holds.test.cjs, and US-038 hold display case in frontend/test/booking-review.test.cjs. Backend tests use isolated PostgreSQL schemas and real concurrent connections.
 
 ## Manual browser checks still required
 1. Log in as Venue Staff → Dashboard → Tentative venue holds. Pick a pending request and save a hold with a future expiry. Verify saved arrangement and AM/PM expiry; no extend/release/confirm controls.
@@ -76,7 +76,7 @@ Manual browser execution is pending. No commit or push is authorised.
 - git diff --check and git diff --cached --check: PASS. Existing partial staging was preserved; this review did not stage, commit or push.
 
 ## Demo-data verification
-backend/src/seed-demo.js uses backend/src/demoVenueScenarios.js to create six stable-ID fixtures relative to the current Singapore date: active, short-expiry and expired holds, plus three pending decision scenarios. The latter are demo data only, not the stashed US-033 implementation. Event and booking slots match, a Coordinator is assigned, and recorded booking buffers are 30 minutes each. Reseeding resets these fixtures without multiplying them; production validation is unchanged. backend/test/demo-venue-scenarios.test.js verifies date rollover, stable IDs, repeat seeding, coherent data and preservation of unrelated records.
+backend/src/seed-demo.js uses backend/src/demoVenueScenarios.js to create six stable-ID fixtures relative to the current Singapore date: active, short-expiry and expired holds, plus three pending decision scenarios. The latter are demo data only, not the stashed US-033 implementation. Event and booking slots match, a Coordinator is assigned, and recorded booking buffers are 30 minutes each. Reseeding resets these fixtures without multiplying them; production validation is unchanged. backend/test/integration/demo-venue-scenarios.test.js verifies date rollover, stable IDs, repeat seeding, coherent data and preservation of unrelated records.
 
 Use the named US-038 Demo fixtures for manual testing. The primary active hold expires two hours after seeding; the short-expiry hold expires after five minutes. Rerun seed-demo when fresh deadlines are needed. Old manually created records are preserved.
 
@@ -87,8 +87,8 @@ Use the named US-038 Demo fixtures for manual testing. The primary active hold e
 - backend/src/venueOccupancy.js
 - backend/src/holdAvailability.js
 - backend/src/venueHolds.js
-- backend/test/booking.review.test.js
-- backend/test/venue-holds.test.js
+- backend/test/integration/booking.review.test.js
+- backend/test/integration/venue-holds.test.js
 - frontend/src/components/BookingReview.vue
 - frontend/src/router/index.js
 - frontend/src/views/HomePage.vue
@@ -99,4 +99,4 @@ Use the named US-038 Demo fixtures for manual testing. The primary active hold e
 - docs/testing/US-038-test-plan.md
 - backend/src/seed-demo.js
 - backend/src/demoVenueScenarios.js
-- backend/test/demo-venue-scenarios.test.js
+- backend/test/integration/demo-venue-scenarios.test.js

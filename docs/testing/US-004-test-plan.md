@@ -38,7 +38,7 @@ available for retry.
 | frontend/src/services/drafts.js | Authenticated API requests and error handling |
 | frontend/src/views/DraftsView.vue | My Drafts listing |
 | frontend/src/router/index.js | Organiser-only list and draft routes |
-| backend/test/drafts.test.js | Validator and real PostgreSQL API tests |
+| backend/test/integration/drafts.test.js | Validator and real PostgreSQL API tests |
 | frontend/test/drafts.test.cjs | Form method/computed-property tests with mocked API requests |
 
 Draft data is stored as JSON to preserve blank fields, separate dates and times,

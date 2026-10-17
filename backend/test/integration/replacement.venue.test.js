@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const { randomUUID } = require('node:crypto');
 const { Pool } = require('pg');
 const jwt = require('jsonwebtoken');
-const db = require('../src/db');
+const db = require('../../src/db');
 
 const secret = process.env.JWT_SECRET || 'local-development-secret-change-me';
 
@@ -61,7 +61,7 @@ test('US-037 preserves affected bookings, notifies the Coordinator, and allows a
       [originalBookingId, eventId, originalVenueId, coordinatorId]
     );
 
-    const app = require('../src/index');
+    const app = require('../../src/index');
     server = app.listen(0, '127.0.0.1');
     await new Promise((resolve) => server.once('listening', resolve));
     const base = `http://127.0.0.1:${server.address().port}`;

@@ -3,9 +3,9 @@ const assert=require('node:assert/strict');
 const {randomUUID}=require('node:crypto');
 const {Pool}=require('pg');
 const jwt=require('jsonwebtoken');
-const db=require('../src/db');
-const {validateExpiry}=require('../src/venueHolds');
-const {holdConflicts,effectiveHoldStatus,processHoldExpiries}=require('../src/holdAvailability');
+const db=require('../../src/db');
+const {validateExpiry}=require('../../src/venueHolds');
+const {holdConflicts,effectiveHoldStatus,processHoldExpiries}=require('../../src/holdAvailability');
 const slot={start_time:'2099-03-01T10:00:00+08:00',end_time:'2099-03-01T11:00:00+08:00',setup_minutes:30,turnaround_minutes:30};
 test('TC-US038-02 technical expiry validation: future timestamp, no booking-start restriction',()=>{
  const now='2099-03-01T08:00:00+08:00';
@@ -21,7 +21,7 @@ test('US-038 isolated PostgreSQL API integration',async t=>{
   await originalPool.query(`CREATE SCHEMA ${schema}`);
   for(const table of tables) await originalPool.query(`CREATE TABLE ${schema}.${table} (LIKE public.${table} INCLUDING ALL)`);
   pool=new Pool({...originalPool.options,password:originalPool.options.password,connectionTimeoutMillis:3000,options:`-c search_path=${schema},public`});db.pool=pool;db.query=(sql,args)=>pool.query(sql,args);
-  server=require('../src/index').listen(0,'127.0.0.1');await new Promise(r=>server.once('listening',r));
+  server=require('../../src/index').listen(0,'127.0.0.1');await new Promise(r=>server.once('listening',r));
   const staff=randomUUID(),coordinator=randomUUID(),other=randomUUID();
   const token=(role='venue_staff',sub=staff)=>jwt.sign({role,sub},process.env.JWT_SECRET||'local-development-secret-change-me');
   async function call(path,method='GET',body,bearer=token()) {const response=await fetch(`http://127.0.0.1:${server.address().port}/api${path}`,{method,headers:{Authorization:'Bearer '+bearer,'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined});const text=await response.text();let data;try{data=JSON.parse(text)}catch{data=text}return {status:response.status,body:data};}

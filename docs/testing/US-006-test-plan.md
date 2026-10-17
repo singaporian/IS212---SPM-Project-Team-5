@@ -76,12 +76,12 @@ Yu Hui reported executing these nine cases in Lark. Actual results, dates and at
 
 ## Automated traceability and execution
 
-Nearby comments in backend/test/submissions.test.js, backend/test/drafts.test.js, frontend/test/drafts.test.cjs and frontend/test/organiser-time-display.test.cjs link the final Lark IDs to existing tests. Coverage is shared across unit, real API/PostgreSQL integration and component/template tests; these are not browser E2E replays.
+Nearby comments in backend/test/integration/submissions.test.js, backend/test/integration/drafts.test.js, frontend/test/drafts.test.cjs and frontend/test/organiser-time-display.test.cjs link the final Lark IDs to existing tests. Coverage is shared across unit, real API/PostgreSQL integration and component/template tests; these are not browser E2E replays.
 
 Automated-only checks include invalid native-clock values (AC-CHG001-03), authentication/ownership, stale versions, concurrent/idempotent retries, transaction rollback, integer overflow, malformed dates and POST-success/receipt-GET-failure handling. Invalid-clock field identification is specifically tested by:
 
-- `organiser draft validation accepts five-minute times and identifies invalid time fields` in backend/test/drafts.test.js.
-- `US-006 rejected values give corrective errors and preserve the entire draft` in backend/test/submissions.test.js.
+- `organiser draft validation accepts five-minute times and identifies invalid time fields` in backend/test/integration/drafts.test.js.
+- `US-006 rejected values give corrective errors and preserve the entire draft` in backend/test/integration/submissions.test.js.
 
 Run from the repository root after starting PostgreSQL and applying the schema with backend's `npm run init-db`:
 
@@ -94,7 +94,7 @@ git diff --check
 
 For local app setup, follow README.md. Fill the form and choose Submit for Review directly; Save Draft is optional. Check coordinator queue visibility without requiring assignment for US-006.
 
-Backend tests use isolated fixtures and deliberate database failures to verify rollback. The normal backend npm suite excludes the older root-level backend/test-us011-us012.js shared-fixture script. Frontend tests use mocked transport and render actual templates for relevant UI checks.
+Backend tests use isolated fixtures and deliberate database failures to verify rollback. The normal backend npm suite excludes the older backend/test/e2e/test-us011-us012.js shared-fixture script. Frontend tests use mocked transport and render actual templates for relevant UI checks.
 
 Latest verified regression baseline (2026-09-28): backend 47 passed; frontend 34 passed; production build passed. Node counts include parent integration entries. The build emits the existing Vite CJS API deprecation warning. Earlier test counts and browser observations in historical records are not current acceptance evidence.
 
