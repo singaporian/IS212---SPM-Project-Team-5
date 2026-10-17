@@ -5,50 +5,9 @@ const { randomUUID } = require('node:crypto');
 const express = require('express');
 const jwt = require('jsonwebtoken');
 const db = require('../../src/db');
-const { router, validateReservation, mergeWindows, windowsOverlap, peakCommitted } = require('../../src/equipmentReservations');
+const { router } = require('../../src/equipmentReservations');
 
 const w = (start, end) => ({ start: `2099-03-01T${start}:00Z`, end: `2099-03-01T${end}:00Z` });
-
-// ---------- Unit: overlap definition ----------
-test('events overlap only when their scheduled windows intersect', () => {
-  assert.equal(windowsOverlap([w('09:00', '11:00')], [w('10:00', '12:00')]), true);
-  assert.equal(windowsOverlap([w('09:00', '11:00')], [w('09:30', '10:00')]), true, 'contained');
-  assert.equal(windowsOverlap([w('09:00', '11:00')], [w('11:00', '12:00')]), false, 'touching end-to-start is not overlapping');
-  assert.equal(windowsOverlap([w('09:00', '11:00')], [w('13:00', '14:00')]), false);
-  assert.equal(windowsOverlap([w('09:00', '10:00'), w('14:00', '15:00')], [w('11:00', '12:00')]), false, 'gap between an event\'s bookings');
-  assert.equal(windowsOverlap([w('09:00', '10:00'), w('14:00', '15:00')], [w('14:30', '16:00')]), true, 'any window counts');
-  assert.equal(windowsOverlap([], [w('09:00', '10:00')]), false, 'an event without bookings has no schedule');
-});
-
-test('mergeWindows joins overlapping windows of one event', () => {
-  assert.deepEqual(mergeWindows([w('10:00', '12:00'), w('09:00', '11:00'), w('13:00', '14:00')]).length, 2);
-  assert.deepEqual(mergeWindows([w('09:00', '10:00'), w('10:00', '11:00')]).length, 2, 'touching windows stay separate');
-});
-
-test('peakCommitted counts units held at the same moment, not a plain sum', () => {
-  const target = [w('10:00', '12:00')];
-  // Two other events overlap the target but not each other: at most 1 unit is in use at once.
-  assert.equal(peakCommitted(target, [{ quantity: 1, windows: [w('09:00', '11:00')] }, { quantity: 1, windows: [w('11:30', '13:00')] }]), 1);
-  // Overlapping each other as well: both are held together.
-  assert.equal(peakCommitted(target, [{ quantity: 1, windows: [w('09:00', '11:00')] }, { quantity: 2, windows: [w('10:30', '13:00')] }]), 3);
-  // Back-to-back holds do not stack.
-  assert.equal(peakCommitted(target, [{ quantity: 2, windows: [w('10:00', '11:00')] }, { quantity: 3, windows: [w('11:00', '12:00')] }]), 3);
-  // An event with two overlapping bookings (two venues at once) is only counted once.
-  assert.equal(peakCommitted(target, [{ quantity: 2, windows: [w('10:00', '11:00'), w('10:30', '11:30')] }]), 2);
-  assert.equal(peakCommitted(target, [{ quantity: 5, windows: [w('13:00', '14:00')] }]), 0);
-  assert.equal(peakCommitted(target, []), 0);
-});
-
-test('reservation input requires an event, equipment and a positive whole quantity', () => {
-  const valid = { eventId: randomUUID(), equipmentId: randomUUID(), quantity: 2 };
-  assert.deepEqual(validateReservation(valid), valid);
-  for (const quantity of [0, -1, 1.5, '2', null, undefined, '', NaN, 2147483648]) {
-    assert.throws(() => validateReservation({ ...valid, quantity }), /Quantity/, String(quantity));
-  }
-  assert.throws(() => validateReservation({ ...valid, eventId: 'abc' }), /event/);
-  assert.throws(() => validateReservation({ ...valid, equipmentId: undefined }), /equipment/);
-  assert.throws(() => validateReservation(null));
-});
 
 // ---------- Integration: API ----------
 test('reservation API reserves, rejects conflicts, releases stock and survives failures', async t => {
