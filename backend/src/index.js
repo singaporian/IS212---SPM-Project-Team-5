@@ -49,20 +49,50 @@ app.get('/api/auth/me', auth.authenticate, async (req, res) => {
   res.json({ user: result.rows[0] });
 });
 
+// US-020: reason dropdown + validator
+const UNAVAILABILITY_REASONS = Object.freeze([
+  'maintenance',
+  'equipment_failure',
+  'renovation',
+  'safety_concerns',
+  'other'
+]);
+
+function validateUnavailabilityReason(body) {
+  const reasonCode = typeof body.reasonCode === 'string' ? body.reasonCode.trim() : '';
+  const reasonDetail = typeof body.reasonDetail === 'string' ? body.reasonDetail.trim() : '';
+  if (!UNAVAILABILITY_REASONS.includes(reasonCode)) {
+    throw Object.assign(new Error('Choose a valid reason for the unavailable period'), { status: 400 });
+  }
+  if (reasonCode === 'other' && !reasonDetail) {
+    throw Object.assign(new Error('Describe the reason when selecting Other'), { status: 400 });
+  }
+  const reasonLabels = {
+    maintenance: 'Maintenance',
+    equipment_failure: 'Equipment Failure',
+    renovation: 'Renovation',
+    safety_concerns: 'Safety Concerns',
+    other: reasonDetail
+  };
+  return { reasonCode, reasonDetail, reasonText: reasonLabels[reasonCode] };
+}
+
 app.post('/api/venues/:id/unavailability', auth.authenticate, auth.requireRoles('venue_staff'), async (req, res) => {
   const startTime = new Date(req.body.startTime);
   const endTime = new Date(req.body.endTime);
-  const reason = typeof req.body.reason === 'string' ? req.body.reason.trim() : '';
-  if (!uuidPattern.test(req.params.id) || !Number.isFinite(startTime.getTime()) || !Number.isFinite(endTime.getTime()) || endTime <= startTime) return res.status(400).json({ error: 'Enter a valid unavailability period with an end after the start' });
-  if (!reason) return res.status(400).json({ error: 'A reason is required' });
+  if (!uuidPattern.test(req.params.id) || !Number.isFinite(startTime.getTime()) || !Number.isFinite(endTime.getTime()) || endTime <= startTime) {
+    return res.status(400).json({ error: 'Enter a valid unavailability period with an end after the start' });
+  }
+  let reason;
+  try { reason = validateUnavailabilityReason(req.body); } catch (error) { return res.status(error.status || 400).json({ error: error.message }); }
   try {
     const venue = await db.query('SELECT id, name FROM venues WHERE id = $1', [req.params.id]);
     if (!venue.rows[0]) return res.status(404).json({ error: 'Venue not found' });
     const result = await db.query(
-      `INSERT INTO venue_unavailabilities (venue_id, start_time, end_time, reason, created_by)
-       VALUES ($1, $2, $3, $4, $5)
-       RETURNING id, venue_id, start_time, end_time, reason, created_by, created_at`,
-      [req.params.id, startTime.toISOString(), endTime.toISOString(), reason, req.auth.sub]
+      `INSERT INTO venue_unavailabilities (venue_id, start_time, end_time, reason, reason_code, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       RETURNING id, venue_id, start_time, end_time, reason, reason_code, created_by, created_at, modified_by, modified_at, ended_early`,
+      [req.params.id, startTime.toISOString(), endTime.toISOString(), reason.reasonText, reason.reasonCode, req.auth.sub]
     );
     const affected = await db.query(
       `SELECT b.id, b.event_id, b.start_time, b.end_time, b.status, b.setup_minutes, b.turnaround_minutes,
@@ -77,7 +107,7 @@ app.post('/api/venues/:id/unavailability', auth.authenticate, auth.requireRoles(
     for (const booking of relevant.filter((item) => item.coordinator_id)) {
       await db.query(
         `INSERT INTO notifications (user_id, event_id, message) VALUES ($1, $2, $3)`,
-        [booking.coordinator_id, booking.event_id, `Venue ${venue.rows[0].name} is unavailable for ${reason}; replacement arrangements are required for ${booking.event_title}`]
+        [booking.coordinator_id, booking.event_id, `Venue ${venue.rows[0].name} is unavailable for ${reason.reasonText}; replacement arrangements are required for ${booking.event_title}`]
       );
     }
     res.status(201).json({ ...result.rows[0], venue_name: venue.rows[0].name, affected_bookings: relevant });
@@ -93,6 +123,25 @@ app.get('/api/venues/unavailability', auth.authenticate, auth.requireRoles('venu
      WHERE vu.end_time >= now() ORDER BY vu.start_time ASC`
   );
   res.json(result.rows);
+});
+
+// US-020: end an active unavailability period early
+app.patch('/api/venues/unavailability/:id/end', auth.authenticate, auth.requireRoles('venue_staff'), async (req, res) => {
+  if (!uuidPattern.test(req.params.id)) return res.status(400).json({ error: 'Invalid unavailability period id' });
+  try {
+    const result = await db.query(
+      `UPDATE venue_unavailabilities
+       SET end_time = now(), ended_early = true, modified_by = $1, modified_at = now()
+       WHERE id = $2 AND start_time <= now() AND end_time > now() AND ended_early = false
+       RETURNING id, venue_id, start_time, end_time, reason, reason_code, created_by, created_at, modified_by, modified_at, ended_early`,
+      [req.auth.sub, req.params.id]
+    );
+    if (!result.rows[0]) return res.status(404).json({ error: 'Active unavailability period not found' });
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Unable to end the unavailability period early' });
+  }
 });
 
 app.get('/api/bookings/affected', auth.authenticate, auth.requireRoles('event_coordinator'), async (req, res) => {
