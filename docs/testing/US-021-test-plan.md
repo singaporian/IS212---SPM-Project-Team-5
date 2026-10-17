@@ -27,7 +27,7 @@
 | Domain | `PREPARATION_STATUSES` (`backend/src/domain/index.js`), `parsePreparationStatus(body)` (`backend/src/preparation.js`) |
 | API | `GET /api/preparation/bookings`, `PATCH /api/preparation/bookings/:id` (Venue Staff only); `GET /api/preparation/mine` (Event Coordinator only) |
 | Schema | `bookings.preparation_status` (`not_started` / `in_progress` / `ready`, default `not_started`) |
-| UI | `/venue/preparation` (`PreparationStatusView.vue`), `/coordinator/preparation` (`CoordinatorPreparationView.vue`) |
+| UI | `PreparationStatusView.vue`: `/venue/preparation` (Venue Staff, can update) and `/coordinator/preparation` (same page with `readOnly`, Event Coordinator) |
 
 ## 3. Test cases
 
