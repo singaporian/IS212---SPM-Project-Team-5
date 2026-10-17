@@ -306,3 +306,27 @@ API endpoints (Event Coordinator Lead only):
 - `PATCH /api/coordinator-lead/events/:id/coordinator` takes `{ "coordinatorId": "<uuid>", "currentCoordinatorId": "<uuid> | null" }`. `currentCoordinatorId` is the Coordinator the Lead saw on the request (`null` for an unassigned request). If someone else changed the assignment in the meantime, the request is refused with 409 and nothing is changed.
 
 No schema migration is needed. Run `npm run seed-demo` to load the demo requests. Run `npm test` in `backend` and `frontend` to run the tests: `backend/test/integration/coordinator.assignments.test.js` and `frontend/test/assign-coordinator.test.cjs`. With the backend running, `node test/e2e/test-us011-us012.js` in `backend` runs an end-to-end check of assignment, reassignment and access.
+
+## Review and Process a Change Request (US-032)
+
+Event Coordinators open **Review Change Requests** from the dashboard (`/coordinator/change-requests`). Each pending change request for one of their assigned events shows every proposed value beside the event's current value. **Approve** writes the proposed values onto the event; **Reject** leaves the event unchanged. A processed request cannot be decided again.
+
+Attendance and duration changes never reach this page: US-010 turns them into cancel-and-resubmit. When an approved change moves the event to a different date or time, the event's venue bookings (pending, approved or confirmed) and equipment reservations are flagged with `requires_reconsideration`. Their status, times and quantities are not changed. The confirmation names them, and **My Venue Booking Requests** shows the flag as a badge.
+
+A decision is saved in one transaction. If it fails, nothing is changed, the request stays on screen and **Retry** repeats the same decision.
+
+API (Event Coordinator only):
+
+- `GET /api/events/change-requests/pending`: pending requests for the coordinator's events, each with `proposed_changes` and `current`.
+- `PATCH /api/events/change-requests/:id/decision` with `{ "decision": "approved" | "rejected" }`. Returns the new status and `reconsider: { bookings, equipment }`. 404 for another coordinator's or unknown request, 409 if already processed.
+
+Run `npm run init-db` in `backend` once to add the new columns. Tests: `backend/test/unit/change.request.review.test.js`, `backend/test/integration/change.request.review.test.js`, `frontend/test/change-request-review.test.cjs` and the Playwright suite in `e2e/`:
+```bash
+cd e2e
+npm install
+npx playwright install chromium
+npm test
+```
+
+The end-to-end tests start the backend and frontend themselves (or reuse ones already running locally) and need the database from `docker compose up -d db`. The full test plan and AC traceability are in `docs/testing/US-032-test-plan.md`.
+

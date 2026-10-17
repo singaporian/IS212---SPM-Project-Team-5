@@ -210,4 +210,136 @@ router.get('/mine', ...organiserOnly, async (req, res) => {
   }
 });
 
-module.exports = { router, parseChangeRequestInput, applyChangesToDraft };
+// ---------- US-032: the assigned Event Coordinator reviews and processes change requests ----------
+
+const coordinatorOnly = [auth.authenticate, auth.requireRoles('event_coordinator')];
+const DECISIONS = ['approved', 'rejected'];
+
+// AC-032-002: a decision is either an approval or a rejection.
+function parseChangeRequestDecision(body) {
+  const raw = body && typeof body === 'object' && !Array.isArray(body) ? body.decision : undefined;
+  const decision = typeof raw === 'string' ? raw.trim() : '';
+  if (!DECISIONS.includes(decision)) {
+    throw Object.assign(new Error('Choose to approve or reject the change request.'), { status: 400 });
+  }
+  return { decision };
+}
+
+function currentValues(row) {
+  return {
+    preferredStart: row.preferred_start ? new Date(row.preferred_start).toISOString() : null,
+    preferredEnd: row.preferred_end ? new Date(row.preferred_end).toISOString() : null,
+    expectedAttendance: row.expected_attendance,
+    venueLayoutPreference: row.venue_layout_preference,
+    equipmentRequirements: row.equipment_requirements
+  };
+}
+
+// AC-032-001: pending requests for events assigned to the signed-in coordinator, with current values.
+router.get('/change-requests/pending', ...coordinatorOnly, async (req, res) => {
+  try {
+    const result = await db.query(
+      `SELECT cr.id, cr.event_id, cr.proposed_changes, cr.status, cr.created_at, e.title AS event_title,
+              e.preferred_start, e.preferred_end, e.expected_attendance, e.venue_layout_preference, e.equipment_requirements
+       FROM event_change_requests cr JOIN events e ON e.id = cr.event_id
+       WHERE e.assigned_coordinator_id = $1 AND cr.status = 'pending'
+       ORDER BY cr.created_at ASC`,
+      [req.auth.sub]
+    );
+    res.json(result.rows.map((row) => ({
+      ...ChangeRequest.fromRow(row).toJSON(),
+      event_title: row.event_title,
+      current: currentValues(row)
+    })));
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Unable to load change requests. Please retry.' });
+  }
+});
+
+// AC-032-002 to AC-032-007: approve or reject, all in one transaction.
+router.patch('/change-requests/:id/decision', ...coordinatorOnly, async (req, res) => {
+  if (!uuidPattern.test(req.params.id)) return res.status(404).json({ error: 'Change request not found.' });
+  let decision;
+  try { ({ decision } = parseChangeRequestDecision(req.body)); }
+  catch (error) { return res.status(error.status).json({ error: error.message }); }
+
+  let client;
+  try {
+    client = await db.pool.connect();
+    await client.query('BEGIN');
+    // Lock the request and its event so two decisions cannot both succeed (AC-032-006).
+    const found = await client.query(
+      `SELECT cr.id, cr.event_id, cr.organiser_id, cr.proposed_changes, cr.status, cr.created_at,
+              e.preferred_start, e.preferred_end, e.title, e.draft_data
+       FROM event_change_requests cr JOIN events e ON e.id = cr.event_id
+       WHERE cr.id = $1 AND e.assigned_coordinator_id = $2
+       FOR UPDATE OF cr, e`,
+      [req.params.id, req.auth.sub]
+    );
+    if (!found.rows[0]) throw Object.assign(new Error('Change request not found.'), { status: 404 });
+    const changeRequest = ChangeRequest.fromRow(found.rows[0]);
+    const event = EventRequest.fromRow({ ...found.rows[0], id: found.rows[0].event_id });    if (!changeRequest.canBeDecided()) {
+      throw Object.assign(new Error('This change request has already been processed.'), { status: 409 });
+    }
+
+    const reconsider = { bookings: [], equipment: [] };
+
+       if (decision === 'approved') {
+      const moved = changeRequest.movesEvent(event); // compare against the times before the update
+
+      // AC-032-004: write the approved values onto the event.
+      const columns = changeRequest.toEventColumns();
+      const names = Object.keys(columns);
+      const assignments = names.map((name, i) => `${name} = $${i + 2}${name === 'equipment_requirements' ? '::jsonb' : ''}`);
+      const values = names.map((name) => (name === 'equipment_requirements' ? JSON.stringify(columns[name]) : columns[name]));
+      // Keep the organiser's form copy (draft_data) in step, using US-010's helper.
+      const draft = applyChangesToDraft(found.rows[0].draft_data, changeRequest.proposedChanges);
+      await client.query(
+        `UPDATE events SET ${[...assignments, `draft_data = $${names.length + 2}::jsonb`, 'updated_at = now()'].join(', ')} WHERE id = $1`,
+        [event.id, ...values, JSON.stringify(draft)]
+      );
+    }
+
+    await client.query(
+      `UPDATE event_change_requests SET status = $1, decided_by = $2, decided_at = now() WHERE id = $3`,
+      [decision, req.auth.sub, changeRequest.id]
+    );
+
+    if (decision === 'approved' && changeRequest.movesEvent(event)) {
+      // AC-032-005: identify, don't cancel. Status, times and quantities are left exactly as they were.
+      const bookings = await client.query(
+        `UPDATE bookings SET requires_reconsideration = true
+         WHERE event_id = $1 AND status IN ('pending', 'approved', 'confirmed')
+         RETURNING id, status, start_time, end_time, (SELECT name FROM venues WHERE venues.id = bookings.venue_id) AS venue_name`,
+        [event.id]
+      );
+      const equipment = await client.query(
+        `UPDATE equipment_reservations SET requires_reconsideration = true
+         WHERE event_id = $1
+         RETURNING id, quantity, (SELECT name FROM equipment WHERE equipment.id = equipment_reservations.equipment_id) AS equipment_name`,
+        [event.id]
+      );
+      reconsider.bookings = bookings.rows;
+      reconsider.equipment = equipment.rows;
+    }
+
+    await client.query(
+      `INSERT INTO event_changes (event_id, changed_by, change_summary) VALUES ($1, $2, $3)`,
+      [event.id, req.auth.sub, `Change request ${changeRequest.id} ${decision} by the event coordinator.`]
+    );
+    await client.query('COMMIT');
+    res.json({ id: changeRequest.id, event_id: event.id, status: decision, reconsider });
+  } catch (error) {
+    // AC-032-007: nothing is kept from a failed decision, so the coordinator can simply retry.
+    if (client) await client.query('ROLLBACK').catch(() => {});
+    if (!error.status) console.error(error);
+    res.status(error.status || 500).json({
+      error: error.status ? error.message : 'Unable to save your decision. Nothing was changed. Please retry.'
+    });
+  } finally {
+    if (client) client.release();
+  }
+});
+
+module.exports = { router, parseChangeRequestInput, applyChangesToDraft, parseChangeRequestDecision };

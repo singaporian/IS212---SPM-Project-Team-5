@@ -49,3 +49,29 @@ export async function cancelAndResubmit(eventId, changes) {
   if (!res.ok) throw new Error(data.error || 'Unable to cancel and resubmit. Please retry.')
   return data
 }
+// US-032: change requests waiting for the signed-in Event Coordinator's decision.
+export async function fetchPendingChangeRequests() {
+  const res = await fetch('/api/events/change-requests/pending', { headers: authHeaders() })
+  if (res.status === 401) throw new Error('Your session has expired. Please sign in again.')
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(data.error || 'Unable to load change requests. Please retry.')
+  return data
+}
+
+// US-032: approve or reject one change request.
+export async function decideChangeRequest(id, decision) {
+  let res
+  try {
+    res = await fetch(`/api/events/change-requests/${id}/decision`, {
+      method: 'PATCH',
+      headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ decision })
+    })
+  } catch {
+    throw new Error('Unable to reach the server. Your decision was not saved. Please retry.')
+  }
+  if (res.status === 401) throw new Error('Your session has expired. Please sign in again.')
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) throw Object.assign(new Error(data.error || 'Unable to save your decision. Please retry.'), { status: res.status })
+  return data
+}
