@@ -279,15 +279,15 @@ router.patch('/change-requests/:id/decision', ...coordinatorOnly, async (req, re
     );
     if (!found.rows[0]) throw Object.assign(new Error('Change request not found.'), { status: 404 });
     const changeRequest = ChangeRequest.fromRow(found.rows[0]);
-    const event = EventRequest.fromRow({ ...found.rows[0], id: found.rows[0].event_id });    if (!changeRequest.canBeDecided()) {
+    const event = EventRequest.fromRow({ ...found.rows[0], id: found.rows[0].event_id });
+    if (!changeRequest.canBeDecided()) {
       throw Object.assign(new Error('This change request has already been processed.'), { status: 409 });
     }
 
     const reconsider = { bookings: [], equipment: [] };
+    const moved = decision === 'approved' && changeRequest.movesEvent(event); // compare against the times before the update
 
-       if (decision === 'approved') {
-      const moved = changeRequest.movesEvent(event); // compare against the times before the update
-
+    if (decision === 'approved') {
       // AC-032-004: write the approved values onto the event.
       const columns = changeRequest.toEventColumns();
       const names = Object.keys(columns);
@@ -306,7 +306,7 @@ router.patch('/change-requests/:id/decision', ...coordinatorOnly, async (req, re
       [decision, req.auth.sub, changeRequest.id]
     );
 
-    if (decision === 'approved' && changeRequest.movesEvent(event)) {
+    if (moved) {
       // AC-032-005: identify, don't cancel. Status, times and quantities are left exactly as they were.
       const bookings = await client.query(
         `UPDATE bookings SET requires_reconsideration = true
