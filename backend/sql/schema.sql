@@ -192,6 +192,13 @@ CREATE TABLE IF NOT EXISTS venue_unavailabilities (
   created_at timestamptz DEFAULT now()
 );
 
+-- US-020: reason dropdown code, who/when it was last modified, and whether it was ended early.
+ALTER TABLE venue_unavailabilities ADD COLUMN IF NOT EXISTS reason_code text;
+ALTER TABLE venue_unavailabilities ADD COLUMN IF NOT EXISTS modified_by uuid REFERENCES users(id) ON DELETE SET NULL;
+ALTER TABLE venue_unavailabilities ADD COLUMN IF NOT EXISTS modified_at timestamptz;
+ALTER TABLE venue_unavailabilities ADD COLUMN IF NOT EXISTS ended_early boolean NOT NULL DEFAULT false;
+UPDATE venue_unavailabilities SET reason_code = 'other' WHERE reason_code IS NULL;
+
 -- Simple notifications table
 CREATE TABLE IF NOT EXISTS notifications (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
