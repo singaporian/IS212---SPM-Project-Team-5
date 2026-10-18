@@ -11,6 +11,13 @@ function token(userId, role) {
   return jwt.sign({ sub: userId, role }, passwordSecret);
 }
 
+// [AC-036-001: one event can have more than one venue booking]
+// [AC-036-002: each booking stores its own venue, time and requirements]
+// [AC-036-006: every booking remains associated with the same event]
+// [AC-036-007: every booking keeps its own status and decision information]
+// [AC-036-008: Venue Staff can review each booking independently]
+// This integration test uses an isolated PostgreSQL schema and removes it in
+// finally so test bookings never remain in the developer or CI database.
 test('US-036 creates multiple independent venue bookings for one event and decides them separately', async () => {
   const originalPool = db.pool;
   const originalQuery = db.query;
@@ -75,6 +82,7 @@ test('US-036 creates multiple independent venue bookings for one event and decid
       return { status: response.status, body: await response.json() };
     }
 
+    // Submit two venue rows in one batch for the same event.
     const batch = await request('/api/bookings/requests/batch', {
       method: 'POST',
       headers: { Authorization: `Bearer ${coordinatorToken}` },
@@ -91,10 +99,14 @@ test('US-036 creates multiple independent venue bookings for one event and decid
     assert.ok(batch.body.bookings.every((booking) => booking.event_id === eventId));
     assert.deepEqual(new Set(batch.body.bookings.map((booking) => booking.venue_id)), new Set([venueOneId, venueTwoId]));
 
+    // AC-036-003/004: confirm each venue was independently checked and stored
+    // with its own required capacity and booking association.
     const stored = await pool.query('SELECT id, event_id, venue_id, status, required_capacity FROM bookings ORDER BY created_at');
     assert.equal(stored.rows.length, 2);
     assert.deepEqual(stored.rows.map((booking) => booking.required_capacity).sort((a, b) => a - b), [60, 120]);
 
+    // AC-036-008: approve only the first booking and verify the second remains
+    // pending, proving decisions do not leak between venue bookings.
     const firstBooking = batch.body.bookings[0];
     const decision = await request(`/api/bookings/${firstBooking.id}/decision`, {
       method: 'PATCH',
