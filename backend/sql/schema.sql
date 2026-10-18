@@ -34,6 +34,10 @@ ALTER TABLE venues ADD COLUMN IF NOT EXISTS available_until date NOT NULL DEFAUL
 ALTER TABLE venues DROP CONSTRAINT IF EXISTS venues_available_dates_check;
 ALTER TABLE venues ADD CONSTRAINT venues_available_dates_check CHECK (available_until >= available_from);
 
+-- US-017 (Week 7 customer change #1): configurable per-venue setup/turnaround defaults
+ALTER TABLE venues ADD COLUMN IF NOT EXISTS default_setup_minutes integer NOT NULL DEFAULT 30 CHECK (default_setup_minutes >= 0);
+ALTER TABLE venues ADD COLUMN IF NOT EXISTS default_turnaround_minutes integer NOT NULL DEFAULT 30 CHECK (default_turnaround_minutes >= 0);
+
 CREATE UNIQUE INDEX IF NOT EXISTS venues_name_unique ON venues (name);
 
 -- Recurring venue operating hours. day_of_week follows PostgreSQL EXTRACT(DOW): Sunday = 0.

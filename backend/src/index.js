@@ -529,6 +529,8 @@ app.get('/api/bookings', auth.authenticate, auth.requireRoles('venue_staff'), as
       `SELECT b.id, b.venue_id, b.event_id, b.start_time, b.end_time, b.status,
               b.setup_minutes, b.turnaround_minutes,
               v.name AS venue_name,
+              v.default_setup_minutes,
+              v.default_turnaround_minutes,
               e.title AS event_title,
               e.expected_attendance
        FROM bookings b
