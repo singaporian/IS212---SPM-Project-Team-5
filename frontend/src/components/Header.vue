@@ -117,6 +117,8 @@ export default {
       if (this.user.role === 'event_coordinator' && message.startsWith('Venue ')) return '/bookings/affected'
       if (this.user.role === 'event_coordinator' && message.startsWith('Event request') && /(re)?assigned to you/.test(message)) return '/coordinator/requests'
       if (this.user.role === 'technical_support_staff' && message.startsWith('Technical support requirements updated')) return '/technical-support/queue'
+      if (this.user.role === 'technical_support_staff' && message.includes('has been cancelled')) return '/equipment/reserve'
+      if (this.user.role === 'technical_support_staff' && message.includes('important change was requested')) return '/equipment/reserve'
       return null
     },
     formatNotificationDate(value) {
