@@ -59,9 +59,23 @@ const UNAVAILABILITY_REASONS = Object.freeze([
   'other'
 ]);
 
+// Older clients and tests send a free-text `reason` instead of reasonCode/reasonDetail.
+const LEGACY_REASON_CODES = Object.freeze({
+  maintenance: 'maintenance',
+  'equipment failure': 'equipment_failure',
+  renovation: 'renovation',
+  'safety concern': 'safety_concerns',
+  'safety concerns': 'safety_concerns'
+});
+
 function validateUnavailabilityReason(body) {
-  const reasonCode = typeof body.reasonCode === 'string' ? body.reasonCode.trim() : '';
-  const reasonDetail = typeof body.reasonDetail === 'string' ? body.reasonDetail.trim() : '';
+  let reasonCode = typeof body.reasonCode === 'string' ? body.reasonCode.trim() : '';
+  let reasonDetail = typeof body.reasonDetail === 'string' ? body.reasonDetail.trim() : '';
+  const legacyReason = typeof body.reason === 'string' ? body.reason.trim() : '';
+  if (!reasonCode && legacyReason) {
+    reasonCode = LEGACY_REASON_CODES[legacyReason.toLowerCase()] || 'other';
+    if (reasonCode === 'other' && !reasonDetail) reasonDetail = legacyReason;
+  }
   if (!UNAVAILABILITY_REASONS.includes(reasonCode)) {
     throw Object.assign(new Error('Choose a valid reason for the unavailable period'), { status: 400 });
   }
