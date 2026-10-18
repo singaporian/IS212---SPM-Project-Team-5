@@ -94,7 +94,7 @@ git diff --check
 
 For local app setup, follow README.md. Fill the form and choose Submit for Review directly; Save Draft is optional. Check coordinator queue visibility without requiring assignment for US-006.
 
-Backend tests use isolated fixtures and deliberate database failures to verify rollback. The normal backend npm suite excludes the older root-level backend/test-us011-us012.js shared-fixture script. Frontend tests use mocked transport and render actual templates for relevant UI checks.
+Backend tests use isolated fixtures and deliberate database failures to verify rollback. The normal backend npm suite excludes the older root-level backend/test-us012-us034.js shared-fixture script. Frontend tests use mocked transport and render actual templates for relevant UI checks.
 
 Latest verified regression baseline (2026-09-28): backend 47 passed; frontend 34 passed; production build passed. Node counts include parent integration entries. The build emits the existing Vite CJS API deprecation warning. Earlier test counts and browser observations in historical records are not current acceptance evidence.
 

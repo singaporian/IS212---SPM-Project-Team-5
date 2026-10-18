@@ -79,7 +79,7 @@ CREATE TABLE IF NOT EXISTS events (
   updated_at timestamptz DEFAULT now()
 );
 
--- Coordinator assignment for event requests (added for US-011 / US-012)
+-- Current coordinator for each event request: set by the Event Coordinator Lead (US-034), enforced by coordinator routes (US-012)
 ALTER TABLE events ADD COLUMN IF NOT EXISTS assigned_coordinator_id uuid REFERENCES users(id) ON DELETE SET NULL;
 
 -- Preserve incomplete draft fields without coercing dates, placeholders or tri-state choices.

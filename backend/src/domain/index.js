@@ -75,10 +75,6 @@ class EventRequest {
     });
   }
 
-  canBeAssigned() {
-    return this.status === 'submitted' && !this.assignedCoordinatorId;
-  }
-
   canRequestChanges() {
      return CHANGE_REQUEST_STATUSES.includes(this.status);// AC-008-001: only a submitted event can receive a change request, US-34:Before approval, the Organiser edits the request directly (US-034).
   }
@@ -98,11 +94,6 @@ class EventRequest {
     return major;
   }
 
-  assignTo(coordinatorId) {
-    if (!this.canBeAssigned()) throw new Error('This request has already been assigned');
-    this.assignedCoordinatorId = coordinatorId;
-  }
-
   isActive() {
     return ACTIVE_STATUSES.includes(this.status);
   }
@@ -116,21 +107,6 @@ class EventRequest {
     const previousCoordinatorId = this.assignedCoordinatorId;
     this.assignedCoordinatorId = coordinatorId;
     return previousCoordinatorId;
-  }
-
-  unassignFrom(coordinatorId) {
-    if (this.assignedCoordinatorId !== coordinatorId) {
-      throw new Error('Request not found or not assigned to you');
-    }
-    this.assignedCoordinatorId = null;
-  }
-
-  isAssignedTo(coordinatorId) {
-    return this.assignedCoordinatorId === coordinatorId;
-  }
-
-  canBeViewedBy(coordinatorId) {
-    return this.isAssignedTo(coordinatorId);
   }
 
   toJSON() {
