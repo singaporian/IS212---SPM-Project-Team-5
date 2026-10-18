@@ -24,8 +24,11 @@ export default {
     async loadVenues() { const response = await fetch('/api/venues', { headers: authHeaders() }); if (response.status === 401) { clearSession(); this.$router.push('/login'); return } this.venues = response.ok ? await response.json() : [] },
     async save() {
       this.error = ''; this.message = ''; this.saving = true
-      const reason = this.form.reason === 'Other' ? this.form.details : this.form.reason
-      const response = await fetch(`/api/venues/${this.form.venueId}/unavailability`, { method: 'POST', headers: { ...authHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify({ startTime: this.form.startTime, endTime: this.form.endTime, reason }) })
+      // US-020: send the reason as a code, with details only for Other
+      const reasonCodes = { 'Maintenance': 'maintenance', 'Equipment failure': 'equipment_failure', 'Renovation': 'renovation', 'Safety concern': 'safety_concerns', 'Other': 'other' }
+      const reasonCode = reasonCodes[this.form.reason]
+      const reasonDetail = this.form.reason === 'Other' ? this.form.details : ''
+      const response = await fetch(`/api/venues/${this.form.venueId}/unavailability`, { method: 'POST', headers: { ...authHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify({ startTime: this.form.startTime, endTime: this.form.endTime, reasonCode, reasonDetail }) })
       const data = await response.json()
       if (response.status === 401) { clearSession(); this.$router.push('/login'); return }
       if (!response.ok) { this.error = data.error || 'Unable to mark venue unavailable'; this.saving = false; return }
