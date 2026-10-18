@@ -7,6 +7,15 @@ const db = require('../../src/db');
 
 const secret = process.env.JWT_SECRET || 'local-development-secret-change-me';
 
+// [AC-037-001: assigned Coordinator is notified]
+// [AC-037-002: original event and booking are preserved]
+// [AC-037-003: Coordinator can see the unavailability reason and period]
+// [AC-037-005: Coordinator can submit a replacement booking]
+// [AC-037-006: replacement remains associated with the original event]
+// [AC-037-007: original booking remains identifiable as affected]
+// [AC-037-008: original and replacement bookings keep separate statuses]
+// This integration test uses an isolated PostgreSQL schema and drops it in
+// finally so affected/replacement bookings never persist after the test.
 test('US-037 preserves affected bookings, notifies the Coordinator, and allows a replacement venue', async () => {
   const originalPool = db.pool;
   const originalQuery = db.query;
@@ -74,6 +83,9 @@ test('US-037 preserves affected bookings, notifies the Coordinator, and allows a
       return { status: response.status, body: await response.json() };
     }
 
+    // AC-037-001/002/003/007: Venue Staff creates unavailability; the original
+    // booking is reported as affected and the Coordinator is notified without
+    // changing the original booking status.
     const unavailable = await request(`/api/venues/${originalVenueId}/unavailability`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${authToken(venueStaffId, 'venue_staff')}` },
@@ -96,6 +108,8 @@ test('US-037 preserves affected bookings, notifies the Coordinator, and allows a
     assert.equal(affected.body[0].venue_name, 'Original venue');
     assert.equal(affected.body[0].unavailable_reason, 'Maintenance');
 
+    // AC-037-005/006/008: submit a replacement for the same event and verify it
+    // becomes a separate pending booking while the original remains approved.
     const replacement = await request('/api/bookings/requests/batch', {
       method: 'POST',
       headers: { Authorization: `Bearer ${authToken(coordinatorId, 'event_coordinator')}` },
