@@ -305,7 +305,7 @@ API endpoints (Event Coordinator Lead only):
 - `GET /api/coordinator-lead/overview` returns `{ unassigned, assignments, coordinators }`.
 - `PATCH /api/coordinator-lead/events/:id/coordinator` takes `{ "coordinatorId": "<uuid>", "currentCoordinatorId": "<uuid> | null" }`. `currentCoordinatorId` is the Coordinator the Lead saw on the request (`null` for an unassigned request). If someone else changed the assignment in the meantime, the request is refused with 409 and nothing is changed.
 
-No schema migration is needed. Run `npm run seed-demo` to load the demo requests. Run `npm test` in `backend` and `frontend` to run the tests: `backend/test/integration/coordinator.assignments.test.js` and `frontend/test/assign-coordinator.test.cjs`. With the backend running, `node test/e2e/test-us011-us012.js` in `backend` runs an end-to-end check of assignment, reassignment and access.
+No schema migration is needed. Run `npm run seed-demo` to load the demo requests. Run `npm test` in `backend` and `frontend` to run the tests: `backend/test/integration/coordinator.assignments.test.js` and `frontend/test/assign-coordinator.test.cjs`. With the backend running, `node test/e2e/test-us012-us034.js` in `backend` runs an end-to-end check of assignment, reassignment and access.
 
 ## Review and Process a Change Request (US-032)
 

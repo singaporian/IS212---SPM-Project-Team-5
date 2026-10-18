@@ -1,8 +1,8 @@
 // Test script for US-012 (View Submitted Event Request Details) and US-034 (Lead assigns and reassigns coordinators).
-// US-034 replaced US-011 self-assignment: only the Event Coordinator Lead assigns requests now.
+// Only the Event Coordinator Lead assigns requests; Coordinators cannot assign requests to themselves.
 // Requires seeded demo accounts (npm run seed-demo).
 // Requires: backend server running locally on the port set in .env (default 3000)
-// Run with: node test/e2e/test-us011-us012.js   (from inside the backend folder)
+// Run with: node test/e2e/test-us012-us034.js   (from inside the backend folder)
 
 require('dotenv').config();
 const bcrypt = require('bcryptjs');
@@ -48,23 +48,23 @@ async function ensureSecondCoordinator() {
 }
 
 async function resetTestData() {
-  await db.query(`DELETE FROM events WHERE title LIKE 'TEST_US011_%'`);
+  await db.query(`DELETE FROM events WHERE title LIKE 'TEST_US034_%'`);
 }
 
 async function seedTestEvents() {
   const oldest = await db.query(
     `INSERT INTO events (title, event_type, preferred_start, preferred_end, expected_attendance, purpose, status, created_at)
-     VALUES ('TEST_US011_Oldest', 'Conference', '2026-10-01 09:00+08', '2026-10-01 17:00+08', 50, 'Oldest test event', 'submitted', now() - interval '2 days')
+     VALUES ('TEST_US034_Oldest', 'Conference', '2026-10-01 09:00+08', '2026-10-01 17:00+08', 50, 'Oldest test event', 'submitted', now() - interval '2 days')
      RETURNING id`
   );
   const middle = await db.query(
     `INSERT INTO events (title, event_type, preferred_start, preferred_end, expected_attendance, purpose, status, created_at)
-     VALUES ('TEST_US011_Middle', 'Workshop', '2026-10-05 09:00+08', '2026-10-05 12:00+08', 20, 'Middle test event', 'submitted', now() - interval '1 day')
+     VALUES ('TEST_US034_Middle', 'Workshop', '2026-10-05 09:00+08', '2026-10-05 12:00+08', 20, 'Middle test event', 'submitted', now() - interval '1 day')
      RETURNING id`
   );
   const minimal = await db.query(
     `INSERT INTO events (title, status, created_at)
-     VALUES ('TEST_US011_Minimal', 'submitted', now())
+     VALUES ('TEST_US034_Minimal', 'submitted', now())
      RETURNING id`
   );
   return {
@@ -142,7 +142,7 @@ async function run() {
     const res = await fetch(`${BASE_URL}/api/events/${oldestId}`, { headers: authed(coordToken) });
     const body = await res.json();
     check('Owner can view assigned request details (200)', res.status === 200, `(got ${res.status})`);
-    check('Details include expected fields', body.title === 'TEST_US011_Oldest' && body.purpose === 'Oldest test event');
+    check('Details include expected fields', body.title === 'TEST_US034_Oldest' && body.purpose === 'Oldest test event');
   }
   {
     const res = await fetch(`${BASE_URL}/api/events/${oldestId}`, { headers: authed(coord2Token) });
