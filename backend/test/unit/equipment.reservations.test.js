@@ -272,9 +272,9 @@ test('US-026: describeAvailability shows how many units are free during the chos
     ];
     const reservation = { id: 'reservation-1', equipment_id: MIC.id, event_id: LAUNCH.id, quantity: 1, status: 'reserved', updated_at: '2099-01-01T00:00:00Z' };
     assert.deepEqual(describeAvailability(MIC, LAUNCH, others, reservation), {
-      id: 'mic', name: 'Wireless microphone', equipment_type: 'Audio', status: 'available', total_quantity: 4,
+      id: 'mic', name: 'Wireless microphone', equipment_type: 'Audio', status: 'available', total_quantity: 4, in_service_quantity: 4, damaged_quantity: 0, maintenance_quantity: 0,
       committed_elsewhere: 2, reserved_for_event: 1, available: 1,
-      reservation: { id: 'reservation-1', quantity: 1, status: 'reserved', updated_at: '2099-01-01T00:00:00Z' },
+      reservation: { id: 'reservation-1', quantity: 1, status: 'reserved', updated_at: '2099-01-01T00:00:00Z', requires_reconsideration: false },
       overlapping_events: [{ id: 'Morning Conference', title: 'Morning Conference', quantity: 2 }]
     });
   });
@@ -291,6 +291,23 @@ test('US-026: describeAvailability shows how many units are free during the chos
     const result = describeAvailability(MIC, LAUNCH, [held('Morning Conference', 5, w('09:00', '11:00'))], { id: 'reservation-1', quantity: 1, status: 'reserved' });
     assert.equal(result.available, 0);
   });
+  await t.test('US-024: damaged and under-maintenance units are not available', () => {
+    const result = describeAvailability({ ...MIC, damaged_quantity: 1, maintenance_quantity: 1 }, LAUNCH,
+      [held('Morning Conference', 1, w('09:00', '11:00'))], undefined);
+    assert.equal(result.in_service_quantity, 2);
+    assert.equal(result.available, 1);
+  });
+});
+
+test('US-024: reservation conflicts only count units that are in service', () => {
+  const ok = check({ item: { ...MIC, damaged_quantity: 1, maintenance_quantity: 1 }, requested: 2 });
+  assert.equal(ok.allowed, true);
+  const result = check({ item: { ...MIC, damaged_quantity: 1, maintenance_quantity: 1 }, requested: 3 });
+  assert.equal(result.allowed, false);
+  assert.equal(result.available, 2);
+  assert.equal(result.message,
+    'Reservation conflict: only 2 "Wireless microphone" units are available during "Product Launch". Only 2 of 4 units are in service (2 damaged or under maintenance).');
+  assert.equal(check({ item: { ...MIC, damaged_quantity: 4 }, requested: 1 }).available, 0);
 });
 
 // ---------- Single-unit wording ----------

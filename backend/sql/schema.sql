@@ -185,6 +185,14 @@ CREATE TABLE IF NOT EXISTS equipment (
 -- Equipment category (added for the "add equipment to inventory" story)
 ALTER TABLE equipment ADD COLUMN IF NOT EXISTS equipment_type text;
 
+-- US-024: units out of service. Only total - damaged - maintenance units can be reserved for events.
+ALTER TABLE equipment ADD COLUMN IF NOT EXISTS damaged_quantity integer NOT NULL DEFAULT 0;
+ALTER TABLE equipment ADD COLUMN IF NOT EXISTS maintenance_quantity integer NOT NULL DEFAULT 0;
+ALTER TABLE equipment ADD COLUMN IF NOT EXISTS updated_at timestamptz NOT NULL DEFAULT now();
+ALTER TABLE equipment DROP CONSTRAINT IF EXISTS equipment_out_of_service_within_total;
+ALTER TABLE equipment ADD CONSTRAINT equipment_out_of_service_within_total
+  CHECK (damaged_quantity >= 0 AND maintenance_quantity >= 0 AND damaged_quantity + maintenance_quantity <= total_quantity);
+
 -- Equipment reservations per event
 CREATE TABLE IF NOT EXISTS equipment_reservations (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
