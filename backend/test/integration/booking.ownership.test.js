@@ -11,7 +11,7 @@ test('after reassignment the new coordinator sees the event\'s bookings and rece
   let server;
   try {
     await client.query('BEGIN');
-    for (const table of ['users', 'events', 'venues', 'bookings', 'notifications', 'event_changes']) {
+    for (const table of ['users', 'events', 'venues', 'bookings', 'notifications', 'event_changes', 'technical_support_requirements']) {
       await client.query(`CREATE TEMP TABLE ${table} (LIKE public.${table} INCLUDING ALL) ON COMMIT DROP`);
     }
     db.query = (sql, params) => client.query(sql, params);
@@ -40,14 +40,15 @@ test('after reassignment the new coordinator sees the event\'s bookings and rece
       return { status: res.status, body: await res.json() };
     }
 
-    const [lead, alice, bob, venueStaff] = [randomUUID(), randomUUID(), randomUUID(), randomUUID()];
+    const [lead, alice, bob, venueStaff, safetyOfficer] = [randomUUID(), randomUUID(), randomUUID(), randomUUID(), randomUUID()];
     for (const [id, name, role] of [[lead, 'Lead', 'event_coordinator_lead'], [alice, 'Alice', 'event_coordinator'],
-      [bob, 'Bob', 'event_coordinator'], [venueStaff, 'Venue', 'venue_staff']]) {
+      [bob, 'Bob', 'event_coordinator'], [venueStaff, 'Venue', 'venue_staff'], [safetyOfficer, 'Safety', 'safety_officer']]) {
       await client.query('INSERT INTO users (id, name, email, role) VALUES ($1, $2, $3, $4)', [id, name, `${id}@test.local`, role]);
     }
     const venueId = randomUUID(), eventId = randomUUID(), bookingId = randomUUID();
     await client.query("INSERT INTO venues (id, name, capacity) VALUES ($1, 'Test Hall', 100)", [venueId]);
-    await client.query("INSERT INTO events (id, title, status, assigned_coordinator_id) VALUES ($1, 'Robotics Showcase', 'submitted', $2)", [eventId, alice]);
+    await client.query("INSERT INTO events (id, title, status, assigned_coordinator_id) VALUES ($1, 'Robotics Showcase', 'approved', $2)", [eventId, alice]);
+    await client.query("INSERT INTO technical_support_requirements (event_id, status, support_required) VALUES ($1, 'confirmed', false)", [eventId]);
     // Alice requested the booking while the event was hers.
     await client.query(
       `INSERT INTO bookings (id, event_id, venue_id, requested_by, start_time, end_time, status)
@@ -73,6 +74,10 @@ test('after reassignment the new coordinator sees the event\'s bookings and rece
       assert.equal(decision.status, 200, JSON.stringify(decision.body));
       const notes = await client.query("SELECT user_id FROM notifications WHERE event_id = $1 AND message LIKE 'Venue booking request%'", [eventId]);
       assert.deepEqual(notes.rows.map(n => n.user_id), [bob]);
+      const event = await client.query('SELECT status FROM events WHERE id = $1', [eventId]);
+      assert.equal(event.rows[0].status, 'confirmed');
+      const safetyNotes = await client.query("SELECT user_id, message FROM notifications WHERE event_id = $1 AND message LIKE 'Event %Operational Safety Check%'", [eventId]);
+      assert.deepEqual(safetyNotes.rows.map(n => n.user_id), [safetyOfficer]);
     });
   } finally {
     db.query = originalQuery;

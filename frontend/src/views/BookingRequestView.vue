@@ -14,7 +14,7 @@
             <router-link to="/bookings" class="btn btn-sm btn-outline-secondary">View all venue bookings</router-link>
           </div>
         </div>
-        <form v-else @submit.prevent="reviewRequest">
+        <form v-else class="booking-form" @submit.prevent="reviewRequest">
           <div class="row g-3">
             <div class="col-md-6">
               <label class="form-label" for="booking-event">Event</label>
@@ -23,6 +23,7 @@
                 <option v-for="event in events" :key="event.id" :value="event.id">{{ event.title }}</option>
               </select>
             </div>
+            <div v-if="selectedEvent" class="col-12"><div class="event-details"><h2 class="h6 mb-2">Event details</h2><dl class="row small mb-0"><dt class="col-sm-4">Event type</dt><dd class="col-sm-8">{{ selectedEvent.event_type || 'Not specified' }}</dd><dt class="col-sm-4">Schedule</dt><dd class="col-sm-8">{{ formatDate(selectedEvent.preferred_start) }} to {{ formatDate(selectedEvent.preferred_end) }}</dd><dt class="col-sm-4">Expected attendance</dt><dd class="col-sm-8">{{ selectedEvent.expected_attendance ?? 'Not specified' }}</dd><dt class="col-sm-4">Purpose</dt><dd class="col-sm-8">{{ selectedEvent.purpose || 'Not specified' }}</dd><dt class="col-sm-4">Layout</dt><dd class="col-sm-8">{{ selectedEvent.venue_layout_preference || 'Not specified' }}</dd><dt class="col-sm-4">Accessibility</dt><dd class="col-sm-8">{{ formatRequirement(selectedEvent.accessibility_requirements) }}</dd><dt class="col-sm-4">Equipment</dt><dd class="col-sm-8">{{ formatRequirement(selectedEvent.equipment_requirements) }}</dd></dl></div></div>
             <div class="col-md-6">
               <label class="form-label" for="booking-venue">Venue</label>
               <select id="booking-venue" v-model="form.venueId" class="form-select" required>
@@ -30,7 +31,8 @@
                 <option v-for="venue in venues" :key="venue.id" :value="venue.id">{{ venue.name }} ({{ venue.capacity }} seats)</option>
               </select>
             </div>
-            <div class="col-md-3"><label class="form-label">Event date<input v-model="form.date" class="form-control" type="date" required /></label></div>
+            <div class="col-md-3"><label class="form-label">Start date<input v-model="form.startDate" class="form-control" type="date" required /></label></div>
+            <div class="col-md-3"><label class="form-label">End date<input v-model="form.endDate" class="form-control" type="date" required /></label></div>
             <div class="col-md-3"><label class="form-label">Start time<input v-model="form.startTime" class="form-control" type="time" required /></label></div>
             <div class="col-md-3"><label class="form-label">End time<input v-model="form.endTime" class="form-control" :class="{ 'is-invalid': timeValidationError }" type="time" required /><div v-if="timeValidationError" class="invalid-feedback">{{ timeValidationError }}</div></label></div>
             <div class="col-12"><label class="form-label">Venue requirements<textarea v-model="form.requirements" class="form-control" rows="3" placeholder="Layout, accessibility, facilities, or other requirements"></textarea></label></div>
@@ -44,7 +46,7 @@
           <dl class="row small">
             <dt class="col-sm-4">Event</dt><dd class="col-sm-8">{{ selectedEvent?.title || '—' }}</dd>
             <dt class="col-sm-4">Venue</dt><dd class="col-sm-8">{{ selectedVenue?.name || '—' }}</dd>
-            <dt class="col-sm-4">Date and time</dt><dd class="col-sm-8">{{ form.date }} from {{ form.startTime }} to {{ form.endTime }}</dd>
+            <dt class="col-sm-4">Date and time</dt><dd class="col-sm-8">{{ form.startDate }} {{ form.startTime }} to {{ form.endDate }} {{ form.endTime }}</dd>
             <dt class="col-sm-4">Requirements</dt><dd class="col-sm-8">{{ form.requirements || 'None specified' }}</dd>
           </dl>
 
@@ -80,7 +82,7 @@ export default {
       submitting: false,
       success: false,
       submittedEventTitle: '',
-      form: { eventId: '', venueId: '', date: '', startTime: '', endTime: '', setupMinutes: 30, turnaroundMinutes: 30, requirements: '' }
+      form: { eventId: '', venueId: '', startDate: '', endDate: '', startTime: '', endTime: '', setupMinutes: 30, turnaroundMinutes: 30, requirements: '' }
     }
   },
   computed: {
@@ -91,12 +93,12 @@ export default {
     reviewRequest() {
       this.error = ''
       this.timeValidationError = ''
-      if (!this.form.date || !this.form.startTime || !this.form.endTime) {
+      if (!this.form.startDate || !this.form.endDate || !this.form.startTime || !this.form.endTime) {
         this.showSummary = true
         return
       }
-      const start = new Date(`${this.form.date}T${this.form.startTime}`)
-      const end = new Date(`${this.form.date}T${this.form.endTime}`)
+      const start = new Date(`${this.form.startDate}T${this.form.startTime}`)
+      const end = new Date(`${this.form.endDate}T${this.form.endTime}`)
       if (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime()) || end <= start) {
         this.timeValidationError = 'End time must be later than the start time.'
         return
@@ -104,6 +106,7 @@ export default {
       this.showSummary = true
     },
     formatDate(value) { return value ? new Date(value).toLocaleString() : '—' },
+    formatRequirement(value) { if (!value || (Array.isArray(value) && !value.length) || (typeof value === 'object' && !Array.isArray(value) && !Object.keys(value).length)) return 'Not specified'; if (typeof value === 'string') return value; if (Array.isArray(value)) return value.map(item => typeof item === 'string' ? item : `${item.type || 'Item'}${item.quantity ? ` x${item.quantity}` : ''}`).join(', '); return value.notes || value.description || JSON.stringify(value) },
     conflictStatusLabel(status) {
       if (status === 'pending') return 'Pending booking confirmation'
       if (status === 'approved') return 'Approved booking'
@@ -125,8 +128,8 @@ export default {
     async submitRequest() {
       this.submitting = true
       this.error = ''
-      const startTime = `${this.form.date}T${this.form.startTime}:00+08:00`
-      const endTime = `${this.form.date}T${this.form.endTime}:00+08:00`
+      const startTime = `${this.form.startDate}T${this.form.startTime}:00+08:00`
+      const endTime = `${this.form.endDate}T${this.form.endTime}:00+08:00`
       const response = await fetch('/api/bookings/requests', {
         method: 'POST',
         headers: { ...authHeaders(), 'Content-Type': 'application/json' },
@@ -158,7 +161,8 @@ export default {
       this.form = {
         eventId: this.form.eventId,
         venueId: '',
-        date: '',
+        startDate: '',
+        endDate: '',
         startTime: '',
         endTime: '',
         setupMinutes: 30,
@@ -170,3 +174,13 @@ export default {
   mounted() { this.loadOptions() }
 }
 </script>
+
+<style scoped>
+.booking-form { max-width: 980px }
+.booking-form > .row { background: #f8fafc; border: 1px solid #e5eaf1; border-radius: .75rem; padding: 1.15rem; }
+.booking-form .form-label { color: #334155; font-size: .9rem; font-weight: 600 }
+.booking-form .form-control, .booking-form .form-select { min-height: 2.65rem; border-color: #cbd5e1; }
+.booking-form textarea.form-control { min-height: 5.5rem; }
+.event-details { border-left: 4px solid #2f6fed; padding: .75rem 1rem; background: #f4f7fb }
+.booking-summary { max-width: 980px; border-top: 1px solid #e5eaf1; padding-top: 1.25rem }
+</style>

@@ -89,6 +89,21 @@ ALTER TABLE events ADD COLUMN IF NOT EXISTS assigned_coordinator_id uuid REFEREN
 -- Preserve incomplete draft fields without coercing dates, placeholders or tri-state choices.
 ALTER TABLE events ADD COLUMN IF NOT EXISTS draft_data jsonb NOT NULL DEFAULT '{}'::jsonb;
 
+-- US-039: one auditable operational safety decision per event.
+CREATE TABLE IF NOT EXISTS operational_safety_checks (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  event_id uuid NOT NULL UNIQUE REFERENCES events(id) ON DELETE CASCADE,
+  status text NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected', 'changes_requested')),
+  change_scope text[] NOT NULL DEFAULT '{}'::text[],
+  comments text,
+  decided_by uuid REFERENCES users(id) ON DELETE SET NULL,
+  decided_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+ALTER TABLE operational_safety_checks ADD COLUMN IF NOT EXISTS change_scope text[] NOT NULL DEFAULT '{}'::text[];
+
 -- US-006: submission preserves the draft snapshot and exposes review fields.
 ALTER TABLE events ADD COLUMN IF NOT EXISTS description text;
 ALTER TABLE events ADD COLUMN IF NOT EXISTS submitted_at timestamptz;
@@ -99,6 +114,11 @@ CREATE TABLE IF NOT EXISTS technical_support_requirements (
   event_id uuid NOT NULL UNIQUE REFERENCES events(id) ON DELETE CASCADE,
   equipment_requirements jsonb NOT NULL DEFAULT '[]'::jsonb,
   staff_required integer NOT NULL DEFAULT 0 CHECK (staff_required >= 0),
+  support_required boolean NOT NULL DEFAULT true,
+  status text NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'confirmed', 'changes_requested')),
+  decision_comments text,
+  decided_by uuid REFERENCES users(id) ON DELETE SET NULL,
+  decided_at timestamptz,
   late_request boolean NOT NULL DEFAULT false,
   update_count integer NOT NULL DEFAULT 0 CHECK (update_count >= 0),
   updated_by uuid REFERENCES users(id) ON DELETE SET NULL,
@@ -106,12 +126,18 @@ CREATE TABLE IF NOT EXISTS technical_support_requirements (
 );
 
 ALTER TABLE technical_support_requirements ADD COLUMN IF NOT EXISTS update_count integer NOT NULL DEFAULT 0;
+ALTER TABLE technical_support_requirements ADD COLUMN IF NOT EXISTS support_required boolean NOT NULL DEFAULT true;
+ALTER TABLE technical_support_requirements ADD COLUMN IF NOT EXISTS status text NOT NULL DEFAULT 'pending';
+ALTER TABLE technical_support_requirements ADD COLUMN IF NOT EXISTS decision_comments text;
+ALTER TABLE technical_support_requirements ADD COLUMN IF NOT EXISTS decided_by uuid REFERENCES users(id) ON DELETE SET NULL;
+ALTER TABLE technical_support_requirements ADD COLUMN IF NOT EXISTS decided_at timestamptz;
 
 -- Venue bookings
 CREATE TABLE IF NOT EXISTS bookings (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   event_id uuid REFERENCES events(id) ON DELETE CASCADE,
   venue_id uuid REFERENCES venues(id) ON DELETE SET NULL,
+  replacement_for_booking_id uuid REFERENCES bookings(id) ON DELETE SET NULL,
   requested_by uuid REFERENCES users(id) ON DELETE SET NULL,
   required_capacity integer CHECK (required_capacity IS NULL OR required_capacity > 0),
   start_time timestamptz NOT NULL,
@@ -131,6 +157,8 @@ CREATE TABLE IF NOT EXISTS bookings (
   CHECK (end_time > start_time),
   created_at timestamptz DEFAULT now()
 );
+
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS replacement_for_booking_id uuid REFERENCES bookings(id) ON DELETE SET NULL;
 
 ALTER TABLE bookings ADD COLUMN IF NOT EXISTS requested_by uuid REFERENCES users(id) ON DELETE SET NULL;
 ALTER TABLE bookings ADD COLUMN IF NOT EXISTS required_capacity integer;

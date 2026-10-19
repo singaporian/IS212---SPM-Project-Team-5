@@ -51,7 +51,7 @@ test('TC-US019-FE-04 AC3: US-019 refresh uses GET and renders current conflicts 
   await state.load();
   assert.ok((await render(state)).includes('Pending Review'));
   assert.ok((await render(state)).includes('Approved contextual record'));
-  assert.ok((await render(state)).includes('Approved — venue reserved'));
+  assert.ok((await render(state)).includes('Reserved'));
   assert.ok((await render(state)).includes('No overlapping reserved bookings'));
   await state.load();
   const html = await render(state);
