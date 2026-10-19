@@ -24,7 +24,7 @@ let failOn = null;               // when set, matching SQL fails on purpose (dat
 before(async () => {
   client = await db.pool.connect();
   await client.query('BEGIN');   // everything after this is undone by ROLLBACK in teardown
-  for (const table of ['events', 'venues', 'bookings']) {
+  for (const table of ['events', 'venues', 'bookings', 'operational_safety_checks']) {
     // Empty copy of the real table (same columns and rules), only visible to this test.
     await client.query(`CREATE TEMP TABLE ${table} (LIKE public.${table} INCLUDING ALL) ON COMMIT DROP`);
   }
@@ -70,6 +70,13 @@ async function makeEvent(status = 'confirmed', coordinator = coordA) {
   await client.query(
     'INSERT INTO events (id, title, status, assigned_coordinator_id) VALUES ($1, $2, $3, $4)',  // $1.. = values below
     [id, `Event ${id.slice(0, 4)}`, status, coordinator]);
+  if (status === 'confirmed') {
+    await client.query(
+      `INSERT INTO operational_safety_checks (event_id, status, decided_at)
+       VALUES ($1, 'approved', now())`,
+      [id]
+    );
+  }
   return id;
 }
 // One booking = one venue, so an event with two bookings has two venues.

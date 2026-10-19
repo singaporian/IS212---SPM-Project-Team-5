@@ -25,6 +25,7 @@ function listPreparationRows(coordinatorId = null) {
     `SELECT b.id, b.event_id, e.title AS event_title, v.name AS venue_name,
             b.start_time, b.end_time, b.preparation_status
      FROM bookings b JOIN events e ON e.id = b.event_id JOIN venues v ON v.id = b.venue_id
+       JOIN operational_safety_checks osc ON osc.event_id = e.id AND osc.status = 'approved'
      WHERE e.status = $1 AND b.status = ANY($2::text[]) AND b.start_time > now()
        AND ($3::uuid IS NULL OR e.assigned_coordinator_id = $3)
      ORDER BY b.start_time, v.name`,
@@ -50,11 +51,14 @@ router.patch('/bookings/:id', ...staffOnly, async (req, res) => {
   if (!uuidPattern.test(req.params.id)) return res.status(404).json({ error: 'Venue booking not found.' });
   try {
     const found = await db.query(
-      `SELECT b.id, e.status AS event_status FROM bookings b JOIN events e ON e.id = b.event_id WHERE b.id = $1`,
+      `SELECT b.id, e.status AS event_status, osc.status AS safety_status
+       FROM bookings b JOIN events e ON e.id = b.event_id
+       LEFT JOIN operational_safety_checks osc ON osc.event_id = e.id
+       WHERE b.id = $1`,
       [req.params.id]
     );
     if (!found.rows[0]) return res.status(404).json({ error: 'Venue booking not found.' });
-    if (found.rows[0].event_status !== EVENT_STATUS.CONFIRMED) {
+    if (found.rows[0].event_status !== EVENT_STATUS.CONFIRMED || found.rows[0].safety_status !== 'approved') {
       return res.status(409).json({ error: 'Preparation status can only be set after the Operational Safety Check is approved.' });
     }
     const updated = await db.query(

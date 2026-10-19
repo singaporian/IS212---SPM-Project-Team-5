@@ -71,6 +71,7 @@
               <router-link v-if="role === 'venue_staff'" class="btn btn-outline-primary btn-sm w-100 mb-2" to="/bookings/pending">Pending Venue Booking Requests</router-link>
               <router-link v-if="role === 'venue_staff'" class="btn btn-outline-primary btn-sm w-100 mb-2" to="/venue/unavailability">Mark Venue Unavailable</router-link>
               <router-link v-if="role === 'venue_staff'" class="btn btn-outline-primary btn-sm w-100 mb-2" to="/venue/preparation">Preparation Status</router-link>
+              <router-link v-if="role === 'safety_officer'" class="btn btn-outline-primary btn-sm w-100 mb-2" to="/safety/checks">Operational Safety Checks</router-link>
               <router-link v-if="canCreateRequest" class="btn btn-outline-primary btn-sm w-100 mb-2" to="/requests/new">Start Draft</router-link>
               <router-link v-if="canManageEquipment" class="btn btn-outline-primary btn-sm w-100 mb-2" to="/equipment/new">Add Equipment</router-link>
               <router-link v-if="role === 'event_coordinator'" class="btn btn-outline-primary btn-sm w-100 mb-2" to="/technical-support/requirements">Technical Support Requirements</router-link>
@@ -80,6 +81,7 @@
               <router-link v-if="role === 'event_coordinator'" class="btn btn-outline-primary btn-sm w-100 mb-2" to="/coordinator/preparation">Venue Preparation</router-link>
               <router-link v-if="role === 'event_coordinator'" class="btn btn-outline-primary btn-sm w-100 mb-2" to="/coordinator/change-requests">Review Change Requests</router-link>
               <router-link v-else-if="role === 'venue_staff'" class="btn btn-outline-secondary btn-sm w-100 mb-2" to="/venue/bookings">{{ primaryRoleAction }}</router-link>
+              <router-link v-else-if="isSafetyOfficer" class="btn btn-outline-secondary btn-sm w-100 mb-2" :to="{ name: 'safety-checks', query: { view: 'history' } }">Completed Safety Reviews</router-link>
               <router-link v-else-if="isCoordinatorLead" class="btn btn-outline-secondary btn-sm w-100 mb-2" to="/coordinator-lead/assignments">{{ primaryRoleAction }}</router-link>
               <router-link v-else-if="canCreateRequest" class="btn btn-outline-secondary btn-sm w-100 mb-2" to="/requests/drafts">My Drafts</router-link>
               <button v-else class="btn btn-outline-secondary btn-sm w-100 mb-2">{{ primaryRoleAction }}</button>
@@ -314,7 +316,7 @@ export default {
       this.selectedBookingId = this.selectedBookingId === id ? null : id
     },
     bookingStatusLabel(status) {
-      const labels = { pending: 'Pending Review', alternative_suggested: 'Alternative Suggested' }
+      const labels = { pending: 'Pending Review', approved: 'Reserved', confirmed: 'Reserved', alternative_suggested: 'Alternative Suggested' }
       return labels[status] || (status ? status.replaceAll('_', ' ') : 'Unknown Status')
     },
     bookingStatusClass(status) {

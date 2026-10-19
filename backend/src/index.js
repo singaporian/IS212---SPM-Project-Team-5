@@ -9,6 +9,8 @@ const auth = require('./auth');
 const { activeHoldSql, holdConflicts, processHoldExpiries } = require('./holdAvailability');
 const { Venue, Booking } = require('./domain');
 const { occupiedInterval, overlaps } = require('./venueOccupancy');
+const { promoteEventIfReady } = require('./eventReadiness');
+const { findUnavailability, unavailableMessage } = require('./venueAvailability');
 
 dotenv.config();
 const app = express();
@@ -22,6 +24,7 @@ app.use('/api/equipment', require('./equipmentReservations').router);
 app.use('/api', require('./submissions').router);
 app.use('/api/bookings', require('./bookingReview').router);
 app.use('/api/venue-holds', require('./venueHolds').router);
+app.use('/api/safety', require('./safetyChecks').router);
 app.use('/api/preparation', require('./preparation').router); // US-021
 
 app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
@@ -162,12 +165,17 @@ app.patch('/api/venues/unavailability/:id/end', auth.authenticate, auth.requireR
 app.get('/api/bookings/affected', auth.authenticate, auth.requireRoles('event_coordinator'), async (req, res) => {
   try {
     const result = await db.query(
-      `SELECT b.id, b.event_id, b.venue_id, b.start_time, b.end_time, b.status, b.setup_minutes, b.turnaround_minutes,
+            `SELECT b.id, b.event_id, b.venue_id, b.start_time, b.end_time, b.status, b.setup_minutes, b.turnaround_minutes,
               b.required_capacity, b.venue_requirements, e.title AS event_title, v.name AS venue_name,
-              vu.start_time AS unavailable_start, vu.end_time AS unavailable_end, vu.reason AS unavailable_reason
+              vu.start_time AS unavailable_start, vu.end_time AS unavailable_end, vu.reason AS unavailable_reason,
+              rb.id AS replacement_booking_id, rb.status AS replacement_status, rv.name AS replacement_venue_name,
+              rb.start_time AS replacement_start_time, rb.end_time AS replacement_end_time
        FROM bookings b JOIN events e ON e.id = b.event_id JOIN venues v ON v.id = b.venue_id
        JOIN venue_unavailabilities vu ON vu.venue_id = b.venue_id
+             LEFT JOIN bookings rb ON rb.replacement_for_booking_id = b.id
+             LEFT JOIN venues rv ON rv.id = rb.venue_id
        WHERE COALESCE(e.assigned_coordinator_id, b.requested_by) = $1
+         AND b.replacement_for_booking_id IS NULL
          AND b.status IN ('pending', 'approved', 'confirmed')
          AND b.start_time - (b.setup_minutes * interval '1 minute') < vu.end_time
          AND b.end_time + (b.turnaround_minutes * interval '1 minute') > vu.start_time
@@ -365,7 +373,8 @@ app.use('/api/coordinator-lead', require('./coordinatorAssignments').router);
 app.get('/api/events/assigned', auth.authenticate, auth.requireRoles('event_coordinator'), async (req, res) => {
   try {
     const result = await db.query(
-      `SELECT id, title, event_type, preferred_start, preferred_end, expected_attendance, status, created_at
+            `SELECT id, title, event_type, preferred_start, preferred_end, expected_attendance, purpose, description,
+              venue_layout_preference, accessibility_requirements, equipment_requirements, status, created_at
        FROM events
        WHERE assigned_coordinator_id = $1
        ORDER BY created_at DESC`,
@@ -427,6 +436,26 @@ app.post('/api/bookings/requests/batch', auth.authenticate, auth.requireRoles('e
       await client.query('ROLLBACK');
       return res.status(404).json({ error: 'Event not found or not assigned to you' });
     }
+    const replacementForBookingId = req.body.replacementForBookingId || null;
+    if (replacementForBookingId && !uuidPattern.test(replacementForBookingId)) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'Invalid affected booking id' });
+    }
+    if (replacementForBookingId) {
+      const original = await client.query(
+        `SELECT b.id FROM bookings b JOIN events e ON e.id = b.event_id
+         JOIN venue_unavailabilities vu ON vu.venue_id = b.venue_id
+         WHERE b.id = $1 AND b.event_id = $2 AND e.assigned_coordinator_id = $3
+           AND b.status IN ('pending', 'approved', 'confirmed')
+           AND b.start_time - (b.setup_minutes * interval '1 minute') < vu.end_time
+           AND b.end_time + (b.turnaround_minutes * interval '1 minute') > vu.start_time`,
+        [replacementForBookingId, req.body.eventId, req.auth.sub]
+      );
+      if (!original.rows[0]) {
+        await client.query('ROLLBACK');
+        return res.status(404).json({ error: 'Affected booking not found for this event' });
+      }
+    }
 
     const prepared = [];
     const conflicts = [];
@@ -436,6 +465,8 @@ app.post('/api/bookings/requests/batch', auth.authenticate, auth.requireRoles('e
       catch (error) { await client.query('ROLLBACK'); return res.status(error.status || 400).json({ error: `Venue ${index + 1}: ${error.message}` }); }
       const venueResult = await client.query('SELECT id, name, capacity FROM venues WHERE id = $1', [bookings[index].venueId]);
       if (!venueResult.rows[0]) { await client.query('ROLLBACK'); return res.status(404).json({ error: `Venue ${index + 1} was not found` }); }
+      const unavailable = await findUnavailability(client.query.bind(client), { venueId: bookings[index].venueId, startTime: input.startTime.toISOString(), endTime: input.endTime.toISOString(), setupMinutes: input.setupMinutes, turnaroundMinutes: input.turnaroundMinutes });
+      if (unavailable) { await client.query('ROLLBACK'); return res.status(409).json({ error: `Venue ${index + 1} is unavailable. ${unavailableMessage(unavailable)}`, unavailable }); }
       input.requiredCapacity = input.requiredCapacity ?? eventResult.rows[0].expected_attendance;
       if (input.requiredCapacity && venueResult.rows[0].capacity < input.requiredCapacity) { await client.query('ROLLBACK'); return res.status(400).json({ error: `Venue ${index + 1} capacity is insufficient for the required capacity` }); }
       const conflictResult = await client.query(
@@ -465,13 +496,13 @@ app.post('/api/bookings/requests/batch', auth.authenticate, auth.requireRoles('e
     const created = [];
     for (const booking of prepared) {
       const result = await client.query(
-        `INSERT INTO bookings (event_id, venue_id, requested_by, required_capacity, start_time, end_time, status,
+        `INSERT INTO bookings (event_id, venue_id, requested_by, replacement_for_booking_id, required_capacity, start_time, end_time, status,
                               setup_minutes, turnaround_minutes, venue_requirements,
                               conflict_warning, conflict_details)
-         VALUES ($1, $2, $3, $4, $5, $6, 'pending', $7, $8, $9::jsonb, $10, $11::jsonb)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending', $8, $9, $10::jsonb, $11, $12::jsonb)
          RETURNING id, event_id, venue_id, start_time, end_time, status, setup_minutes,
                    turnaround_minutes, venue_requirements, conflict_warning, conflict_details, created_at`,
-        [req.body.eventId, booking.venueId, req.auth.sub, booking.input.requiredCapacity, booking.input.startTime.toISOString(), booking.input.endTime.toISOString(), booking.input.setupMinutes, booking.input.turnaroundMinutes, JSON.stringify(booking.input.venueRequirements), conflicts.some((entry) => entry.index === booking.index), JSON.stringify((conflicts.find((entry) => entry.index === booking.index) || {}).conflicts || [])]
+        [req.body.eventId, booking.venueId, req.auth.sub, replacementForBookingId, booking.input.requiredCapacity, booking.input.startTime.toISOString(), booking.input.endTime.toISOString(), booking.input.setupMinutes, booking.input.turnaroundMinutes, JSON.stringify(booking.input.venueRequirements), conflicts.some((entry) => entry.index === booking.index), JSON.stringify((conflicts.find((entry) => entry.index === booking.index) || {}).conflicts || [])]
       );
       created.push(result.rows[0]);
     }
@@ -502,6 +533,8 @@ app.post('/api/bookings/requests', auth.authenticate, auth.requireRoles('event_c
     if (!eventResult.rows[0]) return res.status(404).json({ error: 'Event not found or not assigned to you' });
     const venueResult = await db.query('SELECT id, name, capacity FROM venues WHERE id = $1', [req.body.venueId]);
     if (!venueResult.rows[0]) return res.status(404).json({ error: 'Venue not found' });
+    const unavailable = await findUnavailability(db.query, { venueId: req.body.venueId, startTime: input.startTime.toISOString(), endTime: input.endTime.toISOString(), setupMinutes: input.setupMinutes, turnaroundMinutes: input.turnaroundMinutes });
+    if (unavailable) return res.status(409).json({ error: `Venue is unavailable. ${unavailableMessage(unavailable)}`, unavailable });
     input.requiredCapacity = input.requiredCapacity ?? eventResult.rows[0].expected_attendance;
     if (input.requiredCapacity && venueResult.rows[0].capacity < input.requiredCapacity) return res.status(400).json({ error: 'Venue capacity is insufficient for the required capacity' });
 
@@ -551,6 +584,39 @@ app.post('/api/bookings/requests', auth.authenticate, auth.requireRoles('event_c
   }
 });
 
+// Coordinators may edit a pending replacement request without creating a duplicate.
+app.patch('/api/bookings/:id/replacement', auth.authenticate, auth.requireRoles('event_coordinator'), async (req, res) => {
+  let input;
+  try { input = parseBookingInput(req.body); } catch (error) { return res.status(error.status || 400).json({ error: error.message }); }
+  try {
+    const booking = (await db.query(
+      `SELECT b.id, b.event_id FROM bookings b JOIN events e ON e.id = b.event_id
+       WHERE b.id = $1 AND b.replacement_for_booking_id IS NOT NULL
+         AND b.status = 'pending' AND e.assigned_coordinator_id = $2`,
+      [req.params.id, req.auth.sub]
+    )).rows[0];
+    if (!booking) return res.status(404).json({ error: 'Pending replacement booking not found' });
+    const venue = (await db.query('SELECT id, capacity FROM venues WHERE id = $1', [req.body.venueId])).rows[0];
+    if (!venue) return res.status(404).json({ error: 'Venue not found' });
+    const unavailable = await findUnavailability(db.query, { venueId: req.body.venueId, startTime: input.startTime.toISOString(), endTime: input.endTime.toISOString(), setupMinutes: input.setupMinutes, turnaroundMinutes: input.turnaroundMinutes });
+    if (unavailable) return res.status(409).json({ error: `Venue is unavailable. ${unavailableMessage(unavailable)}`, unavailable });
+    const requiredCapacity = input.requiredCapacity;
+    if (requiredCapacity && venue.capacity < requiredCapacity) return res.status(400).json({ error: 'Venue capacity is insufficient for the required capacity' });
+    const result = await db.query(
+      `UPDATE bookings SET venue_id = $1, required_capacity = $2, start_time = $3, end_time = $4,
+             setup_minutes = $5, turnaround_minutes = $6, venue_requirements = $7::jsonb,
+             conflict_warning = false, conflict_details = '[]'::jsonb
+       WHERE id = $8
+       RETURNING id, event_id, venue_id, start_time, end_time, status, venue_requirements`,
+      [req.body.venueId, requiredCapacity, input.startTime.toISOString(), input.endTime.toISOString(), input.setupMinutes, input.turnaroundMinutes, JSON.stringify(input.venueRequirements), req.params.id]
+    );
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Unable to edit replacement booking. Your fields are still available; please retry.' });
+  }
+});
+
 // Coordinator view of their submitted venue booking requests.
 app.get('/api/bookings/mine', auth.authenticate, auth.requireRoles('event_coordinator'), async (req, res) => {
   const result = await db.query(
@@ -571,7 +637,7 @@ app.get('/api/bookings/mine', auth.authenticate, auth.requireRoles('event_coordi
 app.get('/api/bookings', auth.authenticate, auth.requireRoles('venue_staff'), async (req, res) => {
   try {
     const { venueId, from, to } = req.query;
-    const filters = ['b.status = \'confirmed\''];
+    const filters = ["b.status IN ('approved', 'confirmed')"];
     const params = [];
 
     if (venueId) {
@@ -595,6 +661,7 @@ app.get('/api/bookings', auth.authenticate, auth.requireRoles('venue_staff'), as
               v.default_setup_minutes,
               v.default_turnaround_minutes,
               e.title AS event_title,
+              e.status AS event_status,
               e.expected_attendance
        FROM bookings b
        JOIN venues v ON v.id = b.venue_id
@@ -633,6 +700,13 @@ app.patch('/api/bookings/:id/decision', auth.authenticate, auth.requireRoles('ve
     if (decision === 'approved') {
       await client.query('LOCK TABLE bookings, venue_unavailabilities, venue_holds IN SHARE ROW EXCLUSIVE MODE');
       const booking = (await client.query('SELECT * FROM bookings WHERE id=$1', [req.params.id])).rows[0];
+      if (booking) {
+        const unavailable = await findUnavailability(client.query.bind(client), booking);
+        if (unavailable) {
+          await client.query('ROLLBACK');
+          return res.status(409).json({ error: `This venue is unavailable. ${unavailableMessage(unavailable)}`, unavailable });
+        }
+      }
       if (booking && (await holdConflicts(client, booking)).length) {
         await client.query('ROLLBACK');
         return res.status(409).json({ error: 'An active tentative hold blocks this occupied slot. Wait for the hold to expire before approval.' });
@@ -647,6 +721,14 @@ app.patch('/api/bookings/:id/decision', auth.authenticate, auth.requireRoles('ve
     );
     if (!result.rows[0]) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Pending booking request not found' }); }
     const resultRow = result.rows[0];
+    if (decision === 'approved') {
+      const confirmedEvent = await promoteEventIfReady(client.query.bind(client), resultRow.event_id);
+      if (confirmedEvent) await client.query(
+        `INSERT INTO notifications (user_id, event_id, message)
+         SELECT id, $1, $2 FROM users WHERE role = 'safety_officer'`,
+        [confirmedEvent.id, `Event "${confirmedEvent.title}" is ready for an Operational Safety Check.`]
+      );
+    }
     // US-034: tell the event's current coordinator, who may have taken over from the one who requested the booking.
     await client.query(
       `INSERT INTO notifications (user_id, event_id, message)
@@ -744,6 +826,7 @@ const SUPPORT_EQUIPMENT_TYPES = Object.freeze(['Audio', 'Video & Display', 'Ligh
 
 function validateSupportRequirements(body) {
   const equipment = Array.isArray(body.equipment) ? body.equipment : [];
+  const noSupportRequired = body.noSupportRequired === true;
   const seen = new Set();
   const normalizedEquipment = equipment.map((item) => {
     const type = typeof item.type === 'string' ? item.type.trim() : '';
@@ -759,10 +842,13 @@ function validateSupportRequirements(body) {
   });
   const staffRequired = Number(body.staffRequired);
   if (!Number.isInteger(staffRequired) || staffRequired < 0) throw Object.assign(new Error('Number of staff must be a non-negative whole number'), { status: 400 });
-  if (staffRequired === 0 && normalizedEquipment.length === 0) {
+  if (!noSupportRequired && staffRequired === 0 && normalizedEquipment.length === 0) {
     throw Object.assign(new Error('Select at least one equipment type or require at least one technical support staff member'), { status: 400 });
   }
-  return { equipment: normalizedEquipment, staffRequired };
+  if (noSupportRequired && (staffRequired !== 0 || normalizedEquipment.length !== 0)) {
+    throw Object.assign(new Error('No technical support can only be selected when no equipment or staff is required'), { status: 400 });
+  }
+  return { equipment: normalizedEquipment, staffRequired, supportRequired: !noSupportRequired };
 }
 
 // US-016: save or replace the latest technical support requirements for an assigned event.
@@ -783,19 +869,29 @@ app.put('/api/events/:id/technical-support', auth.authenticate, auth.requireRole
     const lateRequest = event.preferred_start ? new Date() >= new Date(event.preferred_start) : false;
     const existingRequirement = await db.query('SELECT id FROM technical_support_requirements WHERE event_id = $1', [req.params.id]);
     const result = await db.query(
-      `INSERT INTO technical_support_requirements (event_id, equipment_requirements, staff_required, late_request, updated_by)
-       VALUES ($1, $2::jsonb, $3, $4, $5)
+      `INSERT INTO technical_support_requirements (event_id, equipment_requirements, staff_required, support_required, status, decision_comments, decided_by, decided_at, late_request, updated_by)
+       VALUES ($1, $2::jsonb, $3, $4, 'pending', NULL, NULL, NULL, $5, $6)
        ON CONFLICT (event_id) DO UPDATE SET equipment_requirements = EXCLUDED.equipment_requirements,
          staff_required = EXCLUDED.staff_required, late_request = EXCLUDED.late_request,
+         support_required = EXCLUDED.support_required, status = EXCLUDED.status,
+         decision_comments = NULL, decided_by = NULL, decided_at = NULL,
          updated_by = EXCLUDED.updated_by, updated_at = now(), update_count = technical_support_requirements.update_count + 1
-       RETURNING id, event_id, equipment_requirements, staff_required, late_request, update_count, updated_at`,
-      [req.params.id, JSON.stringify(requirements.equipment), requirements.staffRequired, lateRequest, req.auth.sub]
+       RETURNING id, event_id, equipment_requirements, staff_required, support_required, status, late_request, update_count, updated_at`,
+      [req.params.id, JSON.stringify(requirements.equipment), requirements.staffRequired, requirements.supportRequired, lateRequest, req.auth.sub]
     );
-    await db.query(
+    if (requirements.supportRequired) await db.query(
       `INSERT INTO notifications (user_id, event_id, message)
        SELECT id, $1, $2 FROM users WHERE role = 'technical_support_staff'`,
       [req.params.id, `Technical support requirements updated for ${event.title}${lateRequest ? ' (late request)' : ''}`]
     );
+    if (!requirements.supportRequired) {
+      const confirmedEvent = await promoteEventIfReady(db.query, req.params.id);
+      if (confirmedEvent) await db.query(
+        `INSERT INTO notifications (user_id, event_id, message)
+         SELECT id, $1, $2 FROM users WHERE role = 'safety_officer'`,
+        [confirmedEvent.id, `Event "${confirmedEvent.title}" is ready for an Operational Safety Check.`]
+      );
+    }
     res.json({ ...result.rows[0], updated: existingRequirement.rows.length > 0 });
   } catch (error) {
     console.error(error);
@@ -819,7 +915,7 @@ app.get('/api/events/:id/technical-support', auth.authenticate, async (req, res)
        JOIN events e ON e.id = tsr.event_id WHERE tsr.event_id = $1`,
       [req.params.id]
     );
-    res.json(result.rows[0] || { event_id: req.params.id, event_title: event.title, equipment_requirements: [], staff_required: 0, late_request: false, updated: false });
+    res.json(result.rows[0] || { event_id: req.params.id, event_title: event.title, equipment_requirements: [], staff_required: 0, support_required: true, status: 'pending', late_request: false, updated: false });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Unable to load technical support requirements' });
@@ -838,6 +934,44 @@ app.get('/api/technical-support/requirements', auth.authenticate, auth.requireRo
     console.error(error);
     res.status(500).json({ error: 'Unable to load technical support requirements' });
   }
+});
+
+// Technical Support Staff confirm arrangements or send them back for changes.
+app.patch('/api/events/:id/technical-support/decision', auth.authenticate, auth.requireRoles('technical_support_staff'), async (req, res) => {
+  const { decision, comments = '' } = req.body || {};
+  if (!['confirmed', 'changes_requested'].includes(decision)) return res.status(400).json({ error: 'Decision must be confirmed or changes_requested' });
+  if (typeof comments !== 'string' || comments.trim().length > 2000) return res.status(400).json({ error: 'Comments must be 2,000 characters or fewer' });
+  const client = await db.pool.connect();
+  try {
+    await client.query('BEGIN');
+    const result = await client.query(
+      `UPDATE technical_support_requirements
+       SET status = $1, decision_comments = $2, decided_by = $3, decided_at = now(), updated_at = now()
+       WHERE event_id = $4
+       RETURNING event_id, status, decision_comments, decided_by, decided_at`,
+      [decision, comments.trim() || null, req.auth.sub, req.params.id]
+    );
+    if (!result.rows[0]) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Technical support requirements not found' }); }
+    const event = (await client.query('SELECT id, title, assigned_coordinator_id FROM events WHERE id = $1', [req.params.id])).rows[0];
+    if (event?.assigned_coordinator_id) await client.query(
+      `INSERT INTO notifications (user_id, event_id, message) VALUES ($1, $2, $3)`,
+      [event.assigned_coordinator_id, event.id, `Technical support arrangements ${decision.replace('_', ' ')} for ${event.title}${comments.trim() ? `: ${comments.trim()}` : ''}`]
+    );
+    if (decision === 'confirmed') {
+      const confirmedEvent = await promoteEventIfReady(client.query.bind(client), req.params.id);
+      if (confirmedEvent) await client.query(
+        `INSERT INTO notifications (user_id, event_id, message)
+         SELECT id, $1, $2 FROM users WHERE role = 'safety_officer'`,
+        [confirmedEvent.id, `Event "${confirmedEvent.title}" is ready for an Operational Safety Check.`]
+      );
+    }
+    await client.query('COMMIT');
+    res.json(result.rows[0]);
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => {});
+    console.error(error);
+    res.status(500).json({ error: 'Unable to save the technical support decision. Nothing was changed; please retry.' });
+  } finally { client.release(); }
 });
 
 app.get('/api/technical-support/my-requirements', auth.authenticate, auth.requireRoles('event_coordinator'), async (req, res) => {

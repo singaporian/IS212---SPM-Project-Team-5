@@ -6,7 +6,6 @@ let fx;
 
 // TEARDOWN: delete this test's data after each test, and close the database connection at the end.
 test.afterEach(async () => fx.cleanup());
-test.afterAll(async () => pool.end());
 
 // Logs in through the real login page.
 async function signIn(page, account) {

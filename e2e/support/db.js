@@ -45,6 +45,16 @@ function createFixtures() {
        VALUES ($1, $6, $2, $3, 100, $4, $5, 'Theatre', '["projector"]'::jsonb) RETURNING id`,
       [`${title} ${run}`, organiser.id, coordinator.id, sgt('2099-03-01', '09:00'), sgt('2099-03-01', '12:00'), status]);
     events.push(rows[0].id);
+    if (status === 'confirmed') {
+      await pool.query(
+        `INSERT INTO technical_support_requirements (event_id, support_required, status)
+         VALUES ($1, false, 'confirmed')`, [rows[0].id]
+      );
+      await pool.query(
+        `INSERT INTO operational_safety_checks (event_id, status, decided_at)
+         VALUES ($1, 'approved', now())`, [rows[0].id]
+      );
+    }
     return { id: rows[0].id, title: `${title} ${run}` };
   }
 

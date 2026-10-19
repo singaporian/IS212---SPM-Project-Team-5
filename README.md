@@ -307,6 +307,14 @@ API endpoints (Event Coordinator Lead only):
 
 No schema migration is needed. Run `npm run seed-demo` to load the demo requests. Run `npm test` in `backend` and `frontend` to run the tests: `backend/test/integration/coordinator.assignments.test.js` and `frontend/test/assign-coordinator.test.cjs`. With the backend running, `node test/e2e/test-us012-us034.js` in `backend` runs an end-to-end check of assignment, reassignment and access.
 
+## Operational Safety Check (US-039)
+
+After all venue arrangements and technical arrangements are confirmed, a Safety Officer can review an event at `/safety/checks`. The Coordinator must either submit technical requirements for Technical Support Staff to confirm, or explicitly declare that no technical support is required. The Safety Officer can approve the event, reject it, or request changes, with comments recorded for audit.
+
+The event becomes `confirmed` only after every venue booking is approved/confirmed and the technical arrangement has status `confirmed`. This transition notifies Safety Officers. The technical decision is recorded on `technical_support_requirements`; requesting changes returns the technical arrangement to `pending`. The Safety decision is stored in `operational_safety_checks`, creates an `event_changes` audit entry, and notifies the assigned Event Coordinator. Event preparation status cannot be listed or updated until the safety check is approved. Requesting changes returns the event to `planning`; rejected checks remain blocked from preparation.
+
+The Safety Officer demo account is `safety@connectsphere.local`. Technical Support Staff confirm arrangements through `PATCH /api/events/:id/technical-support/decision` with `{ "decision": "confirmed" | "changes_requested", "comments": "..." }`. The Safety API is `GET /api/safety/checks` and `PATCH /api/safety/checks/:eventId` with `{ "decision": "approved" | "rejected" | "changes_requested", "comments": "..." }`.
+
 ## Review and Process a Change Request (US-032)
 
 Event Coordinators open **Review Change Requests** from the dashboard (`/coordinator/change-requests`). Each pending change request for one of their assigned events shows every proposed value beside the event's current value. **Approve** writes the proposed values onto the event; **Reject** leaves the event unchanged. A processed request cannot be decided again.

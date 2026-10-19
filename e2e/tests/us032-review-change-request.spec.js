@@ -11,7 +11,6 @@ test.beforeEach(async () => {
   coordA = await fx.user('event_coordinator', 'coord-a');
 });
 test.afterEach(async () => fx.cleanup());
-test.afterAll(async () => pool.end());
 
 async function signIn(page, account) {
   await page.goto('/login');
