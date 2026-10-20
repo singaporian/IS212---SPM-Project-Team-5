@@ -109,14 +109,6 @@
               <p v-if="!form.specs.length" class="text-muted small mb-0">No specifications added.</p>
             </div>
 
-            <div v-if="confirmingCancel" class="alert alert-secondary d-flex flex-wrap justify-content-between align-items-center gap-2 mt-4 mb-0" role="alert">
-              <span>Discard your unsaved changes? The record will stay exactly as it was.</span>
-              <span class="d-flex gap-2">
-                <button class="btn btn-sm btn-danger" type="button" @click="discard">Discard changes</button>
-                <button class="btn btn-sm btn-outline-secondary" type="button" @click="confirmingCancel = false">Keep editing</button>
-              </span>
-            </div>
-
             <div class="mt-4 d-flex flex-wrap gap-2 align-items-center">
               <button class="btn btn-accent" type="submit" :disabled="!dirty || Boolean(impact)">{{ saving ? 'Saving...' : 'Save changes' }}</button>
               <button class="btn btn-outline-secondary" type="button" @click="cancel">Cancel</button>
@@ -126,6 +118,28 @@
         </form>
       </div>
     </div>
+
+    <template v-if="pendingLeave">
+      <div class="modal d-block" tabindex="-1" role="dialog" aria-modal="true" aria-labelledby="leave-edit-title" @click.self="stayOnPage" @keydown.esc="stayOnPage">
+        <div class="modal-dialog modal-dialog-centered">
+          <div class="modal-content">
+            <div class="modal-header">
+              <h5 id="leave-edit-title" class="modal-title">Discard unsaved changes?</h5>
+              <button class="btn-close" type="button" aria-label="Close" @click="stayOnPage"></button>
+            </div>
+            <div class="modal-body">
+              <p class="mb-2">You have unsaved changes to <strong>{{ record.name }}</strong>.</p>
+              <p class="text-muted small mb-0">If you leave now, your changes are discarded and the record stays exactly as it was.</p>
+            </div>
+            <div class="modal-footer">
+              <button ref="stayButton" class="btn btn-outline-secondary" type="button" @click="stayOnPage">Keep editing</button>
+              <button class="btn btn-danger" type="button" @click="confirmLeave">Discard and leave</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-backdrop fade show"></div>
+    </template>
   </div>
 </template>
 
@@ -174,8 +188,8 @@ export default {
       stale: false,
       successMessage: '',
       impact: null,
-      confirmingCancel: false,
-      leaving: false
+      leaving: false,
+      pendingLeave: null
     }
   },
   computed: {
@@ -246,9 +260,11 @@ export default {
   created() {
     this.load()
   },
+  // Leaving with unsaved edits (Back to Inventory, a header link, a notification) asks first in an in-app dialog.
   beforeRouteLeave(to, from, next) {
-    if (this.dirty && !this.leaving && typeof window !== 'undefined' && !window.confirm('Discard your unsaved changes? The record will stay exactly as it was.')) return next(false)
-    next()
+    if (!this.dirty || this.leaving) return next()
+    this.askToLeave(to.fullPath)
+    next(false)
   },
   methods: {
     async load() {
@@ -278,7 +294,6 @@ export default {
       this.touched = true
       this.successMessage = ''
       this.impact = null
-      this.confirmingCancel = false
     },
     addSpec() {
       this.form.specs.push(newSpec())
@@ -322,23 +337,29 @@ export default {
       }
     },
     // Nothing is sent to the server until save(), so cancelling only has to throw the edits away.
+    // With unsaved edits, Cancel asks in the same dialog as any other way of leaving the page.
     cancel() {
-      if (this.dirty) {
-        this.confirmingCancel = true
-        return
-      }
+      if (this.dirty) return this.askToLeave('/equipment')
       this.leave()
     },
-    discard() {
+    askToLeave(target) {
+      this.pendingLeave = target
+      this.$nextTick(() => { if (this.$refs.stayButton) this.$refs.stayButton.focus() })
+    },
+    leave(target = '/equipment') {
+      this.leaving = true
+      this.$router.push(target)
+    },
+    stayOnPage() {
+      this.pendingLeave = null
+    },
+    confirmLeave() {
+      const target = this.pendingLeave
+      this.pendingLeave = null
       this.setRecord(this.record)
-      this.confirmingCancel = false
       this.saveError = ''
       this.impact = null
-      this.leave()
-    },
-    leave() {
-      this.leaving = true
-      this.$router.push('/equipment')
+      this.leave(target)
     },
     formatDate(value) {
       return new Date(value).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })

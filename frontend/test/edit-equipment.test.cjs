@@ -175,20 +175,21 @@ test('cancelling without changes returns to the inventory straight away', async 
   assert.equal(calls.length, 0);
 });
 
-test('cancelling with unsaved changes asks first, and discarding leaves the record unchanged', async () => {
+test('cancelling with unsaved changes asks in the leave dialog, and discarding leaves the record unchanged', async () => {
   const calls = [];
   const view = await editView({ updateEquipment: async (...args) => { calls.push(args) } });
   view.form.name = 'Changed name';
   view.form.damaged = '4';
   view.cancel();
-  assert.equal(view.confirmingCancel, true);
+  assert.equal(view.pendingLeave, '/equipment', 'Cancel opens the same dialog as leaving the page');
   assert.deepEqual(view.$router.pushed, []);
 
-  view.confirmingCancel = false; // "Keep editing"
+  view.stayOnPage(); // "Keep editing"
+  assert.equal(view.pendingLeave, null);
   assert.equal(view.form.name, 'Changed name');
 
   view.cancel();
-  view.discard();
+  view.confirmLeave(); // "Discard and leave"
   assert.equal(calls.length, 0);
   assert.equal(view.form.name, 'Wireless microphone');
   assert.equal(view.form.damaged, '1');
@@ -228,4 +229,30 @@ test('the inventory shows a retryable error when loading fails', async () => {
   await view.load();
   assert.match(view.loadError, /retry/);
   assert.equal(view.loading, false);
+});
+
+test('leaving with unsaved changes opens an in-app dialog instead of a browser pop-up', async () => {
+  const options = load('EditEquipmentView.vue', { getEquipment: async () => ({ ...RECORD }), updateEquipment: async () => { throw new Error('not expected') } });
+  const view = instantiate(options, { $route: { params: { id: 'mic-1' } } });
+  await view.load();
+  const leave = to => { let result; options.beforeRouteLeave.call(view, { fullPath: to }, {}, value => { result = value }); return result };
+
+  // No changes: the page is left straight away, with no dialog.
+  assert.equal(leave('/equipment'), undefined);
+  assert.equal(view.pendingLeave, null);
+
+  view.form.quantity = '6';
+  assert.equal(leave('/equipment'), false, 'navigation is held while the dialog is open');
+  assert.equal(view.pendingLeave, '/equipment');
+
+  view.stayOnPage(); // "Keep editing"
+  assert.equal(view.pendingLeave, null);
+  assert.equal(view.form.quantity, '6');
+  assert.deepEqual(view.$router.pushed, []);
+
+  leave('/equipment/reserve'); // e.g. a notification link
+  view.confirmLeave(); // "Discard and leave"
+  assert.deepEqual(view.$router.pushed, ['/equipment/reserve']);
+  assert.equal(view.form.quantity, '10', 'unsaved edits are thrown away');
+  assert.equal(leave('/equipment/reserve'), undefined, 'the confirmed navigation is not asked about again');
 });

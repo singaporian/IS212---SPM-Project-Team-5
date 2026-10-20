@@ -11,6 +11,7 @@ const demoUsers = [
   ['Event Coordinator Lead', 'coordinatorlead@connectsphere.local', 'event_coordinator_lead'],
   ['Venue Staff', 'venue@connectsphere.local', 'venue_staff'],
   ['Technical Support', 'tech@connectsphere.local', 'technical_support_staff'],
+  ['Technical Support Two', 'tech2@connectsphere.local', 'technical_support_staff'],
   ['Safety Officer', 'safety@connectsphere.local', 'safety_officer'],
   ['Attendee', 'attendee@connectsphere.local', 'attendee']
 ];
@@ -261,6 +262,7 @@ async function seedDemoBookings() {
 }
 
 // US-023: demo inventory plus reservations that fully commit the microphones during the Morning Conference.
+// US-024: re-seeding puts every unit back in service; reservations are recreated, which clears reconsideration flags.
 const demoEquipment = [
   { name: 'Wireless Microphone', type: 'Audio', quantity: 4, specs: { 'Frequency range': '470-530 MHz' } },
   { name: 'Laser Projector', type: 'Video & Display', quantity: 2, specs: { Brightness: '7000 lumens' } },
@@ -279,7 +281,8 @@ async function seedDemoEquipment() {
     const existing = await db.query('SELECT id FROM equipment WHERE name = $1 ORDER BY created_at LIMIT 1', [item.name]);
     const result = existing.rows[0]
       ? await db.query(
-        `UPDATE equipment SET equipment_type = $2, total_quantity = $3, status = 'available', specs = $4::jsonb
+        `UPDATE equipment SET equipment_type = $2, total_quantity = $3, status = 'available', specs = $4::jsonb,
+                damaged_quantity = 0, maintenance_quantity = 0, updated_at = now()
          WHERE id = $1 RETURNING id`,
         [existing.rows[0].id, item.type, item.quantity, JSON.stringify(item.specs)])
       : await db.query(
