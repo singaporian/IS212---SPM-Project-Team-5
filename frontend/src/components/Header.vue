@@ -119,6 +119,8 @@ export default {
       if (this.user.role === 'event_coordinator' && message.startsWith('Event request') && /(re)?assigned to you/.test(message)) return '/coordinator/requests'
       if (this.user.role === 'safety_officer' && message.startsWith('Event ') && message.includes('Operational Safety Check')) return '/safety/checks'
       if (this.user.role === 'technical_support_staff' && message.startsWith('Technical support requirements updated')) return '/technical-support/queue'
+      if (this.user.role === 'technical_support_staff' && message.startsWith('Equipment "') && message.includes('flagged for reconsideration')) return '/equipment/reserve'
+      if (this.user.role === 'technical_support_staff' && message.startsWith('Equipment "')) return '/equipment'
       if (this.user.role === 'technical_support_staff' && message.includes('has been cancelled')) return '/equipment/reserve'
       if (this.user.role === 'technical_support_staff' && message.includes('important change was requested')) return '/equipment/reserve'
       return null

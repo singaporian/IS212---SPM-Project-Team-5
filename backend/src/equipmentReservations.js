@@ -95,6 +95,11 @@ function assertReservable(event) {
   }
 }
 
+// US-024: damaged and under-maintenance units are excluded from the stock that can be reserved.
+function inServiceQuantity(item) {
+  return Math.max(0, item.total_quantity - (item.damaged_quantity || 0) - (item.maintenance_quantity || 0));
+}
+
 // Reservations held by other live events, with each event's scheduled windows.
 async function loadOtherReservations(query, eventId, equipmentId = null) {
   const result = await query(
@@ -122,10 +127,14 @@ function describeAvailability(item, event, others, reservation) {
     equipment_type: item.equipment_type,
     status: item.status,
     total_quantity: item.total_quantity,
+    in_service_quantity: inServiceQuantity(item),
+    damaged_quantity: item.damaged_quantity || 0,
+    maintenance_quantity: item.maintenance_quantity || 0,
     committed_elsewhere: committedElsewhere,
     reserved_for_event: reservedForEvent,
-    available: Math.max(0, item.total_quantity - committedElsewhere - reservedForEvent),
-    reservation: reservation ? { id: reservation.id, quantity: reservation.quantity, status: reservation.status, updated_at: reservation.updated_at } : null,
+    available: Math.max(0, inServiceQuantity(item) - committedElsewhere - reservedForEvent),
+    reservation: reservation ? { id: reservation.id, quantity: reservation.quantity, status: reservation.status, updated_at: reservation.updated_at,
+      requires_reconsideration: Boolean(reservation.requires_reconsideration) } : null,
     overlapping_events: overlapping.map(o => ({ id: o.event_id, title: o.title, quantity: o.quantity }))
   };
 }
@@ -135,13 +144,18 @@ function describeAvailability(item, event, others, reservation) {
 function checkEquipmentConflict({ item, event, others, alreadyReserved = 0, requested }) {
   const overlapping = others.filter(o => windowsOverlap(event.windows, o.windows));
   const committedElsewhere = peakCommitted(event.windows, overlapping);
-  const available = Math.max(0, item.total_quantity - committedElsewhere - alreadyReserved);
+  const inService = inServiceQuantity(item);
+  const available = Math.max(0, inService - committedElsewhere - alreadyReserved);
   if (requested <= available) return { allowed: true, available, committedElsewhere, overlapping, message: null };
 
   const names = overlapping.map(o => `"${o.title}" (${o.quantity})`).join(', ');
-  const reason = committedElsewhere
-    ? `${committedElsewhere} of ${item.total_quantity} ${committedElsewhere === 1 ? 'is' : 'are'} already committed to overlapping events: ${names}.`
+  const outOfService = item.total_quantity - inService;
+  const stock = outOfService
+    ? `Only ${inService} of ${item.total_quantity} unit${item.total_quantity === 1 ? ' is' : 's are'} in service (${outOfService} damaged or under maintenance).`
     : `Only ${item.total_quantity} unit${item.total_quantity === 1 ? ' is' : 's are'} in inventory.`;
+  const reason = committedElsewhere
+    ? `${committedElsewhere} of ${inService} ${committedElsewhere === 1 ? 'is' : 'are'} already committed to overlapping events: ${names}.`
+    : stock;
   const already = alreadyReserved ? ` ${alreadyReserved} ${alreadyReserved === 1 ? 'is' : 'are'} already reserved for this event.` : '';
   return {
     allowed: false, available, committedElsewhere, overlapping,
@@ -154,7 +168,7 @@ function checkEquipmentConflict({ item, event, others, alreadyReserved = 0, requ
 async function reserveEquipment(query, { eventId, equipmentId, quantity }, reservedBy) {
   // Locking the equipment row serialises reservations for the same item, so two staff cannot both take the last units.
   const item = (await query(
-    'SELECT id, name, equipment_type, status, total_quantity FROM equipment WHERE id = $1 FOR UPDATE', [equipmentId])).rows[0];
+    'SELECT id, name, equipment_type, status, total_quantity, damaged_quantity, maintenance_quantity FROM equipment WHERE id = $1 FOR UPDATE', [equipmentId])).rows[0];
   if (!item) throw httpError(404, 'Equipment not found.');
   if (item.status !== 'available') throw httpError(409, `"${item.name}" is not in service, so it cannot be reserved.`);
 
@@ -225,8 +239,8 @@ router.get('/availability', async (req, res) => {
     const event = await loadEvent(db.query, eventId);
     if (!event) return res.status(404).json({ error: 'Event not found.' });
     const [equipment, reservations, others] = await Promise.all([
-      db.query('SELECT id, name, equipment_type, status, total_quantity FROM equipment ORDER BY name'),
-      db.query('SELECT id, equipment_id, quantity, status, updated_at FROM equipment_reservations WHERE event_id = $1', [eventId]),
+      db.query('SELECT id, name, equipment_type, status, total_quantity, damaged_quantity, maintenance_quantity FROM equipment ORDER BY name'),
+      db.query('SELECT id, equipment_id, quantity, status, updated_at, requires_reconsideration FROM equipment_reservations WHERE event_id = $1', [eventId]),
       loadOtherReservations(db.query, eventId)
     ]);
     const byEquipment = new Map(reservations.rows.map(r => [r.equipment_id, r]));
@@ -287,4 +301,4 @@ router.delete('/reservations/:id', async (req, res) => {
   }
 });
 
-module.exports = { router, validateReservation, mergeWindows, windowsOverlap, peakCommitted, checkEquipmentConflict, reserveEquipment, describeAvailability, RESERVABLE_EVENT_STATUSES };
+module.exports = { router, validateReservation, mergeWindows, windowsOverlap, peakCommitted, checkEquipmentConflict, reserveEquipment, describeAvailability, inServiceQuantity, loadOtherReservations, RESERVABLE_EVENT_STATUSES, RELEASED_EVENT_STATUSES };

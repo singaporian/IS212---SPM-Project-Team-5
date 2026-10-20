@@ -40,6 +40,7 @@
                   <li v-if="role === 'event_coordinator'"><router-link to="/venue/holds">Tentative Venue Holds</router-link></li>
                   <li v-if="!venues.length && canSearchVenues" class="text-muted">Use Find Venues to search the venue directory.</li>
                   <li v-if="canManageEquipment" class="d-flex flex-wrap gap-2">
+                    <router-link class="btn btn-accent" to="/equipment"><i class="bi bi-box-seam"></i> Manage Inventory</router-link>
                     <router-link class="btn btn-accent" to="/equipment/new"><i class="bi bi-plus-lg"></i> Add Equipment</router-link>
                     <router-link class="btn btn-accent" to="/equipment/reserve"><i class="bi bi-calendar-check"></i> Reserve Equipment</router-link>
                   </li>
@@ -74,6 +75,7 @@
               <router-link v-if="role === 'venue_staff'" class="btn btn-outline-primary btn-sm w-100 mb-2" to="/venue/preparation">Preparation Status</router-link>
               <router-link v-if="role === 'safety_officer'" class="btn btn-outline-primary btn-sm w-100 mb-2" to="/safety/checks">Operational Safety Checks</router-link>
               <router-link v-if="canCreateRequest" class="btn btn-outline-primary btn-sm w-100 mb-2" to="/requests/new">Start Draft</router-link>
+              <router-link v-if="canManageEquipment" class="btn btn-outline-primary btn-sm w-100 mb-2" to="/equipment">Manage Inventory</router-link>
               <router-link v-if="canManageEquipment" class="btn btn-outline-primary btn-sm w-100 mb-2" to="/equipment/new">Add Equipment</router-link>
               <router-link v-if="role === 'event_coordinator'" class="btn btn-outline-primary btn-sm w-100 mb-2" to="/technical-support/requirements">Technical Support Requirements</router-link>
               <router-link v-if="canManageEquipment" class="btn btn-outline-secondary btn-sm w-100 mb-2" to="/technical-support/queue">Support Requirements Queue</router-link>

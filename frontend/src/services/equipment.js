@@ -22,7 +22,7 @@ async function request(url, options = {}, fallback) {
   }
   if (response.status === 401) throw new Error('Your session has expired. Sign in in another tab, then retry here to keep your input.')
   const data = await response.json().catch(() => ({}))
-  if (!response.ok) throw Object.assign(new Error(data.error || fallback), { status: response.status, conflict: data.conflict || null })
+  if (!response.ok) throw Object.assign(new Error(data.error || fallback), { status: response.status, code: data.code || null, conflict: data.conflict || null, impact: data.impact || null })
   return data
 }
 
@@ -40,4 +40,17 @@ export function reserveEquipment(payload) {
 
 export function removeReservation(id) {
   return request(`/api/equipment/reservations/${encodeURIComponent(id)}`, { method: 'DELETE' }, 'Unable to remove the reservation. Please retry.')
+}
+
+// US-024: view and update inventory records.
+export function listEquipment() {
+  return request('/api/equipment', {}, 'Unable to load the equipment inventory. Please retry.')
+}
+
+export function getEquipment(id) {
+  return request(`/api/equipment/${encodeURIComponent(id)}`, {}, 'Unable to load the equipment record. Please retry.')
+}
+
+export function updateEquipment(id, payload) {
+  return request(`/api/equipment/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(payload) }, 'Unable to save your changes. Please retry.')
 }

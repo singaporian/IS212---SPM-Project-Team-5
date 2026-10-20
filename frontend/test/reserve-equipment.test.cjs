@@ -158,3 +158,20 @@ test('a failed removal keeps the dialog open with an error, leaves the reservati
   assert.equal(instance.removalError, '');
   assert.equal(instance.successMessage, 'Removed');
 });
+
+test('US-024: equipment with no units in service is shown as damaged or under maintenance, not fully committed', () => {
+  const instance = viewInstance();
+  const out = overrides => item({ in_service_quantity: 0, available: 0, ...overrides });
+  assert.deepEqual(instance.stockStatus(out({ damaged_quantity: 4, maintenance_quantity: 0 })).label, 'Damaged');
+  assert.deepEqual(instance.stockStatus(out({ damaged_quantity: 0, maintenance_quantity: 4 })).label, 'Under maintenance');
+  assert.deepEqual(instance.stockStatus(out({ damaged_quantity: 2, maintenance_quantity: 2 })).label, 'Out of service');
+  assert.equal(instance.outOfServiceSummary(out({ damaged_quantity: 3, maintenance_quantity: 1 })), '3 damaged · 1 under maintenance');
+
+  // Only in-service units that are all held by overlapping events count as fully committed.
+  assert.equal(instance.stockStatus(item({ in_service_quantity: 2, damaged_quantity: 2, available: 0, committed_elsewhere: 2 })).label, 'Fully committed');
+  assert.equal(instance.stockStatus(item({ in_service_quantity: 3, damaged_quantity: 1, available: 3 })).label, 'Available');
+  assert.equal(instance.stockStatus(item({ status: 'retired' })).label, 'Out of service');
+
+  instance.equipment = [out({ damaged_quantity: 4 }), item({ id: 'proj', name: 'Projector' })];
+  assert.deepEqual(instance.reservableEquipment.map(i => i.id), ['proj']);
+});

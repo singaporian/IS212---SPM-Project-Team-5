@@ -96,6 +96,7 @@
                   <td>
                     <div class="fw-semibold">{{ item.name }}</div>
                     <div class="small text-muted">{{ item.equipment_type || '—' }}</div>
+                    <div v-if="outOfServiceSummary(item)" class="small text-danger">{{ outOfServiceSummary(item) }}</div>
                     <div v-if="item.overlapping_events.length" class="small text-muted">Held by: {{ item.overlapping_events.map(e => `${e.title} (${e.quantity})`).join(', ') }}</div>
                   </td>
                   <td class="text-center">{{ item.total_quantity }}</td>
@@ -104,9 +105,8 @@
                   <td class="text-center">{{ item.available }}</td>
                   <td class="ps-4">
                     <span v-if="item.reservation" class="badge bg-primary">Reserved</span>
-                    <span v-else-if="item.status !== 'available'" class="badge bg-secondary">Out of service</span>
-                    <span v-else-if="item.available === 0" class="badge bg-warning text-dark">Fully committed</span>
-                    <span v-else class="badge bg-success">Available</span>
+                    <span v-else class="badge" :class="stockStatus(item).className">{{ stockStatus(item).label }}</span>
+                    <span v-if="item.reservation && item.reservation.requires_reconsideration" class="badge bg-warning-subtle text-dark border border-warning-subtle ms-1" title="Stock or the event schedule changed after this reservation was made">Reconsider</span>
                   </td>
                   <td class="text-end">
                     <button v-if="item.reservation" class="btn btn-sm btn-outline-danger" type="button" :disabled="saving || removingId === item.reservation.id" @click="askRemoval(item)">Remove</button>
@@ -176,7 +176,7 @@ export default {
       return this.events.find(event => event.id === this.selectedEventId) || null
     },
     reservableEquipment() {
-      return this.equipment.filter(item => item.status === 'available')
+      return this.equipment.filter(item => item.status === 'available' && this.inService(item) > 0)
     },
     errors() {
       const quantity = String(this.form.quantity).trim()
@@ -195,6 +195,27 @@ export default {
     this.loadEvents()
   },
   methods: {
+    // US-024: units that are damaged or under maintenance never count as stock.
+    inService(item) {
+      return item.in_service_quantity ?? item.total_quantity
+    },
+    // Zero available only means "fully committed" when there were in-service units to commit in the first place.
+    stockStatus(item) {
+      if (item.status !== 'available') return { label: 'Out of service', className: 'bg-secondary' }
+      if (this.inService(item) === 0) {
+        if (item.damaged_quantity && !item.maintenance_quantity) return { label: 'Damaged', className: 'bg-danger' }
+        if (item.maintenance_quantity && !item.damaged_quantity) return { label: 'Under maintenance', className: 'bg-warning text-dark' }
+        return { label: 'Out of service', className: 'bg-secondary' }
+      }
+      if (item.available === 0) return { label: 'Fully committed', className: 'bg-warning text-dark' }
+      return { label: 'Available', className: 'bg-success' }
+    },
+    outOfServiceSummary(item) {
+      const parts = []
+      if (item.damaged_quantity) parts.push(`${item.damaged_quantity} damaged`)
+      if (item.maintenance_quantity) parts.push(`${item.maintenance_quantity} under maintenance`)
+      return parts.join(' · ')
+    },
     formatWindow(window) {
       if (!window) return ''
       const options = { timeZone: 'Asia/Singapore' }

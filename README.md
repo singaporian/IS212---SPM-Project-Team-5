@@ -99,6 +99,7 @@ Public registration creates either an `attendee` or `event_organiser` account. T
 | Event Coordinator Lead | coordinatorlead@connectsphere.local |
 | Venue Staff | venue@connectsphere.local |
 | Technical Support Staff | tech@connectsphere.local |
+| Technical Support Staff | tech2@connectsphere.local |
 | Safety Officer | safety@connectsphere.local |
 | Attendee | attendee@connectsphere.local |
 
