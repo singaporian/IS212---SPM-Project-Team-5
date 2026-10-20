@@ -144,7 +144,7 @@ async function run() {
   );
   await db.query(
     `INSERT INTO bookings (event_id, venue_id, requested_by, start_time, end_time, status, setup_minutes, turnaround_minutes)
-     VALUES ($1, $2, $3, ($4::date + time '08:00')::timestamptz, ($4::date + time '10:00')::timestamptz, 'confirmed', 0, 60)`,
+     VALUES ($1, $2, $3, ($4 || ' 08:00+08:00')::timestamptz, ($4 || ' 10:00+08:00')::timestamptz, 'confirmed', 0, 60)`,
     [searchEvent.rows[0].id, venue.id, coordinatorId, searchDate]
   );
   // Without passing setupMinutes/turnaroundMinutes explicitly, the search should use the venue's
@@ -201,8 +201,8 @@ async function run() {
     body: JSON.stringify({
       eventId: bookingEvent2.rows[0].id,
       venueId: venue.id,
-      startTime: `${requestDate}T16:00:00+08:00`,
-      endTime: `${requestDate}T17:00:00+08:00`,
+      startTime: `${requestDate}T19:00:00+08:00`,
+      endTime: `${requestDate}T20:00:00+08:00`,
       setupMinutes: 5,
       turnaroundMinutes: 5
     })
