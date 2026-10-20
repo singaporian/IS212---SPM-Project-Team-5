@@ -34,7 +34,9 @@ ALTER TABLE venues ADD COLUMN IF NOT EXISTS available_until date NOT NULL DEFAUL
 ALTER TABLE venues DROP CONSTRAINT IF EXISTS venues_available_dates_check;
 ALTER TABLE venues ADD CONSTRAINT venues_available_dates_check CHECK (available_until >= available_from);
 
--- US-017 (Week 7 customer change #1): configurable per-venue setup/turnaround defaults
+-- US-017 (Week 7 customer change #1): configurable per-venue setup/turnaround defaults.
+-- US-035: Venue Staff configure these same defaults directly, used when determining
+-- availability (searching for venues and reviewing booking requests).
 ALTER TABLE venues ADD COLUMN IF NOT EXISTS default_setup_minutes integer NOT NULL DEFAULT 30 CHECK (default_setup_minutes >= 0);
 ALTER TABLE venues ADD COLUMN IF NOT EXISTS default_turnaround_minutes integer NOT NULL DEFAULT 30 CHECK (default_turnaround_minutes >= 0);
 

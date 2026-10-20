@@ -70,6 +70,7 @@
               <router-link v-if="role === 'venue_staff'" class="btn btn-primary w-100 mb-2" to="/venue/holds">Tentative Venue Holds</router-link>
               <router-link v-if="role === 'venue_staff'" class="btn btn-outline-primary btn-sm w-100 mb-2" to="/bookings/pending">Pending Venue Booking Requests</router-link>
               <router-link v-if="role === 'venue_staff'" class="btn btn-outline-primary btn-sm w-100 mb-2" to="/venue/unavailability">Mark Venue Unavailable</router-link>
+              <router-link v-if="role === 'venue_staff'" class="btn btn-outline-primary btn-sm w-100 mb-2" to="/venue/setup-turnaround">Configure Setup &amp; Turnaround Time</router-link>
               <router-link v-if="role === 'venue_staff'" class="btn btn-outline-primary btn-sm w-100 mb-2" to="/venue/preparation">Preparation Status</router-link>
               <router-link v-if="role === 'safety_officer'" class="btn btn-outline-primary btn-sm w-100 mb-2" to="/safety/checks">Operational Safety Checks</router-link>
               <router-link v-if="canCreateRequest" class="btn btn-outline-primary btn-sm w-100 mb-2" to="/requests/new">Start Draft</router-link>

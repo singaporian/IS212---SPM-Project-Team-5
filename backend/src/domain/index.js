@@ -131,7 +131,7 @@ class EventRequest {
 }
 
 class Venue {
-  constructor({ id, name, location, capacity = 0, facilities = [], accessibility = {}, supportedLayouts = [], unavailablePeriods = [], images = [] }) {
+  constructor({ id, name, location, capacity = 0, facilities = [], accessibility = {}, supportedLayouts = [], unavailablePeriods = [], images = [], default_setup_minutes = 30, default_turnaround_minutes = 30 }) {
     this.id = id;
     this.name = name;
     this.location = location;
@@ -141,6 +141,9 @@ class Venue {
     this.supportedLayouts = Array.isArray(supportedLayouts) ? supportedLayouts : [];
     this.unavailablePeriods = unavailablePeriods;
     this.images = images;
+    // US-035: the venue's own configured setup/turnaround defaults.
+    this.defaultSetupMinutes = Number(default_setup_minutes);
+    this.defaultTurnaroundMinutes = Number(default_turnaround_minutes);
   }
 
   supportsFacility(facility) {
@@ -172,7 +175,9 @@ class Venue {
       accessibility: this.accessibility,
       supported_layouts: this.supportedLayouts,
       unavailable_periods: this.unavailablePeriods,
-      images: this.images
+      images: this.images,
+      default_setup_minutes: this.defaultSetupMinutes,
+      default_turnaround_minutes: this.defaultTurnaroundMinutes
     };
   }
 }

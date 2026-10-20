@@ -232,6 +232,30 @@ app.get('/api/venues/count', auth.authenticate, async (req, res) => {
   }
 });
 
+// US-035: Venue Staff configure a venue's setup/turnaround defaults, used whenever the
+// venue's availability is determined (searching, and reviewing booking requests).
+app.put('/api/venues/:id/setup-turnaround', auth.authenticate, auth.requireRoles('venue_staff'), async (req, res) => {
+  if (!uuidPattern.test(req.params.id)) return res.status(400).json({ error: 'Invalid venue id' });
+  const setupMinutes = Number(req.body.setupMinutes);
+  const turnaroundMinutes = Number(req.body.turnaroundMinutes);
+  if (!Number.isInteger(setupMinutes) || setupMinutes < 0 || !Number.isInteger(turnaroundMinutes) || turnaroundMinutes < 0) {
+    return res.status(400).json({ error: 'Setup and turnaround times must be non-negative whole minutes' });
+  }
+  try {
+    const result = await db.query(
+      `UPDATE venues SET default_setup_minutes = $1, default_turnaround_minutes = $2
+       WHERE id = $3
+       RETURNING id, name, default_setup_minutes, default_turnaround_minutes`,
+      [setupMinutes, turnaroundMinutes, req.params.id]
+    );
+    if (!result.rows[0]) return res.status(404).json({ error: 'Venue not found' });
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Unable to update the venue setup and turnaround times' });
+  }
+});
+
 app.get('/api/venues', auth.authenticate, auth.requireRoles('event_coordinator', 'venue_staff'), async (req, res) => {
   try {
     await processHoldExpiries(db);
@@ -244,8 +268,8 @@ app.get('/api/venues', auth.authenticate, auth.requireRoles('event_coordinator',
       layout,
       facility,
       accessibility,
-      setupMinutes = '30',
-      turnaroundMinutes = '30'
+      setupMinutes,
+      turnaroundMinutes
     } = req.query;
     const filters = [];
     const params = [];
@@ -295,11 +319,25 @@ app.get('/api/venues', auth.authenticate, auth.requireRoles('event_coordinator',
     if (hasDate && hasTime) {
       const startExpression = hasTime ? `${date} ${startTime}+08:00` : `${date} 00:00+08:00`;
       const endExpression = hasTime ? `${date} ${endTime}+08:00` : `${date} 24:00+08:00`;
-      params.push(startExpression, endExpression, Number(setupMinutes), Number(turnaroundMinutes));
-      const startParam = params.length - 3;
-      const endParam = params.length - 2;
-      const setupParam = params.length - 1;
-      const turnaroundParam = params.length;
+      params.push(startExpression, endExpression);
+      const startParam = params.length - 1;
+      const endParam = params.length;
+      // US-035: when the caller doesn't explicitly ask for a particular setup/turnaround window,
+      // fall back to each venue's own configured defaults rather than a fixed 30 minutes.
+      let setupExpr;
+      let turnaroundExpr;
+      if (setupMinutes !== undefined) {
+        params.push(Number(setupMinutes));
+        setupExpr = `$${params.length}`;
+      } else {
+        setupExpr = 'v.default_setup_minutes';
+      }
+      if (turnaroundMinutes !== undefined) {
+        params.push(Number(turnaroundMinutes));
+        turnaroundExpr = `$${params.length}`;
+      } else {
+        turnaroundExpr = 'v.default_turnaround_minutes';
+      }
       filters.push(`EXISTS (
         SELECT 1 FROM venue_operating_hours voh
         WHERE voh.venue_id = v.id
@@ -311,19 +349,19 @@ app.get('/api/venues', auth.authenticate, auth.requireRoles('event_coordinator',
         SELECT 1 FROM bookings b
         WHERE b.venue_id = v.id
           AND b.status = 'confirmed'
-          AND b.start_time - (b.setup_minutes * interval '1 minute') < ($${endParam}::timestamptz + ($${turnaroundParam} * interval '1 minute'))
-          AND b.end_time + (b.turnaround_minutes * interval '1 minute') > ($${startParam}::timestamptz - ($${setupParam} * interval '1 minute'))
+          AND b.start_time - (b.setup_minutes * interval '1 minute') < ($${endParam}::timestamptz + (${turnaroundExpr} * interval '1 minute'))
+          AND b.end_time + (b.turnaround_minutes * interval '1 minute') > ($${startParam}::timestamptz - (${setupExpr} * interval '1 minute'))
       )`);
       filters.push(`NOT EXISTS (
         SELECT 1 FROM venue_holds h WHERE h.venue_id = v.id AND ${activeHoldSql('h')}
-        AND h.start_time - h.setup_minutes * interval '1 minute' < ($${endParam}::timestamptz + $${turnaroundParam} * interval '1 minute')
-        AND h.end_time + h.turnaround_minutes * interval '1 minute' > ($${startParam}::timestamptz - $${setupParam} * interval '1 minute')
+        AND h.start_time - h.setup_minutes * interval '1 minute' < ($${endParam}::timestamptz + ${turnaroundExpr} * interval '1 minute')
+        AND h.end_time + h.turnaround_minutes * interval '1 minute' > ($${startParam}::timestamptz - ${setupExpr} * interval '1 minute')
       )`);
       filters.push(`NOT EXISTS (
         SELECT 1 FROM venue_unavailabilities vu
         WHERE vu.venue_id = v.id
-          AND vu.start_time < ($${endParam}::timestamptz + ($${turnaroundParam} * interval '1 minute'))
-          AND vu.end_time > ($${startParam}::timestamptz - ($${setupParam} * interval '1 minute'))
+          AND vu.start_time < ($${endParam}::timestamptz + (${turnaroundExpr} * interval '1 minute'))
+          AND vu.end_time > ($${startParam}::timestamptz - (${setupExpr} * interval '1 minute'))
       )`);
     }
 
@@ -341,6 +379,7 @@ app.get('/api/venues', auth.authenticate, auth.requireRoles('event_coordinator',
       ) AS unavailable_periods,` : "'[]'::jsonb AS unavailable_periods,";
     const result = await db.query(
       `SELECT id, name, location, capacity, facilities, accessibility, supported_layouts,
+        default_setup_minutes, default_turnaround_minutes,
         ${unavailablePeriods}
         (SELECT COALESCE(jsonb_agg(jsonb_build_object(
           'id', vi.id,
@@ -406,11 +445,12 @@ app.get('/api/events/:id', auth.authenticate, auth.requireRoles('event_coordinat
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-function parseBookingInput(body) {
+function parseBookingInput(body, venueDefaults = {}) {
   const startTime = new Date(body.startTime);
   const endTime = new Date(body.endTime);
-  const setupMinutes = Number(body.setupMinutes ?? 30);
-  const turnaroundMinutes = Number(body.turnaroundMinutes ?? 30);
+  // US-035: use the venue's own configured setup/turnaround defaults when the caller doesn't specify one.
+  const setupMinutes = Number(body.setupMinutes ?? venueDefaults.default_setup_minutes ?? 30);
+  const turnaroundMinutes = Number(body.turnaroundMinutes ?? venueDefaults.default_turnaround_minutes ?? 30);
   const requiredCapacity = body.requiredCapacity === undefined || body.requiredCapacity === null || body.requiredCapacity === '' ? null : Number(body.requiredCapacity);
   if (!uuidPattern.test(body.eventId || '') || !uuidPattern.test(body.venueId || '')) throw Object.assign(new Error('A valid event and venue are required'), { status: 400 });
   if (!Number.isFinite(startTime.getTime()) || !Number.isFinite(endTime.getTime()) || endTime <= startTime) throw Object.assign(new Error('End time must be later than start time'), { status: 400 });
@@ -460,11 +500,11 @@ app.post('/api/bookings/requests/batch', auth.authenticate, auth.requireRoles('e
     const prepared = [];
     const conflicts = [];
     for (let index = 0; index < bookings.length; index += 1) {
-      let input;
-      try { input = parseBookingInput({ ...bookings[index], eventId: req.body.eventId }); }
-      catch (error) { await client.query('ROLLBACK'); return res.status(error.status || 400).json({ error: `Venue ${index + 1}: ${error.message}` }); }
-      const venueResult = await client.query('SELECT id, name, capacity FROM venues WHERE id = $1', [bookings[index].venueId]);
+      const venueResult = await client.query('SELECT id, name, capacity, default_setup_minutes, default_turnaround_minutes FROM venues WHERE id = $1', [bookings[index].venueId]);
       if (!venueResult.rows[0]) { await client.query('ROLLBACK'); return res.status(404).json({ error: `Venue ${index + 1} was not found` }); }
+      let input;
+      try { input = parseBookingInput({ ...bookings[index], eventId: req.body.eventId }, venueResult.rows[0]); }
+      catch (error) { await client.query('ROLLBACK'); return res.status(error.status || 400).json({ error: `Venue ${index + 1}: ${error.message}` }); }
       const unavailable = await findUnavailability(client.query.bind(client), { venueId: bookings[index].venueId, startTime: input.startTime.toISOString(), endTime: input.endTime.toISOString(), setupMinutes: input.setupMinutes, turnaroundMinutes: input.turnaroundMinutes });
       if (unavailable) { await client.query('ROLLBACK'); return res.status(409).json({ error: `Venue ${index + 1} is unavailable. ${unavailableMessage(unavailable)}`, unavailable }); }
       input.requiredCapacity = input.requiredCapacity ?? eventResult.rows[0].expected_attendance;
@@ -523,16 +563,16 @@ app.post('/api/bookings/requests/batch', auth.authenticate, auth.requireRoles('e
 });
 
 app.post('/api/bookings/requests', auth.authenticate, auth.requireRoles('event_coordinator'), async (req, res) => {
-  let input;
-  try { input = parseBookingInput(req.body); } catch (error) { return res.status(error.status || 400).json({ error: error.message }); }
   try {
     const eventResult = await db.query(
       `SELECT id, title, expected_attendance FROM events WHERE id = $1 AND assigned_coordinator_id = $2 AND status IN ('submitted', 'approved', 'planning')`,
       [req.body.eventId, req.auth.sub]
     );
     if (!eventResult.rows[0]) return res.status(404).json({ error: 'Event not found or not assigned to you' });
-    const venueResult = await db.query('SELECT id, name, capacity FROM venues WHERE id = $1', [req.body.venueId]);
+    const venueResult = await db.query('SELECT id, name, capacity, default_setup_minutes, default_turnaround_minutes FROM venues WHERE id = $1', [req.body.venueId]);
     if (!venueResult.rows[0]) return res.status(404).json({ error: 'Venue not found' });
+    let input;
+    try { input = parseBookingInput(req.body, venueResult.rows[0]); } catch (error) { return res.status(error.status || 400).json({ error: error.message }); }
     const unavailable = await findUnavailability(db.query, { venueId: req.body.venueId, startTime: input.startTime.toISOString(), endTime: input.endTime.toISOString(), setupMinutes: input.setupMinutes, turnaroundMinutes: input.turnaroundMinutes });
     if (unavailable) return res.status(409).json({ error: `Venue is unavailable. ${unavailableMessage(unavailable)}`, unavailable });
     input.requiredCapacity = input.requiredCapacity ?? eventResult.rows[0].expected_attendance;
