@@ -15,6 +15,14 @@ const CHANGE_REQUEST_STATUSES = [EVENT_STATUS.PLANNING, EVENT_STATUS.CONFIRMED];
 // 'approved' is what the Coordinator decision endpoint writes; 'planning' is its domain name.
 const ACTIVE_STATUSES = Object.freeze([EVENT_STATUS.SUBMITTED, EVENT_STATUS.CLARIFICATION_REQUESTED, 'approved', EVENT_STATUS.PLANNING, EVENT_STATUS.CONFIRMED]);
 const MAJOR_CHANGE_LABELS = Object.freeze({ expectedAttendance: 'Expected Attendance', duration: 'Duration' });
+// US-032: change request field -> events column.
+const CHANGE_REQUEST_COLUMNS = Object.freeze({
+  preferredStart: 'preferred_start',
+  preferredEnd: 'preferred_end',
+  expectedAttendance: 'expected_attendance',
+  venueLayoutPreference: 'venue_layout_preference',
+  equipmentRequirements: 'equipment_requirements'
+});
 
 
 class User {
@@ -75,10 +83,6 @@ class EventRequest {
     });
   }
 
-  canBeAssigned() {
-    return this.status === 'submitted' && !this.assignedCoordinatorId;
-  }
-
   canRequestChanges() {
      return CHANGE_REQUEST_STATUSES.includes(this.status);// AC-008-001: only a submitted event can receive a change request, US-34:Before approval, the Organiser edits the request directly (US-034).
   }
@@ -98,11 +102,6 @@ class EventRequest {
     return major;
   }
 
-  assignTo(coordinatorId) {
-    if (!this.canBeAssigned()) throw new Error('This request has already been assigned');
-    this.assignedCoordinatorId = coordinatorId;
-  }
-
   isActive() {
     return ACTIVE_STATUSES.includes(this.status);
   }
@@ -116,21 +115,6 @@ class EventRequest {
     const previousCoordinatorId = this.assignedCoordinatorId;
     this.assignedCoordinatorId = coordinatorId;
     return previousCoordinatorId;
-  }
-
-  unassignFrom(coordinatorId) {
-    if (this.assignedCoordinatorId !== coordinatorId) {
-      throw new Error('Request not found or not assigned to you');
-    }
-    this.assignedCoordinatorId = null;
-  }
-
-  isAssignedTo(coordinatorId) {
-    return this.assignedCoordinatorId === coordinatorId;
-  }
-
-  canBeViewedBy(coordinatorId) {
-    return this.isAssignedTo(coordinatorId);
   }
 
   toJSON() {
@@ -198,6 +182,9 @@ class Venue {
   }
 }
 
+// US-021: preparation status of one venue booking; the database CHECK constraint uses the same values.
+const PREPARATION_STATUSES = Object.freeze(['not_started', 'in_progress', 'ready']);
+
 class Booking {
   constructor({ id, eventId, venueId, startTime, endTime, status = 'pending', setupMinutes = 30, turnaroundMinutes = 30 }) {
     this.id = id;
@@ -248,6 +235,29 @@ class ChangeRequest {
     return this.status === 'pending';
   }
 
+  // US-032 (AC-032-006): once approved or rejected, a change request is final.
+  canBeDecided() {
+    return this.isPending();
+  }
+
+  // US-032 (AC-032-004): the event columns an approval writes. Fields not proposed are left alone.
+  toEventColumns() {
+    const columns = {};
+    for (const [field, column] of Object.entries(CHANGE_REQUEST_COLUMNS)) {
+      if (this.proposedChanges[field] !== undefined) columns[column] = this.proposedChanges[field];
+    }
+    return columns;
+  }
+
+  // US-032 (AC-032-005): a new start or end time means existing bookings and reservations need another look.
+  movesEvent(event) {
+    const { preferredStart, preferredEnd } = this.proposedChanges;
+    if (preferredStart === undefined && preferredEnd === undefined) return false;
+    const sameInstant = (proposed, current) =>
+      proposed === undefined || (current != null && new Date(proposed).getTime() === new Date(current).getTime());
+    return !(sameInstant(preferredStart, event.preferred_start) && sameInstant(preferredEnd, event.preferred_end));
+  }
+
   toJSON() {
     return {
       id: this.id,
@@ -258,4 +268,4 @@ class ChangeRequest {
     };
   }
 }
-module.exports = { User, EventRequest, Venue, Booking, ChangeRequest, EVENT_STATUS, ACTIVE_STATUSES, MAJOR_CHANGE_LABELS };
+module.exports = { User, EventRequest, Venue, Booking, ChangeRequest, EVENT_STATUS, ACTIVE_STATUSES, MAJOR_CHANGE_LABELS, PREPARATION_STATUSES };

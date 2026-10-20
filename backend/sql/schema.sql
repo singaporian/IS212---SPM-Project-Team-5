@@ -34,8 +34,9 @@ ALTER TABLE venues ADD COLUMN IF NOT EXISTS available_until date NOT NULL DEFAUL
 ALTER TABLE venues DROP CONSTRAINT IF EXISTS venues_available_dates_check;
 ALTER TABLE venues ADD CONSTRAINT venues_available_dates_check CHECK (available_until >= available_from);
 
--- US-035: Venue Staff configure each venue's setup/turnaround defaults, used when
--- determining availability (searching for venues and reviewing booking requests).
+-- US-017 (Week 7 customer change #1): configurable per-venue setup/turnaround defaults.
+-- US-035: Venue Staff configure these same defaults directly, used when determining
+-- availability (searching for venues and reviewing booking requests).
 ALTER TABLE venues ADD COLUMN IF NOT EXISTS default_setup_minutes integer NOT NULL DEFAULT 30 CHECK (default_setup_minutes >= 0);
 ALTER TABLE venues ADD COLUMN IF NOT EXISTS default_turnaround_minutes integer NOT NULL DEFAULT 30 CHECK (default_turnaround_minutes >= 0);
 
@@ -84,11 +85,26 @@ CREATE TABLE IF NOT EXISTS events (
   updated_at timestamptz DEFAULT now()
 );
 
--- Coordinator assignment for event requests (added for US-011 / US-012)
+-- Current coordinator for each event request: set by the Event Coordinator Lead (US-034), enforced by coordinator routes (US-012)
 ALTER TABLE events ADD COLUMN IF NOT EXISTS assigned_coordinator_id uuid REFERENCES users(id) ON DELETE SET NULL;
 
 -- Preserve incomplete draft fields without coercing dates, placeholders or tri-state choices.
 ALTER TABLE events ADD COLUMN IF NOT EXISTS draft_data jsonb NOT NULL DEFAULT '{}'::jsonb;
+
+-- US-039: one auditable operational safety decision per event.
+CREATE TABLE IF NOT EXISTS operational_safety_checks (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  event_id uuid NOT NULL UNIQUE REFERENCES events(id) ON DELETE CASCADE,
+  status text NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected', 'changes_requested')),
+  change_scope text[] NOT NULL DEFAULT '{}'::text[],
+  comments text,
+  decided_by uuid REFERENCES users(id) ON DELETE SET NULL,
+  decided_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+ALTER TABLE operational_safety_checks ADD COLUMN IF NOT EXISTS change_scope text[] NOT NULL DEFAULT '{}'::text[];
 
 -- US-006: submission preserves the draft snapshot and exposes review fields.
 ALTER TABLE events ADD COLUMN IF NOT EXISTS description text;
@@ -100,6 +116,11 @@ CREATE TABLE IF NOT EXISTS technical_support_requirements (
   event_id uuid NOT NULL UNIQUE REFERENCES events(id) ON DELETE CASCADE,
   equipment_requirements jsonb NOT NULL DEFAULT '[]'::jsonb,
   staff_required integer NOT NULL DEFAULT 0 CHECK (staff_required >= 0),
+  support_required boolean NOT NULL DEFAULT true,
+  status text NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'confirmed', 'changes_requested')),
+  decision_comments text,
+  decided_by uuid REFERENCES users(id) ON DELETE SET NULL,
+  decided_at timestamptz,
   late_request boolean NOT NULL DEFAULT false,
   update_count integer NOT NULL DEFAULT 0 CHECK (update_count >= 0),
   updated_by uuid REFERENCES users(id) ON DELETE SET NULL,
@@ -107,12 +128,18 @@ CREATE TABLE IF NOT EXISTS technical_support_requirements (
 );
 
 ALTER TABLE technical_support_requirements ADD COLUMN IF NOT EXISTS update_count integer NOT NULL DEFAULT 0;
+ALTER TABLE technical_support_requirements ADD COLUMN IF NOT EXISTS support_required boolean NOT NULL DEFAULT true;
+ALTER TABLE technical_support_requirements ADD COLUMN IF NOT EXISTS status text NOT NULL DEFAULT 'pending';
+ALTER TABLE technical_support_requirements ADD COLUMN IF NOT EXISTS decision_comments text;
+ALTER TABLE technical_support_requirements ADD COLUMN IF NOT EXISTS decided_by uuid REFERENCES users(id) ON DELETE SET NULL;
+ALTER TABLE technical_support_requirements ADD COLUMN IF NOT EXISTS decided_at timestamptz;
 
 -- Venue bookings
 CREATE TABLE IF NOT EXISTS bookings (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   event_id uuid REFERENCES events(id) ON DELETE CASCADE,
   venue_id uuid REFERENCES venues(id) ON DELETE SET NULL,
+  replacement_for_booking_id uuid REFERENCES bookings(id) ON DELETE SET NULL,
   requested_by uuid REFERENCES users(id) ON DELETE SET NULL,
   required_capacity integer CHECK (required_capacity IS NULL OR required_capacity > 0),
   start_time timestamptz NOT NULL,
@@ -132,6 +159,8 @@ CREATE TABLE IF NOT EXISTS bookings (
   CHECK (end_time > start_time),
   created_at timestamptz DEFAULT now()
 );
+
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS replacement_for_booking_id uuid REFERENCES bookings(id) ON DELETE SET NULL;
 
 ALTER TABLE bookings ADD COLUMN IF NOT EXISTS requested_by uuid REFERENCES users(id) ON DELETE SET NULL;
 ALTER TABLE bookings ADD COLUMN IF NOT EXISTS required_capacity integer;
@@ -197,6 +226,13 @@ CREATE TABLE IF NOT EXISTS venue_unavailabilities (
   created_at timestamptz DEFAULT now()
 );
 
+-- US-020: reason dropdown code, who/when it was last modified, and whether it was ended early.
+ALTER TABLE venue_unavailabilities ADD COLUMN IF NOT EXISTS reason_code text;
+ALTER TABLE venue_unavailabilities ADD COLUMN IF NOT EXISTS modified_by uuid REFERENCES users(id) ON DELETE SET NULL;
+ALTER TABLE venue_unavailabilities ADD COLUMN IF NOT EXISTS modified_at timestamptz;
+ALTER TABLE venue_unavailabilities ADD COLUMN IF NOT EXISTS ended_early boolean NOT NULL DEFAULT false;
+UPDATE venue_unavailabilities SET reason_code = 'other' WHERE reason_code IS NULL;
+
 -- Simple notifications table
 CREATE TABLE IF NOT EXISTS notifications (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -227,6 +263,13 @@ CREATE TABLE IF NOT EXISTS event_change_requests (
 );
 CREATE INDEX IF NOT EXISTS event_change_requests_event_idx ON event_change_requests (event_id);
 
+-- US-032: who decided a change request and when; arrangements to reconsider after an approved move.
+-- Flags only identify affected arrangements; booking/reservation status is never changed by them.
+ALTER TABLE event_change_requests ADD COLUMN IF NOT EXISTS decided_by uuid REFERENCES users(id) ON DELETE SET NULL;
+ALTER TABLE event_change_requests ADD COLUMN IF NOT EXISTS decided_at timestamptz;
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS requires_reconsideration boolean NOT NULL DEFAULT false;
+ALTER TABLE equipment_reservations ADD COLUMN IF NOT EXISTS requires_reconsideration boolean NOT NULL DEFAULT false;
+
 -- US-038: holds reference an existing request; no duplicate booking is created.
 CREATE TABLE IF NOT EXISTS venue_holds (
  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -249,3 +292,9 @@ CREATE INDEX IF NOT EXISTS venue_holds_availability ON venue_holds (venue_id, ex
 -- Upgrade the earlier local US-038 draft without deleting existing hold/history data.
 ALTER TABLE venue_holds DROP CONSTRAINT IF EXISTS venue_holds_check1;
 ALTER TABLE venue_holds ADD COLUMN IF NOT EXISTS expiry_notified_at timestamptz;
+
+
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS preparation_status text NOT NULL DEFAULT 'not_started'; -- US-021: preparation status per venue booking (Week 7 #3: each venue of an event is independent).
+ALTER TABLE bookings DROP CONSTRAINT IF EXISTS bookings_preparation_status_check;
+ALTER TABLE bookings ADD CONSTRAINT bookings_preparation_status_check
+  CHECK (preparation_status IN ('not_started', 'in_progress', 'ready'));

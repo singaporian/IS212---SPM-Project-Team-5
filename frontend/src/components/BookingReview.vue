@@ -49,6 +49,14 @@
         <ul class="mb-0"><li v-for="conflict in review.conflicts" :key="conflict.type + conflict.id">{{ conflict.type === 'booking' ? (conflict.status === 'approved' ? 'Approved — venue reserved' : 'Confirmed booking') : (conflict.type === 'hold' ? 'Active tentative hold' : 'Recorded unavailability') }}: {{ conflict.title }} — {{ formatRange(conflict.start, conflict.end) }}{{ conflict.type === 'booking' ? ' (including recorded setup and turnaround)' : '' }}</li></ul>
       </div>
       <p v-else role="status">No overlapping reserved bookings or recorded unavailability found.</p>
+      <div v-if="canDecide" class="decision-panel mt-4" aria-label="Venue booking decision">
+        <h4 class="h6">Venue Staff decision</h4>
+        <label class="form-label">Comment<textarea v-model="decisionComment" class="form-control" rows="2" placeholder="Optional comment for the Coordinator"></textarea></label>
+        <label class="form-label mt-2">Rejection reason<select v-model="decisionReason" class="form-select"><option value="">Select only when rejecting</option><option value="insufficient_information">Insufficient information</option><option value="infeasible_requirements">Infeasible requirements</option><option value="venue_unavailable">Venue unavailable</option><option value="other">Other</option></select></label>
+        <div v-if="decisionError" class="alert alert-danger py-2 mt-2">{{ decisionError }}</div>
+        <div v-if="decisionMessage" class="alert alert-success py-2 mt-2">{{ decisionMessage }}</div>
+        <div class="d-flex gap-2 mt-3"><button class="btn btn-success" :disabled="deciding" @click="decide('approved')">Approve booking</button><button class="btn btn-outline-danger" :disabled="deciding" @click="decide('rejected')">Reject booking</button></div>
+      </div>
       <h4 class="h6">Bookings around this slot</h4>
       <p class="small text-muted">Conflict checks include approved and confirmed bookings, active unexpired tentative holds and recorded unavailability. Other booking statuses are shown for context. Occupied intervals include recorded setup and turnaround.</p>
       <p v-if="!review.bookings.length">No other bookings recorded for these dates.</p>
@@ -67,11 +75,12 @@ import { authHeaders } from '../services/auth'
 export default {
   name: 'BookingReview',
   props: { bookingId: { type: String, required: true }, fullPage: Boolean },
-  data() { return { expanded: false, review: null, loading: true, error: '', days: ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'] } },
+  data() { return { expanded: false, review: null, loading: true, error: '', deciding: false, decisionError: '', decisionMessage: '', decisionReason: '', decisionComment: '', days: ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'] } },
   emits: ['loaded', 'loading'],
   mounted() { this.load() },
   watch: { bookingId() { this.load() } },
   computed: {
+    canDecide() { return this.fullPage && this.review?.request.status === 'pending' },
     capacityExceeded() { return Number(this.review?.request.expected_attendance) > Number(this.review?.venue.capacity) && Number(this.review?.venue.capacity) > 0 },
     capacityText() {
       const attendance = Number(this.review?.request.expected_attendance), capacity = Number(this.review?.venue.capacity)
@@ -80,6 +89,19 @@ export default {
     }
   },
   methods: {
+    async decide(decision) {
+      this.decisionError = ''; this.decisionMessage = ''
+      if (decision === 'rejected' && !this.decisionReason) { this.decisionError = 'Select a rejection reason before rejecting the booking.'; return }
+      this.deciding = true
+      try {
+        const response = await fetch(`/api/bookings/${encodeURIComponent(this.bookingId)}/decision`, { method: 'PATCH', headers: { ...authHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify({ decision, reason: this.decisionReason, comment: this.decisionComment }) })
+        const data = await response.json()
+        if (!response.ok) { this.decisionError = data.error || 'Unable to save the booking decision. Please retry.'; return }
+        this.decisionMessage = `Booking ${decision}.`
+        await this.load()
+      } catch { this.decisionError = 'Unable to save the booking decision. Please retry.' }
+      finally { this.deciding = false }
+    },
     toggleDetails() { this.expanded = !this.expanded },
     operatingHours() {
       const hours = this.review.operating_hours
@@ -102,7 +124,7 @@ export default {
       return `${String(Number(hour) % 12 || 12).padStart(2, '0')}:${minute} ${Number(hour) < 12 ? 'AM' : 'PM'}`
     },
     buffer(value) { return value == null ? 'Not recorded' : `${value} minutes` },
-    statusLabel(value) { return ({ pending: 'Pending Review', approved: 'Approved — venue reserved', confirmed: 'Confirmed booking', rejected: 'Rejected', alternative_suggested: 'Alternative Suggested' })[value] || String(value || 'Not recorded').replaceAll('_', ' ') },
+    statusLabel(value) { return ({ pending: 'Pending Review', approved: 'Reserved', confirmed: 'Reserved', rejected: 'Rejected', alternative_suggested: 'Alternative Suggested' })[value] || String(value || 'Not recorded').replaceAll('_', ' ') },
     describe(value) {
       if (value == null || value === '') return 'Not recorded'
       if (Array.isArray(value)) return value.length ? value.map(this.describe).join(', ') : 'Not recorded'
@@ -137,5 +159,6 @@ export default {
 .review-grid dt { font-weight: 600; }
 .review-grid dd { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .review-details li { margin-bottom: .5rem; overflow-wrap: anywhere; }
+.decision-panel { border: 1px solid #dbe4ef; border-radius: .75rem; padding: 1rem; background: #f8fafc; }
 @media (max-width: 575px) { .review-grid { grid-template-columns: minmax(0, 1fr); gap: .2rem; } .review-grid dd { margin-bottom: .65rem; } }
 </style>

@@ -26,10 +26,10 @@
     <div v-if="error" class="alert alert-danger small">{{ error }}</div>
 
     <div v-if="loadingBookings" class="alert alert-light border small text-muted">
-      Loading confirmed bookings...
+      Loading approved and confirmed bookings...
     </div>
     <div v-else-if="groupedBookings.length === 0 && !error" class="alert alert-light border small text-muted">
-      No confirmed bookings available for the selected venue and range.
+      No approved or confirmed bookings available for the selected venue and range.
     </div>
 
     <div v-for="group in groupedBookings" :key="group.label" class="booking-group mb-4">
@@ -48,9 +48,10 @@
               <div class="small text-muted">{{ booking.venue_name }}</div>
               <div class="small">{{ formatRange(booking.start_time, booking.end_time) }}</div>
               <div class="small text-muted">Expected attendance: {{ booking.expected_attendance ?? '—' }}</div>
+              <span class="badge bg-success-subtle text-success border border-success-subtle">Booking status: Reserved</span>
             </div>
             <div class="text-end">
-              <span v-if="isInsufficientTurnaround(booking)" class="badge bg-danger-subtle text-danger border border-danger-subtle">Turnaround warning</span>
+              <span v-if="isInsufficientTurnaround(booking)" class="badge bg-danger-subtle text-danger border border-danger-subtle">Insufficient gap under current venue requirements</span>
             </div>
           </div>
 
@@ -60,9 +61,12 @@
             <div><strong>Start:</strong> {{ formatDateTime(booking.start_time) }}</div>
             <div><strong>End:</strong> {{ formatDateTime(booking.end_time) }}</div>
             <div><strong>Expected attendance:</strong> {{ booking.expected_attendance ?? '—' }}</div>
-            <div><strong>Setup minutes:</strong> {{ booking.setup_minutes ?? 0 }}</div>
-            <div><strong>Turnaround minutes:</strong> {{ booking.turnaround_minutes ?? 0 }}</div>
-            <div><strong>Status:</strong> {{ booking.status }}</div>
+            <div><strong>Setup minutes (at time of booking):</strong> {{ booking.setup_minutes ?? 0 }}</div>
+            <div><strong>Turnaround minutes (at time of booking):</strong> {{ booking.turnaround_minutes ?? 0 }}</div>
+            <div><strong>Venue's current setup requirement:</strong> {{ booking.default_setup_minutes ?? 0 }}</div>
+            <div><strong>Venue's current turnaround requirement:</strong> {{ booking.default_turnaround_minutes ?? 0 }}</div>
+            <div><strong>Booking status:</strong> Reserved</div>
+            <div><strong>Event status:</strong> {{ booking.event_status }}</div>
           </div>
         </div>
       </div>
@@ -137,7 +141,7 @@ export default {
       const currentEnd = new Date(booking.end_time).getTime()
       const nextStart = new Date(next.start_time).getTime()
       const gapMinutes = (nextStart - currentEnd) / 60000
-      const requiredGap = Number(booking.turnaround_minutes || 0) + Number(next.setup_minutes || 0)
+      const requiredGap = Number(booking.default_turnaround_minutes || 0) + Number(next.default_setup_minutes || 0)
       return gapMinutes < requiredGap
     },
     toggleDetails(bookingId) {

@@ -32,7 +32,7 @@
                 <p class="text-muted mb-1">{{ request.venue_name }}</p>
                 <p class="small text-muted mb-0">{{ formatDate(request.start_time) }} to {{ formatDate(request.end_time) }}</p>
               </div>
-              <div class="d-flex flex-column align-items-end gap-1"><span class="badge" :class="statusClass(request.status)">{{ statusLabel(request.status) }}</span><span v-if="request.affected_by_unavailability" class="badge bg-danger-subtle text-danger border border-danger-subtle">Affected by venue unavailability</span></div>
+              <div class="d-flex flex-column align-items-end gap-1"><span class="badge" :class="statusClass(request.status)">{{ statusLabel(request.status) }}</span><span v-if="request.affected_by_unavailability" class="badge bg-danger-subtle text-danger border border-danger-subtle">Affected by venue unavailability</span><span v-if="request.requires_reconsideration" class="badge bg-warning-subtle text-dark border border-warning-subtle">Event time changed: reconsider</span></div>
             </div>
             <div v-if="request.conflict_warning" class="small text-warning mt-3"><i class="bi bi-exclamation-triangle"></i> Conflict flagged for Venue Staff</div>
             <div v-if="selectedId === request.id" class="details mt-3" @click.stop>
@@ -77,7 +77,7 @@ export default {
     toggleDetails(id) { this.selectedId = this.selectedId === id ? null : id },
     formatDate(value) { return value ? new Date(value).toLocaleString() : 'Time not provided' },
     statusLabel(status) {
-      const labels = { pending: 'Pending Review', alternative_suggested: 'Alternative Suggested' }
+      const labels = { pending: 'Pending Review', approved: 'Reserved', confirmed: 'Reserved', alternative_suggested: 'Alternative Suggested' }
       return labels[status] || (status ? status.replaceAll('_', ' ') : 'Unknown Status')
     },
     statusClass(status) {

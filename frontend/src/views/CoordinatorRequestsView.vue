@@ -35,9 +35,18 @@
               <div><strong>Registration Required:</strong> {{ selected.registration_required == null ? 'Not decided' : selected.registration_required ? 'Yes' : 'No' }}</div>
               <div><strong>Special Arrangements:</strong> {{ selected.special_arrangements || '—' }}</div>
 
-              <div class="mt-3 d-flex gap-2">
+              <div v-if="ev.status === 'submitted'" class="mt-3 d-flex gap-2">
                 <button class="btn btn-sm btn-success" @click="openDecision(ev.id, 'approved')">Approve</button>
                 <button class="btn btn-sm btn-outline-danger" @click="openDecision(ev.id, 'rejected')">Reject</button>
+              </div>
+
+              <div v-else-if="ev.status === 'rejected'" class="alert alert-danger mt-3 mb-0 py-2" role="status">
+                <i class="bi bi-x-circle me-1" aria-hidden="true"></i>
+                <strong>Request rejected.</strong> This request cannot proceed to venue or resource planning.
+              </div>
+              <div v-else class="alert alert-success mt-3 mb-0 py-2" role="status">
+                <i class="bi bi-check-circle me-1" aria-hidden="true"></i>
+                <strong>Request approved.</strong> It can now proceed to venue and resource planning.
               </div>
 
               <div v-if="decisionEventId === ev.id" class="mt-3 p-3 border rounded bg-white">

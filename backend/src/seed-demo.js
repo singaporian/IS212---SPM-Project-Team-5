@@ -239,6 +239,15 @@ async function seedDemoBookings() {
         coordinatorId
       ]
     );
+    await db.query(
+      `INSERT INTO technical_support_requirements (event_id, equipment_requirements, staff_required, support_required, status)
+       VALUES ($1, '[]'::jsonb, 0, false, 'confirmed')
+       ON CONFLICT (event_id) DO UPDATE SET equipment_requirements = '[]'::jsonb,
+         staff_required = 0, support_required = false, status = 'confirmed',
+         decision_comments = NULL, decided_by = NULL, decided_at = NULL, updated_at = now()`,
+      [event.eventId]
+    );
+    await db.query("UPDATE events SET status = 'confirmed', updated_at = now() WHERE id = $1", [event.eventId]);
   }
 
   // Keep each event's requested times in line with its venue bookings.

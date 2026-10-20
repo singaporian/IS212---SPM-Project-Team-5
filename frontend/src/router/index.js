@@ -26,6 +26,9 @@ import EventChangeRequestView from '../views/EventChangeRequestView.vue'
 import VenueUnavailabilityView from '../views/VenueUnavailabilityView.vue'
 import VenueSetupTurnaroundView from '../views/VenueSetupTurnaroundView.vue'
 import AffectedBookingsView from '../views/AffectedBookingsView.vue'
+import ChangeRequestReviewView from '../views/ChangeRequestReviewView.vue'
+import PreparationStatusView from '../views/PreparationStatusView.vue'
+import SafetyCheckView from '../views/SafetyCheckView.vue'
 
 const routes = [
   { path: '/venue/holds', name: 'venue-holds', component: VenueHoldsView, meta: { requiresAuth: true, roles: ['venue_staff', 'event_coordinator'] } },
@@ -41,6 +44,10 @@ const routes = [
   { path: '/events', name: 'events', component: EventsView, meta: { requiresAuth: true } },
   { path: '/access-denied', name: 'access-denied', component: AccessDeniedView, meta: { requiresAuth: true } },
   { path: '/venues', name: 'venue-search', component: VenueSearchView, meta: { requiresAuth: true, roles: ['event_coordinator', 'venue_staff'], resource: 'the venue workspace' } },
+  { path: '/venue/preparation', name: 'venue-preparation', component: PreparationStatusView, meta: { requiresAuth: true, roles: ['venue_staff'] } },
+  { path: '/coordinator/preparation', name: 'coordinator-preparation', component: PreparationStatusView, props: { readOnly: true }, meta: { requiresAuth: true, roles: ['event_coordinator'] } },
+  { path: '/safety/checks', name: 'safety-checks', component: SafetyCheckView, meta: { requiresAuth: true, roles: ['safety_officer'] } },
+  { path: '/coordinator/change-requests', name: 'coordinator-change-requests', component: ChangeRequestReviewView, meta: { requiresAuth: true, roles: ['event_coordinator'] } },
   { path: '/coordinator/requests', name: 'coordinator-requests', component: CoordinatorRequestsView, meta: { requiresAuth: true, roles: ['event_coordinator'] } },
   { path: '/venue/bookings', name: 'venue-bookings-calendar', component: VenueBookingsCalendarView, meta: { requiresAuth: true, roles: ['venue_staff'] } },
   { path: '/requests/new', name: 'new-event-request', component: NewEventRequestView, meta: { requiresAuth: true, roles: ['event_organiser'] } },

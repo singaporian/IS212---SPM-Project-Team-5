@@ -8,20 +8,11 @@ test('User exposes role-based domain decisions', () => {
   assert.equal(new User({ role: 'event_coordinator' }).canAccessVenueData(), true);
 });
 
-test('EventRequest enforces assignment and ownership decisions', () => {
-  const request = new EventRequest({ title: 'Demo', status: 'submitted' });
-  assert.equal(request.canBeAssigned(), true);
-  request.assignTo('coordinator-1');
-  assert.equal(request.canBeViewedBy('coordinator-1'), true);
-  assert.equal(request.canBeViewedBy('coordinator-2'), false);
-  assert.throws(() => request.assignTo('coordinator-2'), /already been assigned/);
-});
-
 test('EventRequest lets the Lead assign and reassign active requests only (US-034)', () => {
   const request = new EventRequest({ title: 'Demo', status: 'submitted' });
   assert.equal(request.assignCoordinator('coordinator-1'), null, 'no previous coordinator');
   assert.equal(request.assignCoordinator('coordinator-2'), 'coordinator-1', 'reassignment returns the previous coordinator');
-  assert.equal(request.isAssignedTo('coordinator-2'), true);
+  assert.equal(request.assignedCoordinatorId, 'coordinator-2');
   assert.throws(() => request.assignCoordinator('coordinator-2'), /already assigned/);
   assert.throws(() => request.assignCoordinator(''), /Choose an Event Coordinator/);
   for (const status of ['approved', 'clarification_requested', 'planning', 'confirmed']) {
@@ -43,15 +34,13 @@ test('EventRequest counts only requests a Coordinator still works on as active (
   assert.deepEqual([fresh.status, fresh.organiserId, fresh.assignedCoordinatorId, fresh.isActive()], ['draft', null, null, false]);
 });
 
-test('EventRequest gives access only to the currently assigned Coordinator (US-034)', () => {
+test('EventRequest records only the currently assigned Coordinator (US-034)', () => {
   const request = new EventRequest({ title: 'Demo', status: 'submitted' });
-  assert.equal(request.canBeViewedBy('coordinator-1'), false, 'nobody before assignment');
+  assert.equal(request.assignedCoordinatorId, null, 'nobody before assignment');
   request.assignCoordinator('coordinator-1');
-  assert.equal(request.canBeViewedBy('coordinator-1'), true);
+  assert.equal(request.assignedCoordinatorId, 'coordinator-1');
   request.assignCoordinator('coordinator-2');
-  assert.equal(request.canBeViewedBy('coordinator-1'), false, 'the previous Coordinator loses access on reassignment');
-  assert.equal(request.canBeViewedBy('coordinator-2'), true);
-  assert.equal(request.isAssignedTo('coordinator-1'), false);
+  assert.equal(request.assignedCoordinatorId, 'coordinator-2', 'the previous Coordinator no longer holds it after reassignment');
 });
 
 test('EventRequest reads and writes the stored current Coordinator (US-034)', () => {

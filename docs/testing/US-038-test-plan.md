@@ -60,7 +60,7 @@ Automated evidence: backend/test/integration/venue-holds.test.js, frontend/test/
 7. Disconnect the backend during placement; verify no false success and retained input. Reconnect and retry. Check narrow-screen layout and keyboard use.
 
 ## Commands
-Backend: node --test test/venue-holds.test.js; npm test.
+Backend: node --test test/unit/venue-holds.test.js; npm run test:unit; node --test test/integration/venue-holds.test.js; npm run test:integration; npm test.
 Frontend: node --test test/venue-holds.test.cjs test/booking-review.test.cjs; npm test; npm run build.
 Root: git diff --check; git diff --cached --check.
 
@@ -100,3 +100,60 @@ Use the named US-038 Demo fixtures for manual testing. The primary active hold e
 - backend/src/seed-demo.js
 - backend/src/demoVenueScenarios.js
 - backend/test/integration/demo-venue-scenarios.test.js
+
+
+## Dedicated unit coverage — 18 October 2026
+
+Integrated origin/main b7ca024 by fast-forward, without conflicts. New file: backend/test/unit/venue-holds.test.js. Style matches recent US-021/US-032: CommonJS, node:test, node:assert/strict, top-level [UT-xx] names, fixed timestamps and real exported helpers. No database queries, HTTP/server startup, external services or mocks. validateExpiry is imported from its existing router module, as teammate parser tests do; no route is invoked. Production code and existing integration/frontend tests are unchanged.
+
+The original evidence above is retained as historical evidence. This section adds function-level checks; it does not claim pure helpers prove SQL filtering, notifications, authorization or transaction behaviour.
+
+| Test ID | Level | AC | Scenario | Expected Result | Result |
+|---|---|---|---|---|---|
+| UT-01 | UT | AC3 | effectiveHoldStatus before expiry | active one millisecond before deadline | PASS |
+| UT-02 | UT | AC4 | effectiveHoldStatus exactly at expiry | expired at equality | PASS |
+| UT-03 | UT | AC4, AC7 | effectiveHoldStatus after expiry | expired, not confirmed | PASS |
+| UT-04 | UT | AC4, AC7; compatibility | Historical non-active status | released/expired preserved; no new transition invented | PASS |
+| UT-05 | UT | AC3; recorded-buffer support | Setup calculation | Start moves earlier by recorded setup only | PASS |
+| UT-06 | UT | AC3; recorded-buffer support | Turnaround calculation | End moves later by recorded turnaround only | PASS |
+| UT-07 | UT | AC3; recorded-buffer support | Zero/null/missing buffers | Original interval retained; no default invented | PASS |
+| UT-08 | UT | AC3; recorded-buffer support | Midnight crossings | Correct occupied interval on adjoining Singapore dates | PASS |
+| UT-09 | UT | AC3; overlap support | Intersecting/contained intervals | True in either order | PASS |
+| UT-10 | UT | AC3; overlap support | Separated intervals | False in either order | PASS |
+| UT-11 | UT | AC3; technical convention only | Exact touching | False under existing strict-overlap convention | PASS |
+| UT-12 | UT | AC3; recorded-buffer support | Touching event slots with setup/turnaround | Effective occupied intervals overlap | PASS |
+| UT-13 | UT | AC2 | Future expiry with explicit timezone | Accepted and normalised to ISO UTC | PASS |
+| UT-14 | UT | AC2; existing technical validation | Expiry at/before current time | 400 error; future expiry required | PASS |
+| UT-15 | UT | AC2; existing technical validation | Malformed/missing-timezone/invalid-clock input | 400 error matching current implementation | PASS |
+
+Exact touching is an implementation convention, not a newly confirmed customer rule. Future expiry validation adds no expiry-before-event-start rule. Existing integration coverage continues to explicitly accept expiry after booking start.
+
+### Preserved levels and traceability
+The following IDs are documentation aliases for existing coverage, not renamed or newly created tests. Original TC-US038 names remain unchanged.
+
+| Test ID | Level | AC | Scenario | Expected Result | Result |
+|---|---|---|---|---|---|
+| IT-01 (TC-US038-01/02) | IT | AC1, AC2 | Create through API | Persist linked arrangement, actor and expiry without duplicate booking | PASS |
+| IT-02 (TC-US038-03) | IT | AC3 | Real search/review/approval with active hold | Overlapping venue use blocked, including buffers | PASS |
+| IT-03 (TC-US038-04/05/07) | IT | AC4, AC5, AC7 | Real database expiry exclusion | Expired hold stops blocking and does not confirm request | PASS |
+| IT-04 (TC-US038-06) | IT | AC6 | Notification recipient, deduplication and concurrency | Current Coordinator notified once on lazy detection; failure retryable | PASS |
+| IT-05 (TC-US038-08) | IT | AC8 | Persistence failure and competing operations | Rollback, no false success; safe retry/concurrency | PASS |
+| IT-DEMO | IT | Supporting fixture evidence | Repeat demo seed | Stable coherent fixtures and unrelated records preserved | PASS |
+| FE-01 (existing holds/review suites) | FE | AC1-AC4, AC6-AC8 | Component rendering and stubbed requests | Correct display, placement, read-only access, expiry detection and retry | PASS |
+| Manual-01 (steps 1-7 above) | Manual | AC1-AC8 | Browser acceptance flow | Actual role navigation, notifications, expiry, errors and responsive layout | Pending execution |
+
+Unit checks support AC2/3/4/7; AC1/5/6/8 depend on preserved API/database/frontend evidence. In particular, expired hold exclusion from availability is tested with PostgreSQL, not inferred solely from effectiveHoldStatus or an SQL-string assertion.
+
+### Current verification
+- Dedicated US-038 unit: 15 passed / 0 failed.
+- All backend tests selected by test:unit: 101 passed / 0 failed. This existing script also includes US-034 HTTP tests housed under unit; the new US-038 file is fully isolated.
+- Existing US-038 integration: 14 passed / 0 failed.
+- All backend integration: 146 passed / 0 failed.
+- Full backend: 247 passed / 0 failed.
+- Relevant frontend holds/review: 20 passed / 0 failed.
+- Full frontend: 82 passed / 0 failed.
+- Production build: PASS; existing Vite CJS deprecation warning. Existing US-021 frontend tests emit Vue component/property warnings while passing.
+- Initial full integration failed because the local database lacked US-021 preparation_status. Applied main's existing npm run init-db migration without editing schema or production files; integration rerun passed.
+- git diff --check and git diff --cached --check: PASS.
+
+Commands are listed above. No existing tests moved, removed or weakened. No commit or push performed. Manual browser execution remains pending; adding unit tests is not new evidence of browser acceptance or a replacement for integration coverage.
