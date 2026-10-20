@@ -133,7 +133,7 @@ async function run() {
   console.log('\n--- US-029: Registration window ---');
   const notYetOpenEvent = await createConfirmedEvent(db, {
     title: `${MARKER}NotYetOpenEvent`, organiserId, venueId, dayOffset: 12,
-    opensAt: 'now() + interval \'1 day\''
+    opensAt: new Date(Date.now() + 86400000).toISOString()
   });
   {
     const res = await fetch(`${BASE_URL}/api/events/${notYetOpenEvent.id}/register`, { method: 'POST', headers: authed(attendeeToken), body: JSON.stringify(validAttendee()) });
@@ -141,7 +141,7 @@ async function run() {
   }
   const closedEvent = await createConfirmedEvent(db, {
     title: `${MARKER}ClosedEvent`, organiserId, venueId, dayOffset: 13,
-    closesAt: 'now() - interval \'1 day\''
+    closesAt: new Date(Date.now() - 86400000).toISOString()
   });
   {
     const res = await fetch(`${BASE_URL}/api/events/${closedEvent.id}/register`, { method: 'POST', headers: authed(attendeeToken), body: JSON.stringify(validAttendee()) });
