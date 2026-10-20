@@ -9,6 +9,7 @@
             <router-link v-if="canCreateRequest" class="btn btn-accent btn-lg" to="/requests/new">Create Request</router-link>
             <router-link v-if="canCreateRequest" class="btn btn-outline-primary btn-lg" to="/requests/drafts">My event requests</router-link>
               <router-link v-if="role === 'venue_staff'" class="btn btn-outline-secondary btn-lg" to="/venue/bookings">{{ secondaryAction }}</router-link>
+              <router-link v-else-if="role === 'attendee'" class="btn btn-outline-secondary btn-lg" to="/attendee/events">{{ secondaryAction }}</router-link>
               <button v-else class="btn btn-outline-secondary btn-lg">{{ secondaryAction }}</button>
         </div>
       </div>
@@ -74,6 +75,7 @@
               <router-link v-if="role === 'venue_staff'" class="btn btn-outline-primary btn-sm w-100 mb-2" to="/venue/setup-turnaround">Configure Setup &amp; Turnaround Time</router-link>
               <router-link v-if="role === 'venue_staff'" class="btn btn-outline-primary btn-sm w-100 mb-2" to="/venue/preparation">Preparation Status</router-link>
               <router-link v-if="role === 'safety_officer'" class="btn btn-outline-primary btn-sm w-100 mb-2" to="/safety/checks">Operational Safety Checks</router-link>
+              <router-link v-if="role === 'attendee'" class="btn btn-primary w-100 mb-2" to="/attendee/events">Browse Events</router-link>
               <router-link v-if="canCreateRequest" class="btn btn-outline-primary btn-sm w-100 mb-2" to="/requests/new">Start Draft</router-link>
               <router-link v-if="canManageEquipment" class="btn btn-outline-primary btn-sm w-100 mb-2" to="/equipment">Manage Inventory</router-link>
               <router-link v-if="canManageEquipment" class="btn btn-outline-primary btn-sm w-100 mb-2" to="/equipment/new">Add Equipment</router-link>
@@ -87,6 +89,7 @@
               <router-link v-else-if="isSafetyOfficer" class="btn btn-outline-secondary btn-sm w-100 mb-2" :to="{ name: 'safety-checks', query: { view: 'history' } }">Completed Safety Reviews</router-link>
               <router-link v-else-if="isCoordinatorLead" class="btn btn-outline-secondary btn-sm w-100 mb-2" to="/coordinator-lead/assignments">{{ primaryRoleAction }}</router-link>
               <router-link v-else-if="canCreateRequest" class="btn btn-outline-secondary btn-sm w-100 mb-2" to="/requests/drafts">My Drafts</router-link>
+              <router-link v-else-if="role === 'attendee'" class="btn btn-outline-secondary btn-sm w-100 mb-2" to="/attendee/events">{{ primaryRoleAction }}</router-link>
               <button v-else class="btn btn-outline-secondary btn-sm w-100 mb-2">{{ primaryRoleAction }}</button>
               <router-link v-if="canCreateRequest" class="btn btn-outline-secondary btn-sm w-100 mb-2" to="/requests/submitted">My Submitted Requests</router-link>
               <router-link v-if="role === 'event_coordinator'" class="btn btn-outline-success btn-sm w-100" to="/bookings/batch">Create Venue Booking Requests</router-link>

@@ -27,6 +27,7 @@ import TechnicalSupportRequestsView from '../views/TechnicalSupportRequestsView.
 import EventChangeRequestView from '../views/EventChangeRequestView.vue'
 import VenueUnavailabilityView from '../views/VenueUnavailabilityView.vue'
 import VenueSetupTurnaroundView from '../views/VenueSetupTurnaroundView.vue'
+import AttendeeEventsView from '../views/AttendeeEventsView.vue'
 import AffectedBookingsView from '../views/AffectedBookingsView.vue'
 import ChangeRequestReviewView from '../views/ChangeRequestReviewView.vue'
 import PreparationStatusView from '../views/PreparationStatusView.vue'
@@ -36,6 +37,7 @@ const routes = [
   { path: '/venue/holds', name: 'venue-holds', component: VenueHoldsView, meta: { requiresAuth: true, roles: ['venue_staff', 'event_coordinator'] } },
   { path: '/venue/unavailability', name: 'venue-unavailability', component: VenueUnavailabilityView, meta: { requiresAuth: true, roles: ['venue_staff'] } },
   { path: '/venue/setup-turnaround', name: 'venue-setup-turnaround', component: VenueSetupTurnaroundView, meta: { requiresAuth: true, roles: ['venue_staff'] } },
+  { path: '/attendee/events', name: 'attendee-events', component: AttendeeEventsView, meta: { requiresAuth: true, roles: ['attendee'] } },
   { path: '/bookings/pending/:id', name: 'venue-booking-review', component: VenueBookingReviewView, meta: { requiresAuth: true, roles: ['venue_staff'] } },
   { path: '/requests/submitted', name: 'submitted-event-requests', component: SubmittedRequestsView, meta: { requiresAuth: true, roles: ['event_organiser'] } },
   { path: '/requests/submitted/:id', name: 'submitted-event-request', component: SubmittedRequestsView, meta: { requiresAuth: true, roles: ['event_organiser'] } },

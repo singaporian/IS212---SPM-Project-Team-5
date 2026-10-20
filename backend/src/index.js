@@ -26,6 +26,7 @@ app.use('/api/bookings', require('./bookingReview').router);
 app.use('/api/venue-holds', require('./venueHolds').router);
 app.use('/api/safety', require('./safetyChecks').router);
 app.use('/api/preparation', require('./preparation').router); // US-021
+app.use('/api/events', require('./registrations').router); // US-029/US-030
 
 app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
 

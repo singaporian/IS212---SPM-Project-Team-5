@@ -223,6 +223,22 @@ CREATE TABLE IF NOT EXISTS registrations (
   created_at timestamptz DEFAULT now()
 );
 
+-- US-029/US-030: who registered (so an Attendee can view/withdraw their own registration),
+-- and when the registration status last changed.
+ALTER TABLE registrations ADD COLUMN IF NOT EXISTS attendee_id uuid REFERENCES users(id) ON DELETE SET NULL;
+ALTER TABLE registrations ADD COLUMN IF NOT EXISTS updated_at timestamptz NOT NULL DEFAULT now();
+-- One active ("registered") registration per attendee per event; a withdrawn row doesn't
+-- block a later re-registration, since it no longer matches this partial index.
+CREATE UNIQUE INDEX IF NOT EXISTS registrations_event_attendee_active_unique
+  ON registrations (event_id, attendee_id)
+  WHERE attendee_id IS NOT NULL AND status = 'registered';
+
+-- US-029: registration capacity and window for a confirmed event open to Attendee registration.
+-- A NULL capacity means unlimited; NULL opens/closes means no restriction on that side.
+ALTER TABLE events ADD COLUMN IF NOT EXISTS registration_capacity integer CHECK (registration_capacity IS NULL OR registration_capacity > 0);
+ALTER TABLE events ADD COLUMN IF NOT EXISTS registration_opens_at timestamptz;
+ALTER TABLE events ADD COLUMN IF NOT EXISTS registration_closes_at timestamptz;
+
 -- Venue unavailability periods (maintenance)
 CREATE TABLE IF NOT EXISTS venue_unavailabilities (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
