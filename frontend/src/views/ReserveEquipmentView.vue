@@ -234,6 +234,12 @@ export default {
       this.eventsError = ''
       try {
         this.events = await listReservableEvents()
+        // US-025: links from a blocked deletion open the conflicting event directly.
+        const requested = this.$route && this.$route.query.eventId
+        if (requested && !this.selectedEventId && this.events.some(event => event.id === requested)) {
+          this.selectedEventId = requested
+          this.selectEvent()
+        }
       } catch (error) {
         this.eventsError = error.message || 'Unable to load events.'
       } finally {

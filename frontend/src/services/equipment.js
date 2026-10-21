@@ -22,7 +22,7 @@ async function request(url, options = {}, fallback) {
   }
   if (response.status === 401) throw new Error('Your session has expired. Sign in in another tab, then retry here to keep your input.')
   const data = await response.json().catch(() => ({}))
-  if (!response.ok) throw Object.assign(new Error(data.error || fallback), { status: response.status, code: data.code || null, conflict: data.conflict || null, impact: data.impact || null })
+  if (!response.ok) throw Object.assign(new Error(data.error || fallback), { status: response.status, code: data.code || null, conflict: data.conflict || null, impact: data.impact || null, conflicts: data.conflicts || null, equipment: data.equipment || null })
   return data
 }
 
@@ -53,4 +53,13 @@ export function getEquipment(id) {
 
 export function updateEquipment(id, payload) {
   return request(`/api/equipment/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(payload) }, 'Unable to save your changes. Please retry.')
+}
+
+// US-025: check for blocking reservations, then delete once the staff member has confirmed twice.
+export function getDeletionCheck(id) {
+  return request(`/api/equipment/${encodeURIComponent(id)}/deletion-check`, {}, 'Unable to check whether this equipment can be deleted. Please retry.')
+}
+
+export function deleteEquipment(id, payload) {
+  return request(`/api/equipment/${encodeURIComponent(id)}`, { method: 'DELETE', body: JSON.stringify(payload) }, 'Unable to delete the equipment record. Please retry.')
 }

@@ -271,4 +271,114 @@ router.put('/:id', async (req, res) => {
   }
 });
 
-module.exports = { router, validateEquipment, validateEquipmentUpdate, findAffectedReservations, presentEquipment, describeChanges, updateEquipment, EQUIPMENT_TYPES };
+// US-025: reservations that block deleting this item. Stricter than loadUpcomingReservations on purpose:
+// any event that is not released counts unless every one of its bookings, whatever their status, has ended.
+async function loadBlockingReservations(query, equipmentId) {
+  const result = await query(
+    `SELECT r.id, r.quantity, e.id AS event_id, e.title, e.status AS event_status,
+            min(b.start_time) FILTER (WHERE b.end_time > now()) AS starts_at
+     FROM equipment_reservations r
+     JOIN events e ON e.id = r.event_id
+     LEFT JOIN bookings b ON b.event_id = e.id
+     WHERE r.equipment_id = $1 AND e.status <> ALL($2::text[])
+     GROUP BY r.id, e.id
+     HAVING max(b.end_time) IS NULL OR max(b.end_time) > now()
+     ORDER BY min(b.start_time) FILTER (WHERE b.end_time > now()) NULLS LAST, e.title`,
+    [equipmentId, RELEASED_EVENT_STATUSES]
+  );
+  return result.rows.map(r => ({ id: r.id, eventId: r.event_id, title: r.title, eventStatus: r.event_status, quantity: r.quantity, startsAt: r.starts_at }));
+}
+
+function conflictMessage(name, conflicts) {
+  return `"${name}" cannot be deleted because it is reserved for ${conflicts.length === 1 ? 'an upcoming event' : conflicts.length + ' upcoming events'}: ` +
+    conflicts.map(c => `"${c.title}"`).join(', ') + '. Remove those reservations first, then try again.';
+}
+
+function validateDeletion(input) {
+  const body = input && typeof input === 'object' && !Array.isArray(input) ? input : {};
+  const confirmName = typeof body.confirmName === 'string' ? body.confirmName.trim() : '';
+  if (!confirmName) throw new Error('Type the equipment name to confirm the deletion.');
+  let expectedUpdatedAt = null;
+  if (body.expectedUpdatedAt !== undefined && body.expectedUpdatedAt !== null) {
+    if (typeof body.expectedUpdatedAt !== 'string' || Number.isNaN(Date.parse(body.expectedUpdatedAt))) throw new Error('Invalid record version.');
+    expectedUpdatedAt = body.expectedUpdatedAt;
+  }
+  return { confirmName, expectedUpdatedAt };
+}
+
+// Deletes the record and every past reservation of it (via ON DELETE CASCADE) in one transaction.
+// Blocked while any upcoming event holds a reservation, or if the record changed since the staff member reviewed it.
+async function deleteEquipment(query, id, data, actorId = null) {
+  // Locking the row serialises this with new reservations of the same item.
+  const item = (await query(`SELECT ${COLUMNS} FROM equipment WHERE id = $1 FOR UPDATE`, [id])).rows[0];
+  if (!item) throw httpError(404, 'Equipment not found. It may already have been removed.');
+  if (data.expectedUpdatedAt && new Date(item.updated_at).getTime() !== new Date(data.expectedUpdatedAt).getTime()) {
+    throw httpError(409, 'This record was changed by someone else after you opened it. Review the latest details before deleting.', { code: 'stale', equipment: presentEquipment(item) });
+  }
+  if (data.confirmName !== item.name.trim()) {
+    throw httpError(400, 'The name you typed does not match this equipment record. Nothing was deleted.', { code: 'name_mismatch' });
+  }
+
+  const conflicts = await loadBlockingReservations(query, id);
+  if (conflicts.length) {
+    throw httpError(409, conflictMessage(item.name, conflicts), { code: 'reserved', conflicts });
+  }
+
+  await query('DELETE FROM equipment WHERE id = $1', [id]);
+
+  const actor = actorId ? (await query('SELECT name FROM users WHERE id = $1', [actorId])).rows[0] : null;
+  const description = `"${item.name}" (${item.equipment_type || 'no type'}, ${plural(item.total_quantity, 'unit')})`;
+  await query(
+    `INSERT INTO notifications (user_id, message)
+     SELECT id, $1 FROM users WHERE role = 'technical_support_staff'`,
+    [`Equipment ${description} was removed from the inventory by ${actor ? actor.name : 'a technical support staff member'}.`]
+  );
+
+  return {
+    deleted: { id: item.id, name: item.name, equipment_type: item.equipment_type, total_quantity: item.total_quantity },
+    message: `${description.charAt(0).toUpperCase() + description.slice(1)} was deleted from the inventory.`
+  };
+}
+
+// What the delete dialog shows before asking for confirmation: the latest record and any blocking reservations.
+router.get('/:id/deletion-check', async (req, res) => {
+  if (!UUID.test(req.params.id)) return res.status(404).json({ error: 'Equipment not found. It may already have been removed.' });
+  try {
+    const item = (await db.query(`SELECT ${COLUMNS} FROM equipment WHERE id = $1`, [req.params.id])).rows[0];
+    if (!item) return res.status(404).json({ error: 'Equipment not found. It may already have been removed.' });
+    const conflicts = await loadBlockingReservations((sql, params) => db.query(sql, params), item.id);
+    res.json({ equipment: presentEquipment(item), conflicts, message: conflicts.length ? conflictMessage(item.name, conflicts) : '' });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Unable to check whether this equipment can be deleted. Please retry.' });
+  }
+});
+
+router.delete('/:id', async (req, res) => {
+  if (!UUID.test(req.params.id)) return res.status(404).json({ error: 'Equipment not found. It may already have been removed.' });
+  let data;
+  try { data = validateDeletion(req.body); }
+  catch (error) { return res.status(400).json({ error: error.message }); }
+
+  let client;
+  try {
+    client = await db.pool.connect();
+    await client.query('BEGIN');
+    const result = await deleteEquipment((sql, params) => client.query(sql, params), req.params.id, data, req.auth.sub);
+    await client.query('COMMIT');
+    res.json(result);
+  } catch (error) {
+    if (client) await client.query('ROLLBACK').catch(() => {});
+    if (!error.status) console.error(error);
+    res.status(error.status || 500).json({
+      error: error.status ? error.message : 'Unable to delete the equipment record. Nothing was changed. Please retry.',
+      ...(error.status && error.code ? { code: error.code } : {}),
+      ...(error.conflicts ? { conflicts: error.conflicts } : {}),
+      ...(error.equipment ? { equipment: error.equipment } : {})
+    });
+  } finally {
+    if (client) client.release();
+  }
+});
+
+module.exports = { router, validateEquipment, validateEquipmentUpdate, validateDeletion, findAffectedReservations, presentEquipment, describeChanges, updateEquipment, deleteEquipment, loadBlockingReservations, EQUIPMENT_TYPES };
