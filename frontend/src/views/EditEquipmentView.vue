@@ -119,6 +119,18 @@
       </div>
     </div>
 
+    <div v-if="record && !loadError" class="card danger-zone mt-4">
+      <div class="card-body d-flex flex-wrap justify-content-between align-items-center gap-3">
+        <div>
+          <h2 class="h6 mb-1 text-danger">Delete equipment</h2>
+          <p class="small text-muted mb-0">Permanently remove this record from the inventory. Equipment reserved for an upcoming event cannot be deleted.</p>
+        </div>
+        <button class="btn btn-outline-danger" type="button" :disabled="saving" @click="deleting = true"><i class="bi bi-trash"></i> Delete equipment</button>
+      </div>
+    </div>
+
+    <DeleteEquipmentDialog v-if="deleting" :equipment-id="record.id" @close="deleting = false" @deleted="onDeleted" />
+
     <template v-if="pendingLeave">
       <div class="modal d-block" tabindex="-1" role="dialog" aria-modal="true" aria-labelledby="leave-edit-title" @click.self="stayOnPage" @keydown.esc="stayOnPage">
         <div class="modal-dialog modal-dialog-centered">
@@ -145,6 +157,7 @@
 
 <script>
 import { getEquipment, updateEquipment } from '../services/equipment'
+import DeleteEquipmentDialog from '../components/DeleteEquipmentDialog.vue'
 
 const MAX_QUANTITY = 2147483647
 
@@ -174,6 +187,7 @@ function wholeNumberError(raw, label, { allowZero }) {
 
 export default {
   name: 'EditEquipmentView',
+  components: { DeleteEquipmentDialog },
   data() {
     return {
       record: null,
@@ -189,7 +203,8 @@ export default {
       successMessage: '',
       impact: null,
       leaving: false,
-      pendingLeave: null
+      pendingLeave: null,
+      deleting: false
     }
   },
   computed: {
@@ -361,6 +376,12 @@ export default {
       this.impact = null
       this.leave(target)
     },
+    // The record is gone, so unsaved edits are moot; the inventory shows the confirmation.
+    onDeleted(result) {
+      this.deleting = false
+      this.leaving = true
+      this.$router.push({ path: '/equipment', state: { deletedMessage: result.message } })
+    },
     formatDate(value) {
       return new Date(value).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
     }
@@ -370,5 +391,6 @@ export default {
 
 <style scoped>
 .form-panel { border: 0; box-shadow: 0 14px 35px rgba(25, 35, 60, .08) }
+.danger-zone { border: 1px solid rgba(var(--bs-danger-rgb), .35) }
 .status-panel { border: 1px solid var(--bs-border-color); border-radius: .5rem; padding: 1rem }
 </style>
