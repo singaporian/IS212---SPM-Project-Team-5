@@ -9,7 +9,9 @@ function load(file, dependencies) {
   const source = fs.readFileSync(path.join(__dirname, '../src/views', file), 'utf8');
   const script = parse(source).descriptor.script.content
     .replace(/import .* from .*\r?\n/g, '').replace('export default', 'return');
-  return new Function(...Object.keys(dependencies), script)(...Object.values(dependencies));
+  // US-025: both views register the delete dialog; a stub stands in for the stripped import.
+  const all = { DeleteEquipmentDialog: {}, ...dependencies };
+  return new Function(...Object.keys(all), script)(...Object.values(all));
 }
 
 function instantiate(options, extra = {}) {
