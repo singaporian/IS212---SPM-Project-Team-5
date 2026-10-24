@@ -53,6 +53,9 @@
             <!-- US-008: clickable only for approved events (Planning/Confirmed) -->
                <router-link v-if="canRequestChanges(item.status)" class="btn btn-primary btn-sm"
               :to="{ name: 'event-change-request', params: { id: item.id } }">Request changes</router-link>
+            <!-- US-031: before approval, edit the request directly -->
+               <router-link v-else-if="canEdit(item.status)" class="btn btn-outline-primary btn-sm"
+              :to="{ name: 'edit-submitted-request', params: { id: item.id } }">Edit request</router-link>
                 <span v-else :title="changeHint(item.status)" tabindex="0">
               <button type="button" class="btn btn-outline-secondary btn-sm" disabled>Request changes</button>
               </span>
