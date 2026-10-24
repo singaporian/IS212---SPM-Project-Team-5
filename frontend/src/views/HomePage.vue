@@ -89,7 +89,7 @@
               <router-link v-else-if="isSafetyOfficer" class="btn btn-outline-secondary btn-sm w-100 mb-2" :to="{ name: 'safety-checks', query: { view: 'history' } }">Completed Safety Reviews</router-link>
               <router-link v-else-if="isCoordinatorLead" class="btn btn-outline-secondary btn-sm w-100 mb-2" to="/coordinator-lead/assignments">{{ primaryRoleAction }}</router-link>
               <router-link v-else-if="canCreateRequest" class="btn btn-outline-secondary btn-sm w-100 mb-2" to="/requests/drafts">My Drafts</router-link>
-              <router-link v-else-if="role === 'attendee'" class="btn btn-outline-secondary btn-sm w-100 mb-2" to="/attendee/events">{{ primaryRoleAction }}</router-link>
+              <router-link v-else-if="role === 'attendee'" class="btn btn-outline-secondary btn-sm w-100 mb-2" to="/attendee/calendar">{{ primaryRoleAction }}</router-link>
               <button v-else class="btn btn-outline-secondary btn-sm w-100 mb-2">{{ primaryRoleAction }}</button>
               <router-link v-if="canCreateRequest" class="btn btn-outline-secondary btn-sm w-100 mb-2" to="/requests/submitted">My Submitted Requests</router-link>
               <router-link v-if="role === 'event_coordinator'" class="btn btn-outline-success btn-sm w-100" to="/bookings/batch">Create Venue Booking Requests</router-link>

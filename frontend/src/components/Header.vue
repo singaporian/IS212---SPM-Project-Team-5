@@ -9,7 +9,7 @@
       <div class="collapse navbar-collapse" id="nav">
         <ul class="navbar-nav ms-auto">
           <li class="nav-item"><router-link class="nav-link" to="/">Dashboard</router-link></li>
-          <li class="nav-item"><router-link class="nav-link" to="/events">Events</router-link></li>
+          <li class="nav-item"><router-link class="nav-link" :to="user.role === 'attendee' ? '/attendee/calendar' : '/events'">Events</router-link></li>
           <li v-if="canViewVenues" class="nav-item"><router-link class="nav-link" to="/venues">Venues</router-link></li>
         </ul>
       </div>
@@ -32,7 +32,7 @@
           </div>
         </div>
 
-      <div class="profile-area d-flex align-items-center" @click="toggleMenu" tabindex="0" @keydown.enter="toggleMenu">
+      <div class="profile-area d-flex align-items-center" @click.stop="toggleMenu" tabindex="0" @keydown.enter="toggleMenu">
         <div class="avatar">{{ initials }}</div>
         <div class="profile-info d-none d-md-block ms-2 text-white">
             <div class="fw-bold small">{{ user.name }}</div>
@@ -40,8 +40,7 @@
         </div>
 
         <div class="menu" v-if="menuOpen" @click.stop>
-          <a class="menu-item" href="#">Profile</a>
-          <a class="menu-item" href="#">Switch Role</a>
+          <button class="menu-item" type="button" @click.stop="profileOpen = true; menuOpen = false">Profile</button>
           <div class="menu-sep"></div>
           <button class="menu-item text-danger" @click="logout">Logout</button>
         </div>
@@ -49,6 +48,12 @@
       </div>
     </div>
   </nav>
+    <div v-if="profileOpen" class="profile-overlay" @click="profileOpen = false">
+      <section class="profile-dialog" role="dialog" aria-modal="true" aria-label="Profile" @click.stop>
+        <div class="d-flex justify-content-between align-items-center mb-3"><h2 class="h5 mb-0">Profile</h2><button class="btn-close" aria-label="Close profile" @click="profileOpen = false"></button></div>
+        <dl class="mb-0"><dt>Name</dt><dd>{{ user.name }}</dd><dt>Email</dt><dd>{{ user.email || 'Not available' }}</dd><dt>Role</dt><dd>{{ user.role }}</dd></dl>
+      </section>
+    </div>
 </template>
 
 <script>
@@ -59,6 +64,7 @@ export default {
   data() {
     return {
       menuOpen: false,
+      profileOpen: false,
       notificationsOpen: false,
       notifications: [],
       notificationsError: '',
@@ -136,10 +142,18 @@ export default {
     logout() {
       clearSession()
       this.$router.push('/login')
+    },
+    handleDocumentClick() {
+      this.notificationsOpen = false
+      this.menuOpen = false
     }
   }
   ,mounted() {
+    document.addEventListener('click', this.handleDocumentClick)
     this.loadNotifications()
+  },
+  beforeUnmount() {
+    document.removeEventListener('click', this.handleDocumentClick)
   }
 }
 </script>
@@ -194,4 +208,8 @@ export default {
 }
 .menu-item:hover { background: #f6f7fb }
 .menu-sep { height: 1px; background: #eef0f6; margin: 6px 0 }
+.profile-overlay { position: fixed; inset: 0; z-index: 2500; display: grid; place-items: center; padding: 1rem; background: rgba(15, 23, 42, .35); }
+.profile-dialog { width: min(100%, 380px); padding: 1.25rem; border-radius: .75rem; background: white; box-shadow: 0 12px 36px rgba(15, 23, 42, .2); }
+.profile-dialog dt { color: #64748b; font-size: .8rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
+.profile-dialog dd { margin: .15rem 0 .85rem; color: #1e293b; }
 </style>

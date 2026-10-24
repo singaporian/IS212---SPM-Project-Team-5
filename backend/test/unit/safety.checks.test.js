@@ -6,7 +6,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { parseSafetyDecision } = require('../../src/safetyChecks');
 
-// Only the three supported Safety Officer decisions are accepted, and comments
+// AC-039-003: only the three supported Safety Officer decisions are accepted, and comments
 // are trimmed before the decision is passed to the application logic.
 test('parses valid Safety Officer decisions and trims comments', () => {
   assert.deepEqual(parseSafetyDecision({ decision: 'approved', comments: '  Looks safe.  ' }), {
@@ -17,7 +17,7 @@ test('parses valid Safety Officer decisions and trims comments', () => {
   });
 });
 
-// Request Changes must identify whether the Venue arrangements, Technical
+// AC-039-004: Request Changes must identify whether the Venue arrangements, Technical
 // arrangements, or both need to be changed.
 test('requires a valid venue or technical scope for requested changes', () => {
   assert.deepEqual(parseSafetyDecision({ decision: 'changes_requested', changeScope: ['venue', 'venue', 'technical'] }).scopes, ['venue', 'technical']);
@@ -25,7 +25,7 @@ test('requires a valid venue or technical scope for requested changes', () => {
   assert.throws(() => parseSafetyDecision({ decision: 'changes_requested', changeScope: ['crowd'] }), /Select whether/);
 });
 
-// Unknown decisions are rejected before anything could be saved. Comments are
+// AC-039-006: unknown decisions are rejected before anything could be saved. Comments are
 // free-form text because the user story does not define a length restriction.
 test('rejects unknown decisions and accepts long comments', () => {
   assert.throws(() => parseSafetyDecision({ decision: 'pending' }), /Choose approve/);

@@ -7,7 +7,7 @@ const assert = require('node:assert/strict');
 const { occupiedInterval, overlaps } = require('../../src/venueOccupancy');
 const { Venue, Booking } = require('../../src/domain');
 
-// Setup and turnaround determine the full occupied interval of the original booking.
+// AC-037-002/007: setup and turnaround determine the original booking's affected interval.
 test('calculates the original booking occupied interval with setup and turnaround', () => {
   const booking = {
     start_time: '2027-02-10T10:00:00+08:00',
@@ -22,7 +22,7 @@ test('calculates the original booking occupied interval with setup and turnaroun
   });
 });
 
-// A booking is affected only when the unavailable period overlaps its occupied
+// AC-037-001/002/007: a booking is affected only when unavailability overlaps its occupied
 // interval. A period that starts exactly when the booking ends is not an overlap.
 test('detects an affected booking only when unavailability overlaps occupancy', () => {
   const booking = {
@@ -37,7 +37,7 @@ test('detects an affected booking only when unavailability overlaps occupancy', 
   assert.equal(overlaps(occupied, { start: occupied.end, end: '2027-02-10T06:00:00.000Z' }), false);
 });
 
-// A replacement venue must meet the event's capacity, facility, layout, and
+// AC-037-005: a replacement venue must meet the event's capacity, facility, layout, and
 // accessibility needs.
 test('checks replacement venue suitability independently', () => {
   const replacementVenue = new Venue({
@@ -58,7 +58,7 @@ test('checks replacement venue suitability independently', () => {
   assert.equal(replacementVenue.isSuitableFor({ expectedAttendance: 100 }), false);
 });
 
-// A replacement is a separate booking for the same event, so its status can
+// AC-037-006/007/008: a replacement is a separate booking for the same event, so its status can
 // change without changing the preserved original booking.
 test('keeps original and replacement bookings associated but independent', () => {
   const original = new Booking({

@@ -7,7 +7,7 @@ const assert = require('node:assert/strict');
 const { Booking, Venue } = require('../../src/domain');
 const { occupiedInterval, overlaps } = require('../../src/venueOccupancy');
 
-// Each venue booking should keep its own ID, venue, time, and event link.
+// AC-036-001/002/006: each venue booking keeps its own ID, venue, time, and event link.
 test('creates separate booking objects for multiple venues of one event', () => {
   const mainVenueBooking = new Booking({
     id: 'booking-main',
@@ -33,7 +33,7 @@ test('creates separate booking objects for multiple venues of one event', () => 
   assert.notEqual(breakoutVenueBooking.endTime.getTime(), undefined);
 });
 
-// Each venue is checked separately against the requested attendance and facilities.
+// AC-036-003: each venue is checked separately against attendance and facilities.
 test('checks each venue independently against its required capacity and facilities', () => {
   const auditorium = new Venue({ id: 'venue-a', name: 'Auditorium', capacity: 300, facilities: ['projector'] });
   const breakoutRoom = new Venue({ id: 'venue-b', name: 'Breakout Room', capacity: 50, facilities: [] });
@@ -42,7 +42,7 @@ test('checks each venue independently against its required capacity and faciliti
   assert.equal(breakoutRoom.isSuitableFor({ expectedAttendance: 80, requiredFacilities: ['projector'] }), false);
 });
 
-// Setup and turnaround time are part of the time that a venue is occupied.
+// AC-036-004: setup and turnaround time are included in venue conflict detection.
 test('detects a conflict for one venue using setup and turnaround buffers', () => {
   const auditoriumBooking = {
     venue_id: 'venue-a',
@@ -62,7 +62,7 @@ test('detects a conflict for one venue using setup and turnaround buffers', () =
   assert.equal(overlaps(occupiedInterval(auditoriumBooking), occupiedInterval(followingBooking)), true);
 });
 
-// Two bookings at different venues can happen at the same time without a conflict.
+// AC-036-003/004: simultaneous bookings at different venues do not conflict.
 test('does not treat simultaneous bookings in different venues as a conflict', () => {
   const mainVenueBooking = {
     venue_id: 'venue-a',
@@ -83,7 +83,7 @@ test('does not treat simultaneous bookings in different venues as a conflict', (
   assert.equal(sameVenue && overlaps(occupiedInterval(mainVenueBooking), occupiedInterval(breakoutVenueBooking)), false);
 });
 
-// Updating one booking must not change the status of another booking.
+// AC-036-007/008: updating one booking must not change another booking's status.
 test('changing one booking status does not change another booking status', () => {
   const approvedBooking = new Booking({ id: 'booking-a', eventId: 'event-1', venueId: 'venue-a', startTime: '2027-02-15T10:00:00+08:00', endTime: '2027-02-15T12:00:00+08:00', status: 'approved' });
   const pendingBooking = new Booking({ id: 'booking-b', eventId: 'event-1', venueId: 'venue-b', startTime: '2027-02-15T10:00:00+08:00', endTime: '2027-02-15T12:00:00+08:00', status: 'pending' });
