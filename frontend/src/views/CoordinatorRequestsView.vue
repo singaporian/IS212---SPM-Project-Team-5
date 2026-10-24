@@ -34,6 +34,7 @@
               <div><strong>Programme:</strong> {{ selected.programme || '—' }}</div>
               <div><strong>Registration Required:</strong> {{ selected.registration_required == null ? 'Not decided' : selected.registration_required ? 'Yes' : 'No' }}</div>
               <div><strong>Special Arrangements:</strong> {{ selected.special_arrangements || '—' }}</div>
+              <div v-if="selected.safety_comments" class="alert alert-warning mt-3 mb-0" role="status"><strong>Safety Officer requested changes:</strong> {{ selected.safety_comments }}<br><span class="small">Affected: {{ selected.safety_change_scope?.join(' and ') || 'See comments' }}</span><div class="mt-2 d-flex gap-2"><router-link v-if="selected.safety_change_scope?.includes('technical')" class="btn btn-sm btn-outline-primary" :to="{ name: 'support-requirements', query: { eventId: selected.id } }">Update Technical Requirements</router-link><router-link v-if="selected.safety_change_scope?.includes('venue')" class="btn btn-sm btn-outline-warning" :to="{ name: 'booking-requests', query: { eventId: selected.id } }">Review Venue Arrangements</router-link></div></div>
 
               <div v-if="ev.status === 'submitted'" class="mt-3 d-flex gap-2">
                 <button class="btn btn-sm btn-success" @click="openDecision(ev.id, 'approved')">Approve</button>
@@ -165,8 +166,9 @@ export default {
       else if (res.status === 403) await this.loadAssigned()
     }
   },
-  mounted() {
-    this.loadAssigned()
+  async mounted() {
+    await this.loadAssigned()
+    if (this.$route.query.eventId) await this.viewDetails(this.$route.query.eventId)
   }
 }
 </script>

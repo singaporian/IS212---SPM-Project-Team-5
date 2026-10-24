@@ -6,7 +6,7 @@
       <div v-if="message" class="alert alert-success">{{ message }}</div><div v-if="error" class="alert alert-danger">{{ error }}</div>
       <form @submit.prevent="save">
         <label class="form-label">Event<select v-model="eventId" class="form-select" required @change="loadExisting"><option value="">Select an assigned event</option><option v-for="event in events" :key="event.id" :value="event.id">{{ event.title }}</option></select></label>
-        <div v-if="eventId" class="mt-4"><div class="form-check mb-3"><input id="no-support" v-model="noSupportRequired" class="form-check-input" type="checkbox"><label class="form-check-label" for="no-support">No technical support required</label></div><h2 v-if="!noSupportRequired" class="h5">Equipment required</h2>
+        <div v-if="eventId" class="mt-4"><div v-if="safetyComments && safetyChangeScope.includes('technical')" class="alert alert-warning py-2"><strong>Safety Officer requested technical changes:</strong> {{ safetyComments }}</div><div class="form-check mb-3"><input id="no-support" v-model="noSupportRequired" class="form-check-input" type="checkbox"><label class="form-check-label" for="no-support">No technical support required</label></div><h2 v-if="!noSupportRequired" class="h5">Equipment required</h2>
           <div v-if="!noSupportRequired" v-for="item in equipment" :key="item.type" class="row g-2 align-items-center mb-2"><div class="col-md-4"><div class="form-check"><input :id="item.type" v-model="item.selected" class="form-check-input" type="checkbox"><label class="form-check-label" :for="item.type">{{ item.type }}</label></div></div><div class="col-md-3"><input v-model.number="item.quantity" class="form-control" type="number" min="1" :disabled="!item.selected" :aria-label="`${item.type} quantity`" placeholder="Quantity"></div><div v-if="item.type === 'Other' && item.selected" class="col-md-5"><input v-model.trim="item.details" class="form-control" type="text" maxlength="500" placeholder="Describe the equipment" aria-label="Other equipment details"></div></div>
           <label v-if="!noSupportRequired" class="form-label mt-3">Number of staff required<input v-model.number="staffRequired" class="form-control" type="number" min="0" required></label>
           <button class="btn btn-accent" type="submit" :disabled="saving">{{ saving ? 'Saving...' : 'Save requirements' }}</button>
@@ -23,7 +23,7 @@ function makeEquipment() { return EQUIPMENT_TYPES.map(type => ({ type, quantity:
 
 export default {
   name: 'SupportRequirementsView',
-  data() { return { events: [], eventId: '', equipment: makeEquipment(), staffRequired: 0, noSupportRequired: false, saving: false, message: '', error: '' } },
+  data() { return { events: [], eventId: '', equipment: makeEquipment(), staffRequired: 0, noSupportRequired: false, safetyComments: '', safetyChangeScope: [], saving: false, message: '', error: '' } },
   computed: {
     selectedEvent() { return this.events.find((event) => event.id === this.eventId) },
   },
@@ -39,13 +39,15 @@ export default {
       }
     },
     async loadExisting() {
-      this.message = ''; this.error = ''; this.equipment = makeEquipment(); this.staffRequired = 0; this.noSupportRequired = false
+      this.message = ''; this.error = ''; this.equipment = makeEquipment(); this.staffRequired = 0; this.noSupportRequired = false; this.safetyComments = ''; this.safetyChangeScope = []
       if (!this.eventId) return
       const response = await fetch(`/api/events/${this.eventId}/technical-support`, { headers: authHeaders() })
       const data = await response.json()
       if (!response.ok) { this.error = data.error || 'Unable to load requirements'; return }
       this.staffRequired = data.staff_required || 0
       this.noSupportRequired = data.support_required === false
+      this.safetyComments = data.safety_comments || ''
+      this.safetyChangeScope = data.safety_change_scope || []
       data.equipment_requirements.forEach(saved => { const item = this.equipment.find(entry => entry.type === saved.type); if (item) { item.selected = true; item.quantity = saved.quantity; item.details = saved.details || '' } })
     },
     async save() {

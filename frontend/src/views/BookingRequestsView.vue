@@ -35,6 +35,7 @@
               <div class="d-flex flex-column align-items-end gap-1"><span class="badge" :class="statusClass(request.status)">{{ statusLabel(request.status) }}</span><span v-if="request.affected_by_unavailability" class="badge bg-danger-subtle text-danger border border-danger-subtle">Affected by venue unavailability</span><span v-if="request.requires_reconsideration" class="badge bg-warning-subtle text-dark border border-warning-subtle">Event time changed: reconsider</span></div>
             </div>
             <div v-if="request.conflict_warning" class="small text-warning mt-3"><i class="bi bi-exclamation-triangle"></i> Conflict flagged for Venue Staff</div>
+            <div v-if="request.safety_comments && request.safety_change_scope?.includes('venue')" class="alert alert-warning py-2 mt-3 mb-0"><strong>Safety Officer requested venue changes:</strong> {{ request.safety_comments }}<router-link class="alert-link d-block mt-2" :to="{ name: 'batch-booking-request', query: { eventId: request.event_id, editBookingId: request.id } }">Edit this venue arrangement</router-link></div>
             <div v-if="selectedId === request.id" class="details mt-3" @click.stop>
               <div><strong>Setup:</strong> {{ request.setup_minutes }} minutes</div>
               <div><strong>Turnaround:</strong> {{ request.turnaround_minutes }} minutes</div>
@@ -84,7 +85,7 @@ export default {
       return { 'bg-warning text-dark': status === 'pending', 'bg-success': status === 'approved' || status === 'confirmed', 'bg-danger': status === 'rejected', 'bg-info text-dark': status === 'alternative_suggested' }
     }
   },
-  mounted() { this.loadRequests() }
+  async mounted() { await this.loadRequests(); if (this.$route.query.eventId && this.events.some((event) => event.id === this.$route.query.eventId)) this.eventFilter = this.$route.query.eventId }
 }
 </script>
 
