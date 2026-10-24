@@ -100,6 +100,31 @@ router.get('/registrable', ...attendeeOnly, async (req, res) => {
   }
 });
 
+// US-028/US-029: the Attendee's calendar contains only their active registrations.
+router.get('/registered', ...attendeeOnly, async (req, res) => {
+  try {
+    const result = await db.query(
+      `SELECT r.id AS registration_id, r.status AS registration_status,
+              e.id, e.title, e.description, e.preferred_start, e.preferred_end,
+              v.name AS venue_name, v.location AS venue_location
+       FROM registrations r
+       JOIN events e ON e.id = r.event_id
+       LEFT JOIN LATERAL (
+         SELECT v.name, v.location FROM bookings b JOIN venues v ON v.id = b.venue_id
+         WHERE b.event_id = e.id AND b.status IN ('approved', 'confirmed')
+         ORDER BY b.start_time ASC LIMIT 1
+       ) v ON true
+       WHERE r.attendee_id = $1 AND r.status = 'registered'
+       ORDER BY e.preferred_start ASC NULLS LAST`,
+      [req.auth.sub]
+    );
+    res.json(result.rows);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Unable to load your registered events' });
+  }
+});
+
 // US-029: register the signed-in Attendee for a confirmed event.
 router.post('/:id/register', ...attendeeOnly, async (req, res) => {
   if (!uuidPattern.test(req.params.id)) return res.status(404).json({ error: 'Event not found.' });
