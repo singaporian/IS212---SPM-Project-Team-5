@@ -3,7 +3,7 @@
     <router-link to="/" class="d-inline-block mb-3 small">&laquo; Back to Dashboard</router-link>
     <section class="card"><div class="card-body">
       <p class="eyebrow mb-1">Venue workspace</p>
-      <h1 class="h3">{{ editingBookingId ? 'Edit replacement venue request' : 'Submit venue bookings' }}</h1>
+      <h1 class="h3">{{ editingBookingId ? 'Edit venue arrangement' : 'Submit venue bookings' }}</h1>
       <p class="text-muted">Arrange multiple spaces for one event. Each venue is checked and reviewed independently.</p>
       <div v-if="success" class="alert alert-success">{{ success }} <router-link to="/bookings" class="alert-link ms-1">View all bookings</router-link></div>
       <form v-if="!showSummary && !success" class="booking-form" @submit.prevent="review">
@@ -18,7 +18,7 @@
             <div class="col-md-3"><label class="form-label">End date<input v-model="row.endDate" class="form-control" type="date" required></label></div>
             <div class="col-md-3"><label class="form-label">Start time<input v-model="row.startTime" class="form-control" type="time" required></label></div>
             <div class="col-md-3"><label class="form-label">End time<input v-model="row.endTime" class="form-control" type="time" required></label></div>
-            <div class="col-12"><label class="form-label">Venue requirements<textarea v-model="row.requirements" class="form-control" rows="2" placeholder="Layout, accessibility, facilities"></textarea></label></div>
+            <div class="col-12"><label class="form-label">Arrangement requests for Venue Staff<textarea v-model="row.requirements" class="form-control" rows="2" placeholder="Setup or accommodation requested, e.g. wheelchair-accessible seating near an accessible entrance."></textarea></label><div class="form-text">Venue Staff will assess whether the selected venue can support these requests.</div></div>
             <div v-if="row.error" class="col-12"><div class="alert alert-danger py-2 mb-0">{{ row.error }}</div></div>
           </div>
         </div>
@@ -88,7 +88,7 @@ export default {
       if (response.status === 401) { clearSession(); this.$router.push('/login'); return }
       if (response.status === 409) { this.conflicts = data.conflicts || []; this.conflicts.forEach(entry => { if (this.rows[entry.index]) this.rows[entry.index].conflicts = entry.conflicts }); this.error = data.error; this.submitting = false; return }
       if (!response.ok) { this.error = data.error || 'Unable to submit venue bookings. Your fields are still available.'; this.submitting = false; return }
-      this.success = this.editingBookingId ? `Replacement venue request updated for ${this.selectedEvent?.title || 'the event'}.` : `${data.bookings.length} venue booking requests submitted for ${this.selectedEvent?.title || 'the event'}.`
+      this.success = this.editingBookingId ? `Venue arrangement updated and sent back to Venue Staff for review for ${this.selectedEvent?.title || 'the event'}.` : `${data.bookings.length} venue booking requests submitted for ${this.selectedEvent?.title || 'the event'}.`
       this.submitting = false
     }
   },
