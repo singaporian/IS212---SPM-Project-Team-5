@@ -1,7 +1,7 @@
 <template>
   <div class="card">
     <div class="card-body">
-      <h5 class="card-title">{{ $route.params.id ? "Edit Event Draft" : "New Event Request" }}</h5>
+      <h5 class="card-title">{{ editing ? "Edit Submitted Request" : $route.params.id ? "Edit Event Draft" : "New Event Request" }}</h5>
       <p class="text-muted small">Fill in what you know now. Fields marked * are required before submission.</p>
       <div v-if="loading" role="status">Loading draft...</div>
       <div v-if="loadError" class="alert alert-danger" role="alert">
@@ -102,11 +102,12 @@
           </div>
         </div>
         <div class="mt-4 d-flex gap-2 align-items-center">
-          <button type="submit" class="btn btn-primary" :disabled="saving">{{ saving ? 'Saving...' : 'Save Draft' }}</button>
-          <button type="button" class="btn btn-success" :disabled="saving || submitting || submitted" @click="submitForReview">
+          <button type="submit" class="btn btn-primary" :disabled="saving">{{ saving ? 'Saving...' : editing ? 'Save Changes' : 'Save Draft' }}</button>
+          <router-link v-if="editing" :to="{ name: 'submitted-event-request', params: { id: draftId } }">Cancel</router-link>
+          <button v-if="!editing" type="button" class="btn btn-success" :disabled="saving || submitting || submitted" @click="submitForReview">
             {{ submitting ? 'Submitting...' : 'Submit for Review' }}
           </button>
-          <router-link to="/requests/drafts">My Drafts</router-link>
+          <router-link v-if="!editing" to="/requests/drafts">My Drafts</router-link>
         </div>
         </fieldset>
         <p v-if="saveError && !Object.keys(saveFields).length && !attendanceError && !endError" class="text-danger mt-3" role="alert">{{ saveError }}</p>
@@ -147,6 +148,8 @@ const TIME_OPTIONS = (() => {
 
 export default {
   name: 'EventRequestForm',
+  // US-031: 'edit' reuses this form to edit a request that is Submitted or Returned for clarification.
+  props: { mode: { type: String, default: 'draft' } },
   data() {
     return {
       TIME_OPTIONS,
@@ -222,7 +225,7 @@ export default {
       this.loading = true
       this.loadError = ''
       try {
-        const draft = await draftRequest('/' + id)
+        const draft = await draftRequest('/' + id, {}, this.editing ? '/api/requests' : undefined)
         if (this.draftId !== id) return
         this.form = { ...this.form, ...draft.draft_data }
         this.savedVersion = draft.version || ''
@@ -246,8 +249,14 @@ export default {
       const snapshot = JSON.stringify(this.form)
       this.saving = true
       try {
-        const saved = await draftRequest('/' + id, { method: 'PUT', body: snapshot })
+        const saved = await draftRequest('/' + id, { method: 'PUT', body: snapshot }, this.editing ? '/api/requests' : undefined)
         if (this.draftId !== id) return
+        if (this.editing) {
+          this.savedForm = snapshot
+          this.saving = false // lets the page leave without the unsaved-changes prompt
+          await this.$router.replace({ name: 'submitted-event-request', params: { id }, query: { updated: '1' } })
+          return
+        }
         this.savedVersion = saved.version || ''
         this.savedForm = snapshot
         this.submitError = ''
@@ -294,6 +303,7 @@ export default {
     }
   },
   computed: {
+    editing() { return this.mode === 'edit' },
     hasUnsavedChanges() { return JSON.stringify(this.form) !== this.savedForm },
     attendanceError() {
       const raw = this.form.expectedAttendance

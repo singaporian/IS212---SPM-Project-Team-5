@@ -37,3 +37,4 @@ Every refactoring the team makes is recorded here: one row per refactoring commi
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | R-01 | 2026-10-17 | US-032 | `moved` calculated but unused; `movesEvent()` called twice | Remove Dead Code / reuse variable | `backend/src/changeRequests.js` | `movesEvent(event)` calls: 2 → 1 | 11/11 → 11/11 | `<hash>` | Wenxuan |
 | R-02 | 2026-10-17 | US-032 | Decision handler mixed SQL building with business steps | Extract Function: `buildEventUpdate()` | `backend/src/changeRequests.js` | Handler: 83 → 77 lines | 11/11 → 11/11 | `<hash>` | Wenxuan |
+| R-03 | 2026-10-24 | US-031 | Same 10 column values built twice (submit route and edit route) | Extract Function: `eventColumnValues(data)` | `backend/src/submissions.js` | Copies of the column-value code: 2 → 1 | <n>/<n> → <n>/<n> | `<hash>` | Wenxuan |

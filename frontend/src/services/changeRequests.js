@@ -2,7 +2,7 @@ import { authHeaders } from './auth'
 
 // US-008 (AC-008-001): change requests only apply once the Coordinator has approved the event.
 // Must match CHANGE_REQUEST_STATUSES in backend/src/domain/index.js.
-export const CHANGE_REQUEST_STATUSES = ['planning', 'confirmed']
+export const CHANGE_REQUEST_STATUSES = ['approved', 'planning', 'confirmed']
 
 export function canRequestChanges(status) {
   return CHANGE_REQUEST_STATUSES.includes(status)

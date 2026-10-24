@@ -4,13 +4,16 @@ const EVENT_STATUS = Object.freeze({
   DRAFT: 'draft',
   SUBMITTED: 'submitted',
   CLARIFICATION_REQUESTED: 'clarification_requested',
-  PLANNING: 'planning',        // approved by Coordinator
+  APPROVED: 'approved',        // written by PATCH /api/events/:id/decision when the Coordinator approves
+  PLANNING: 'planning',        // approved by Coordinator; also set again after a Safety "changes_requested"
   REJECTED: 'rejected',
   CONFIRMED: 'confirmed',
   COMPLETED: 'completed',
   CANCELLED: 'cancelled'
 });
-const CHANGE_REQUEST_STATUSES = [EVENT_STATUS.PLANNING, EVENT_STATUS.CONFIRMED];
+const CHANGE_REQUEST_STATUSES = [EVENT_STATUS.APPROVED, EVENT_STATUS.PLANNING, EVENT_STATUS.CONFIRMED];
+// US-031: before approval the Organiser edits the request directly instead of sending a change request.
+const EDITABLE_STATUSES = [EVENT_STATUS.SUBMITTED, EVENT_STATUS.CLARIFICATION_REQUESTED];
 // US-034: requests a Coordinator still works on, so the Lead can assign or reassign them.
 // 'approved' is what the Coordinator decision endpoint writes; 'planning' is its domain name.
 const ACTIVE_STATUSES = Object.freeze([EVENT_STATUS.SUBMITTED, EVENT_STATUS.CLARIFICATION_REQUESTED, 'approved', EVENT_STATUS.PLANNING, EVENT_STATUS.CONFIRMED]);
@@ -85,6 +88,11 @@ class EventRequest {
 
   canRequestChanges() {
      return CHANGE_REQUEST_STATUSES.includes(this.status);// AC-008-001: only a submitted event can receive a change request, US-34:Before approval, the Organiser edits the request directly (US-034).
+  }
+
+  // US-031 (AC-031-001): editable while Submitted or returned for clarification, not once approved.
+  canEdit() {
+    return EDITABLE_STATUSES.includes(this.status);
   }
 
     // US-010 (AC-010-001): Expected Attendance and Duration are the only "major" aspects.
