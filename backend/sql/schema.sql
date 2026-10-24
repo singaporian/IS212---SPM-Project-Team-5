@@ -88,6 +88,9 @@ CREATE TABLE IF NOT EXISTS events (
 -- Current coordinator for each event request: set by the Event Coordinator Lead (US-034), enforced by coordinator routes (US-012)
 ALTER TABLE events ADD COLUMN IF NOT EXISTS assigned_coordinator_id uuid REFERENCES users(id) ON DELETE SET NULL;
 
+-- US-031: the Coordinator's note when returning a request for clarification (optional).
+ALTER TABLE events ADD COLUMN IF NOT EXISTS clarification_note text;
+
 -- Preserve incomplete draft fields without coercing dates, placeholders or tri-state choices.
 ALTER TABLE events ADD COLUMN IF NOT EXISTS draft_data jsonb NOT NULL DEFAULT '{}'::jsonb;
 

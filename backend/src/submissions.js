@@ -2,6 +2,7 @@ const express = require('express');
 const db = require('./db');
 const auth = require('./auth');
 const { validateDraft } = require('./drafts');
+const { EventRequest } = require('./domain');
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const placeholders = ['none', 'not required', 'not decided'];
@@ -153,11 +154,78 @@ router.get('/requests', async (req, res) => {
 
 router.get('/requests/:id', async (req, res) => {
   try {
-    const result = await db.query(`SELECT id, title, draft_data, status, submitted_at FROM events
+    const result = await db.query(`SELECT id, title, draft_data, status, submitted_at, clarification_note FROM events
       WHERE id = $1 AND organiser_id = $2 AND status <> 'draft'`, [req.params.id, req.auth.sub]);
     if (!result.rows[0]) return res.status(404).json({ error: 'Request not found.' });
     res.json(result.rows[0]);
   } catch (error) { res.status(500).json({ error: 'Unable to load submitted request. Please retry.' }); }
+});
+
+// US-031 (AC-031-001/002/003): the Organiser edits a request before approval. Same validation as
+// submission; the edit is saved straight away and is not a change request.
+router.put('/requests/:id', async (req, res) => {
+  let client;
+  try {
+    client = await db.pool.connect();
+    await client.query('BEGIN');
+    const result = await client.query(`SELECT * FROM events WHERE id = $1 AND organiser_id = $2 AND status <> 'draft' FOR UPDATE`,
+      [req.params.id, req.auth.sub]);
+    if (!result.rows[0]) {
+      const error = new Error('Request not found.'); error.status = 404; throw error;
+    }
+    if (!EventRequest.fromRow(result.rows[0]).canEdit()) {
+      const error = new Error('Only requests that are Submitted or Returned for clarification can be edited. Send a change request instead.');
+      error.status = 409; throw error;
+    }
+    const data = validateSubmission(req.body);
+    const accessibility = optionalText(data.accessibilityNeeds);
+    const equipment = optionalText(data.equipmentRequirements);
+    const updated = await client.query(`UPDATE events SET
+      title = $1, purpose = $2, description = $3, preferred_start = $4::timestamptz,
+      preferred_end = $5::timestamptz, expected_attendance = $6, venue_layout_preference = $7,
+      accessibility_requirements = $8::jsonb, equipment_requirements = $9::jsonb,
+      registration_required = $10, draft_data = $13::jsonb, updated_at = now()
+      WHERE id = $11 AND organiser_id = $12
+      RETURNING id, status, draft_data`, [data.eventName, data.purpose, data.description,
+      `${data.startDate}T${data.startTime}:00+08:00`, `${data.endDate}T${data.endTime}:00+08:00`,
+      Number(data.expectedAttendance.trim()), data.venueRequirements,
+      JSON.stringify(accessibility ? { notes: accessibility } : {}), JSON.stringify(equipment ? [equipment] : []),
+      data.registrationNeeds === 'not_decided' ? null : data.registrationNeeds === 'yes', req.params.id, req.auth.sub, JSON.stringify(data)]);
+    await client.query('COMMIT');
+    res.json(updated.rows[0]);
+  } catch (error) {
+    if (client) await client.query('ROLLBACK').catch(() => {});
+    if (!error.status) console.error('Request edit failed:', error.code || error.message);
+    res.status(error.status || 500).json({
+      error: error.status ? error.message : 'Unable to save your changes. Please retry.',
+      ...(error.fields ? { fields: error.fields } : {})
+    });
+  } finally {
+    if (client) client.release();
+  }
+});
+
+// US-031 (AC-031-005): resubmitting a returned request sets it back to Submitted. No limit on returns.
+router.post('/requests/:id/resubmit', async (req, res) => {
+  try {
+    const result = await db.query(`UPDATE events SET status = 'submitted', updated_at = now()
+      WHERE id = $1 AND organiser_id = $2 AND status = 'clarification_requested'
+      RETURNING id, status`, [req.params.id, req.auth.sub]);
+    if (!result.rows[0]) return res.status(409).json({ error: 'Only a request returned for clarification can be resubmitted.' });
+    res.json(result.rows[0]);
+  } catch (error) { res.status(500).json({ error: 'Unable to resubmit the request. Please retry.' }); }
+});
+
+// US-031 (AC-031-006): the assigned Coordinator returns a Submitted request for clarification, with an optional note.
+router.patch('/events/:id/return', auth.authenticate, auth.requireRoles('event_coordinator'), async (req, res) => {
+  const note = typeof req.body?.note === 'string' ? req.body.note.trim() : '';
+  try {
+    const result = await db.query(`UPDATE events SET status = 'clarification_requested', clarification_note = $3, updated_at = now()
+      WHERE id = $1 AND assigned_coordinator_id = $2 AND status = 'submitted'
+      RETURNING id, status, clarification_note`, [req.params.id, req.auth.sub, note || null]);
+    if (!result.rows[0]) return res.status(404).json({ error: 'Request not found, not assigned to you, or no longer Submitted.' });
+    res.json(result.rows[0]);
+  } catch (error) { res.status(500).json({ error: 'Unable to return the request. Please retry.' }); }
 });
 
 module.exports = { router, validateSubmission };

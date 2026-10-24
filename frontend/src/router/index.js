@@ -41,6 +41,7 @@ const routes = [
   { path: '/bookings/pending/:id', name: 'venue-booking-review', component: VenueBookingReviewView, meta: { requiresAuth: true, roles: ['venue_staff'] } },
   { path: '/requests/submitted', name: 'submitted-event-requests', component: SubmittedRequestsView, meta: { requiresAuth: true, roles: ['event_organiser'] } },
   { path: '/requests/submitted/:id', name: 'submitted-event-request', component: SubmittedRequestsView, meta: { requiresAuth: true, roles: ['event_organiser'] } },
+  { path: '/requests/submitted/:id/edit', name: 'edit-submitted-request', component: NewEventRequestView, props: { mode: 'edit' }, meta: { requiresAuth: true, roles: ['event_organiser'] } }, // US-031
   { path: '/requests/drafts', name: 'event-drafts', component: DraftsView, meta: { requiresAuth: true, roles: ['event_organiser'] } },
   { path: '/requests/drafts/:id', name: 'edit-event-draft', component: NewEventRequestView, meta: { requiresAuth: true, roles: ['event_organiser'] } },
   { path: '/login', name: 'login', component: LoginView, meta: { guestOnly: true } },
