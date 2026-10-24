@@ -4,13 +4,14 @@ const EVENT_STATUS = Object.freeze({
   DRAFT: 'draft',
   SUBMITTED: 'submitted',
   CLARIFICATION_REQUESTED: 'clarification_requested',
-  PLANNING: 'planning',        // approved by Coordinator
+  APPROVED: 'approved',        // written by PATCH /api/events/:id/decision when the Coordinator approves
+  PLANNING: 'planning',        // approved by Coordinator; also set again after a Safety "changes_requested"
   REJECTED: 'rejected',
   CONFIRMED: 'confirmed',
   COMPLETED: 'completed',
   CANCELLED: 'cancelled'
 });
-const CHANGE_REQUEST_STATUSES = [EVENT_STATUS.PLANNING, EVENT_STATUS.CONFIRMED];
+const CHANGE_REQUEST_STATUSES = [EVENT_STATUS.APPROVED, EVENT_STATUS.PLANNING, EVENT_STATUS.CONFIRMED];
 // US-031: before approval the Organiser edits the request directly instead of sending a change request.
 const EDITABLE_STATUSES = [EVENT_STATUS.SUBMITTED, EVENT_STATUS.CLARIFICATION_REQUESTED];
 // US-034: requests a Coordinator still works on, so the Lead can assign or reassign them.
