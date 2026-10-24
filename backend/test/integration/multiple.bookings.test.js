@@ -5,6 +5,11 @@ const { Pool } = require('pg');
 const jwt = require('jsonwebtoken');
 const db = require('../../src/db');
 
+// US-036 — Multiple Venue Bookings
+// These integration tests verify the real booking API, PostgreSQL persistence,
+// and independent Venue Staff decisions. AC references below identify the
+// behavior proven by each database/API assertion.
+
 const passwordSecret = process.env.JWT_SECRET || 'local-development-secret-change-me';
 
 function token(userId, role) {
@@ -18,7 +23,7 @@ function token(userId, role) {
 // [AC-036-008: Venue Staff can review each booking independently]
 // This integration test uses an isolated PostgreSQL schema and removes it in
 // finally so test bookings never remain in the developer or CI database.
-test('US-036 creates multiple independent venue bookings for one event and decides them separately', async () => {
+test('US-036 creates multiple independent venue bookings for one event and decides them separately', async (t) => {
   const originalPool = db.pool;
   const originalQuery = db.query;
   const schema = `us036_test_${randomUUID().replaceAll('-', '')}`;
@@ -26,6 +31,8 @@ test('US-036 creates multiple independent venue bookings for one event and decid
   let server;
 
   try {
+    // Create a private schema so this test can exercise real PostgreSQL behavior
+    // without reading or changing the project's normal tables.
     await originalPool.query(`CREATE SCHEMA "${schema}"`);
     for (const table of ['users', 'events', 'venues', 'bookings', 'notifications']) {
       await originalPool.query(`CREATE TABLE "${schema}".${table} (LIKE public.${table} INCLUDING ALL)`);
@@ -41,6 +48,7 @@ test('US-036 creates multiple independent venue bookings for one event and decid
     db.pool = pool;
     db.query = (sql, params) => pool.query(sql, params);
 
+    // Create the users, event, and two venues needed for this booking workflow.
     const coordinatorId = randomUUID();
     const venueStaffId = randomUUID();
     const organiserId = randomUUID();
@@ -72,6 +80,8 @@ test('US-036 creates multiple independent venue bookings for one event and decid
     const venueStaffToken = token(venueStaffId, 'venue_staff');
 
     async function request(path, options = {}) {
+      // Send a real HTTP request through Express, including the role token used
+      // by the route's authorization middleware.
       const response = await fetch(base + path, {
         ...options,
         headers: {
@@ -82,42 +92,42 @@ test('US-036 creates multiple independent venue bookings for one event and decid
       return { status: response.status, body: await response.json() };
     }
 
-    // Submit two venue rows in one batch for the same event.
-    const batch = await request('/api/bookings/requests/batch', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${coordinatorToken}` },
-      body: JSON.stringify({
-        eventId,
-        bookings: [
+    let batch;
+    let firstBooking;
+
+    await t.test('AC-036-001/002/005/006: submit multiple venue rows for one event', async () => {
+      batch = await request('/api/bookings/requests/batch', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${coordinatorToken}` },
+        body: JSON.stringify({ eventId, bookings: [
           { venueId: venueOneId, requiredCapacity: 120, startTime: '2027-01-15T10:00:00+08:00', endTime: '2027-01-15T12:00:00+08:00', setupMinutes: 30, turnaroundMinutes: 45, venueRequirements: { description: 'Main programme' } },
           { venueId: venueTwoId, requiredCapacity: 60, startTime: '2027-01-15T10:00:00+08:00', endTime: '2027-01-15T12:00:00+08:00', setupMinutes: 20, turnaroundMinutes: 30, venueRequirements: { description: 'Breakout session' } }
-        ]
-      })
+        ] })
+      });
+      assert.equal(batch.status, 201);
+      assert.equal(batch.body.bookings.length, 2);
+      assert.ok(batch.body.bookings.every((booking) => booking.event_id === eventId));
+      assert.deepEqual(new Set(batch.body.bookings.map((booking) => booking.venue_id)), new Set([venueOneId, venueTwoId]));
     });
-    assert.equal(batch.status, 201);
-    assert.equal(batch.body.bookings.length, 2);
-    assert.ok(batch.body.bookings.every((booking) => booking.event_id === eventId));
-    assert.deepEqual(new Set(batch.body.bookings.map((booking) => booking.venue_id)), new Set([venueOneId, venueTwoId]));
 
-    // AC-036-003/004: confirm each venue was independently checked and stored
-    // with its own required capacity and booking association.
-    const stored = await pool.query('SELECT id, event_id, venue_id, status, required_capacity FROM bookings ORDER BY created_at');
-    assert.equal(stored.rows.length, 2);
-    assert.deepEqual(stored.rows.map((booking) => booking.required_capacity).sort((a, b) => a - b), [60, 120]);
-
-    // AC-036-008: approve only the first booking and verify the second remains
-    // pending, proving decisions do not leak between venue bookings.
-    const firstBooking = batch.body.bookings[0];
-    const decision = await request(`/api/bookings/${firstBooking.id}/decision`, {
-      method: 'PATCH',
-      headers: { Authorization: `Bearer ${venueStaffToken}` },
-      body: JSON.stringify({ decision: 'approved' })
+    await t.test('AC-036-003/004: persist each venue row with independent capacity data', async () => {
+      const stored = await pool.query('SELECT id, event_id, venue_id, status, required_capacity FROM bookings ORDER BY created_at');
+      assert.equal(stored.rows.length, 2);
+      assert.deepEqual(stored.rows.map((booking) => booking.required_capacity).sort((a, b) => a - b), [60, 120]);
     });
-    assert.equal(decision.status, 200);
 
-    const statuses = await pool.query('SELECT venue_id, status FROM bookings ORDER BY venue_id');
-    assert.equal(statuses.rows.find((row) => row.venue_id === firstBooking.venue_id).status, 'approved');
-    assert.equal(statuses.rows.find((row) => row.venue_id !== firstBooking.venue_id).status, 'pending');
+    await t.test('AC-036-007/008: decide one booking without changing the other', async () => {
+      firstBooking = batch.body.bookings[0];
+      const decision = await request(`/api/bookings/${firstBooking.id}/decision`, {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${venueStaffToken}` },
+        body: JSON.stringify({ decision: 'approved' })
+      });
+      assert.equal(decision.status, 200);
+      const statuses = await pool.query('SELECT venue_id, status FROM bookings ORDER BY venue_id');
+      assert.equal(statuses.rows.find((row) => row.venue_id === firstBooking.venue_id).status, 'approved');
+      assert.equal(statuses.rows.find((row) => row.venue_id !== firstBooking.venue_id).status, 'pending');
+    });
   } finally {
     if (server) await new Promise((resolve) => server.close(resolve));
     db.pool = originalPool;
