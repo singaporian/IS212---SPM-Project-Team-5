@@ -58,7 +58,7 @@ The page is rendered on its own; the API call is replaced by a stub returning on
 
 | ID | Page / method | Scenario | Expected | AC |
 | --- | --- | --- | --- | --- |
-| UT-03 | `SubmittedRequestsView.vue` | request in each status | "Edit request" shows only for `submitted` and `clarification_requested` | AC-031-001 |
+| UT-03 | `SubmittedRequestsView.vue` | request in each status, on the list and on its own page | "Edit request" shows only for `submitted` and `clarification_requested` | AC-031-001 |
 | UT-04 | `SubmittedRequestsView.vue` | returned request with a note | shows "Returned for clarification" and the note | AC-031-006 |
 
 ### Integration — `backend/test/integration/request.edits.test.js`

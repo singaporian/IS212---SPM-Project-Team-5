@@ -12,13 +12,14 @@ const { renderToString } = require('@vue/server-renderer');
 const descriptor = parse(fs.readFileSync(path.join(__dirname, '../src/views/SubmittedRequestsView.vue'), 'utf8')).descriptor;
 const script = descriptor.script.content.replace(/import .* from .*\r?\n/g, '').replace('export default', 'return');
 
-// Renders the detail page for one request and returns the HTML.
-async function renderRequest(request) {
-  const payload = { id: 'event', title: 'Orientation', submitted_at: '2099-01-01T00:00:00Z', draft_data: {}, ...request };
+// Renders one request, on its own page (default) or as a row of the list, and returns the HTML.
+async function renderRequest(request, { list = false } = {}) {
+  const row = { id: 'event', title: 'Orientation', submitted_at: '2099-01-01T00:00:00Z', draft_data: {}, ...request };
+  const payload = list ? [row] : row;
   const fetchStub = async () => ({ ok: true, json: async () => payload });
   const options = new Function('fetch', 'authHeaders', 'RequestNavigation', 'canRequestChanges', script)(
     fetchStub, () => ({}), {}, status => ['approved', 'planning', 'confirmed'].includes(status));
-  const state = { ...options.data(), $route: { params: { id: 'event' }, query: {} } };
+  const state = { ...options.data(), $route: { params: list ? {} : { id: 'event' }, query: {} } };
   for (const [name, method] of Object.entries(options.methods)) state[name] = method.bind(state);
   await state.load();
   const app = createSSRApp({ render: compile(descriptor.template.content), data: () => state });
@@ -28,12 +29,14 @@ async function renderRequest(request) {
   return renderToString(app);
 }
 
-test('[UT-03] the Edit request link shows only for submitted and returned requests', async () => {
-  for (const status of ['submitted', 'clarification_requested']) {
-    assert.ok((await renderRequest({ status })).includes('Edit request'), status);
-  }
-  for (const status of ['approved', 'planning', 'confirmed', 'rejected']) {
-    assert.ok(!(await renderRequest({ status })).includes('Edit request'), status);
+test('[UT-03] the Edit request link shows only for submitted and returned requests, on the list and the request page', async () => {
+  for (const list of [false, true]) {
+    for (const status of ['submitted', 'clarification_requested']) {
+      assert.ok((await renderRequest({ status }, { list })).includes('Edit request'), `${status} list=${list}`);
+    }
+    for (const status of ['approved', 'planning', 'confirmed', 'rejected']) {
+      assert.ok(!(await renderRequest({ status }, { list })).includes('Edit request'), `${status} list=${list}`);
+    }
   }
 });
 
