@@ -49,15 +49,15 @@
             <div class="small text-muted">Submitted {{ formatDate(item.submitted_at) }}</div>
           </div>
             <div class="d-flex align-items-center gap-2">
-              <span class="badge" :class="item.status === 'submitted' ? 'bg-success' : 'bg-primary'">{{ statusLabel(item.status) }}</span>
+              <span class="badge list-badge" :class="item.status === 'submitted' ? 'bg-success' : 'bg-primary'">{{ statusLabel(item.status) }}</span>
             <!-- US-008: clickable only for approved events (Planning/Confirmed) -->
-               <router-link v-if="canRequestChanges(item.status)" class="btn btn-primary btn-sm"
+               <router-link v-if="canRequestChanges(item.status)" class="btn btn-primary btn-sm list-action"
               :to="{ name: 'event-change-request', params: { id: item.id } }">Request changes</router-link>
             <!-- US-031: before approval, edit the request directly -->
-               <router-link v-else-if="canEdit(item.status)" class="btn btn-outline-primary btn-sm"
+               <router-link v-else-if="canEdit(item.status)" class="btn btn-primary btn-sm list-action"
               :to="{ name: 'edit-submitted-request', params: { id: item.id } }">Edit request</router-link>
                 <span v-else :title="changeHint(item.status)" tabindex="0">
-              <button type="button" class="btn btn-outline-secondary btn-sm" disabled>Request changes</button>
+              <button type="button" class="btn btn-outline-secondary btn-sm list-action" disabled>Request changes</button>
               </span>
           </div>
         </li>
@@ -149,3 +149,9 @@ export default {
   }
 }
 </script>
+
+<style scoped>
+/* Same width for every status badge and action button, so the list columns line up. */
+.list-badge { width: 9.5rem; white-space: normal; }
+.list-action { width: 9rem; }
+</style>
