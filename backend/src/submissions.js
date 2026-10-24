@@ -62,6 +62,17 @@ function optionalText(value) {
   return !value.trim() || placeholders.includes(value.trim().toLowerCase()) ? '' : value;
 }
 
+// Validated form values in the order of events columns $1-$10, shared by submit (US-006) and edit (US-031).
+function eventColumnValues(data) {
+  const accessibility = optionalText(data.accessibilityNeeds);
+  const equipment = optionalText(data.equipmentRequirements);
+  return [data.eventName, data.purpose, data.description,
+    `${data.startDate}T${data.startTime}:00+08:00`, `${data.endDate}T${data.endTime}:00+08:00`,
+    Number(data.expectedAttendance.trim()), data.venueRequirements,
+    JSON.stringify(accessibility ? { notes: accessibility } : {}), JSON.stringify(equipment ? [equipment] : []),
+    data.registrationNeeds === 'not_decided' ? null : data.registrationNeeds === 'yes'];
+}
+
 const router = express.Router();
 router.use(['/drafts/:id/submit', '/requests'], auth.authenticate, auth.requireRoles('event_organiser'),
   (req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
@@ -117,19 +128,13 @@ router.post('/drafts/:id/submit', async (req, res) => {
       const error = new Error('This draft was changed elsewhere. Reopen it and review the latest saved values before submitting.');
       error.status = 409; throw error;
     }
-    const accessibility = optionalText(data.accessibilityNeeds);
-    const equipment = optionalText(data.equipmentRequirements);
     const updated = await client.query(`UPDATE events SET
       title = $1, purpose = $2, description = $3, preferred_start = $4::timestamptz,
       preferred_end = $5::timestamptz, expected_attendance = $6, venue_layout_preference = $7,
       accessibility_requirements = $8::jsonb, equipment_requirements = $9::jsonb,
       registration_required = $10, draft_data = $13::jsonb, status = 'submitted', submitted_at = now(), updated_at = now()
       WHERE id = $11 AND organiser_id = $12 AND status = 'draft'
-      RETURNING id, status, submitted_at`, [data.eventName, data.purpose, data.description,
-      `${data.startDate}T${data.startTime}:00+08:00`, `${data.endDate}T${data.endTime}:00+08:00`,
-      Number(data.expectedAttendance.trim()), data.venueRequirements,
-      JSON.stringify(accessibility ? { notes: accessibility } : {}), JSON.stringify(equipment ? [equipment] : []),
-      data.registrationNeeds === 'not_decided' ? null : data.registrationNeeds === 'yes', event.id, req.auth.sub, JSON.stringify(data)]);
+      RETURNING id, status, submitted_at`, [...eventColumnValues(data), event.id, req.auth.sub, JSON.stringify(data)]);
     await client.query('COMMIT');
     res.json(updated.rows[0]);
   } catch (error) {
@@ -178,19 +183,13 @@ router.put('/requests/:id', async (req, res) => {
       error.status = 409; throw error;
     }
     const data = validateSubmission(req.body);
-    const accessibility = optionalText(data.accessibilityNeeds);
-    const equipment = optionalText(data.equipmentRequirements);
     const updated = await client.query(`UPDATE events SET
       title = $1, purpose = $2, description = $3, preferred_start = $4::timestamptz,
       preferred_end = $5::timestamptz, expected_attendance = $6, venue_layout_preference = $7,
       accessibility_requirements = $8::jsonb, equipment_requirements = $9::jsonb,
       registration_required = $10, draft_data = $13::jsonb, updated_at = now()
       WHERE id = $11 AND organiser_id = $12
-      RETURNING id, status, draft_data`, [data.eventName, data.purpose, data.description,
-      `${data.startDate}T${data.startTime}:00+08:00`, `${data.endDate}T${data.endTime}:00+08:00`,
-      Number(data.expectedAttendance.trim()), data.venueRequirements,
-      JSON.stringify(accessibility ? { notes: accessibility } : {}), JSON.stringify(equipment ? [equipment] : []),
-      data.registrationNeeds === 'not_decided' ? null : data.registrationNeeds === 'yes', req.params.id, req.auth.sub, JSON.stringify(data)]);
+      RETURNING id, status, draft_data`, [...eventColumnValues(data), req.params.id, req.auth.sub, JSON.stringify(data)]);
     await client.query('COMMIT');
     res.json(updated.rows[0]);
   } catch (error) {
