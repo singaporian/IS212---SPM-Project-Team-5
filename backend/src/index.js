@@ -431,7 +431,10 @@ app.get('/api/events/assigned', auth.authenticate, auth.requireRoles('event_coor
 app.get('/api/events/:id', auth.authenticate, auth.requireRoles('event_coordinator'), async (req, res) => {
   try {
     const result = await db.query(
-      `SELECT * FROM events WHERE id = $1 AND assigned_coordinator_id = $2`,
+      `SELECT e.*, osc.status AS safety_status, osc.comments AS safety_comments,
+          osc.change_scope AS safety_change_scope, osc.decided_at AS safety_decided_at
+       FROM events e LEFT JOIN operational_safety_checks osc ON osc.event_id = e.id
+       WHERE e.id = $1 AND e.assigned_coordinator_id = $2`,
       [req.params.id, req.auth.sub]
     );
     if (!result.rows[0]) {
@@ -548,10 +551,10 @@ app.post('/api/bookings/requests/batch', auth.authenticate, auth.requireRoles('e
       created.push(result.rows[0]);
     }
     await client.query('COMMIT');
-    await db.query(
+    for (const booking of created) await db.query(
       `INSERT INTO notifications (user_id, event_id, message)
        SELECT id, $1, $2 FROM users WHERE role = 'venue_staff'`,
-      [req.body.eventId, `${created.length} venue booking request${created.length === 1 ? '' : 's'} submitted for ${eventResult.rows[0].title}`]
+      [req.body.eventId, `Venue booking request submitted for ${eventResult.rows[0].title} (Booking ID: ${booking.id})`]
     );
     res.status(201).json({ event_id: req.body.eventId, bookings: created });
   } catch (error) {
@@ -616,7 +619,7 @@ app.post('/api/bookings/requests', auth.authenticate, auth.requireRoles('event_c
     await db.query(
       `INSERT INTO notifications (user_id, event_id, message)
        SELECT id, $1, $2 FROM users WHERE role = 'venue_staff'`,
-      [req.body.eventId, `New venue booking request for ${eventResult.rows[0].title} at ${venueResult.rows[0].name}`]
+      [req.body.eventId, `Venue booking request submitted for ${eventResult.rows[0].title} at ${venueResult.rows[0].name} (Booking ID: ${bookingResult.rows[0].id})`]
     );
     res.status(201).json(bookingResult.rows[0]);
   } catch (error) {
@@ -632,8 +635,13 @@ app.patch('/api/bookings/:id/replacement', auth.authenticate, auth.requireRoles(
   try {
     const booking = (await db.query(
       `SELECT b.id, b.event_id FROM bookings b JOIN events e ON e.id = b.event_id
-       WHERE b.id = $1 AND b.replacement_for_booking_id IS NOT NULL
-         AND b.status = 'pending' AND e.assigned_coordinator_id = $2`,
+       LEFT JOIN operational_safety_checks osc ON osc.event_id = e.id
+       WHERE b.id = $1 AND e.assigned_coordinator_id = $2
+         AND (
+           (b.replacement_for_booking_id IS NOT NULL AND b.status = 'pending')
+           OR (b.replacement_for_booking_id IS NULL AND b.status IN ('approved', 'confirmed')
+               AND osc.status = 'changes_requested' AND 'venue' = ANY(osc.change_scope))
+         )`,
       [req.params.id, req.auth.sub]
     )).rows[0];
     if (!booking) return res.status(404).json({ error: 'Pending replacement booking not found' });
@@ -646,7 +654,8 @@ app.patch('/api/bookings/:id/replacement', auth.authenticate, auth.requireRoles(
     const result = await db.query(
       `UPDATE bookings SET venue_id = $1, required_capacity = $2, start_time = $3, end_time = $4,
              setup_minutes = $5, turnaround_minutes = $6, venue_requirements = $7::jsonb,
-             conflict_warning = false, conflict_details = '[]'::jsonb
+             conflict_warning = false, conflict_details = '[]'::jsonb, status = 'pending',
+             decision_reason = NULL, decision_comment = NULL, decided_by = NULL, decided_at = NULL
        WHERE id = $8
        RETURNING id, event_id, venue_id, start_time, end_time, status, venue_requirements`,
       [req.body.venueId, requiredCapacity, input.startTime.toISOString(), input.endTime.toISOString(), input.setupMinutes, input.turnaroundMinutes, JSON.stringify(input.venueRequirements), req.params.id]
@@ -662,13 +671,15 @@ app.patch('/api/bookings/:id/replacement', auth.authenticate, auth.requireRoles(
 app.get('/api/bookings/mine', auth.authenticate, auth.requireRoles('event_coordinator'), async (req, res) => {
   const result = await db.query(
     `SELECT b.*, v.name AS venue_name, e.title AS event_title,
+      osc.status AS safety_status, osc.comments AS safety_comments, osc.change_scope AS safety_change_scope,
             EXISTS (
               SELECT 1 FROM venue_unavailabilities vu
               WHERE vu.venue_id = b.venue_id
                 AND b.start_time - (b.setup_minutes * interval '1 minute') < vu.end_time
                 AND b.end_time + (b.turnaround_minutes * interval '1 minute') > vu.start_time
             ) AS affected_by_unavailability
-     FROM bookings b JOIN venues v ON v.id = b.venue_id JOIN events e ON e.id = b.event_id
+    FROM bookings b JOIN venues v ON v.id = b.venue_id JOIN events e ON e.id = b.event_id
+    LEFT JOIN operational_safety_checks osc ON osc.event_id = e.id
      WHERE e.assigned_coordinator_id = $1 ORDER BY b.created_at DESC`,
     [req.auth.sub]
   );
@@ -952,8 +963,12 @@ app.get('/api/events/:id/technical-support', auth.authenticate, async (req, res)
     const isTechSupport = req.auth.role === 'technical_support_staff';
     if (!isCoordinator && !isTechSupport) return res.status(403).json({ error: 'You do not have permission to view these requirements' });
     const result = await db.query(
-      `SELECT tsr.*, e.title AS event_title FROM technical_support_requirements tsr
-       JOIN events e ON e.id = tsr.event_id WHERE tsr.event_id = $1`,
+      `SELECT tsr.*, e.title AS event_title, osc.status AS safety_status,
+          osc.comments AS safety_comments, osc.change_scope AS safety_change_scope
+       FROM technical_support_requirements tsr
+       JOIN events e ON e.id = tsr.event_id
+       LEFT JOIN operational_safety_checks osc ON osc.event_id = tsr.event_id
+       WHERE tsr.event_id = $1`,
       [req.params.id]
     );
     res.json(result.rows[0] || { event_id: req.params.id, event_title: event.title, equipment_requirements: [], staff_required: 0, support_required: true, status: 'pending', late_request: false, updated: false });

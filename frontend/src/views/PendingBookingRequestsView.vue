@@ -46,7 +46,13 @@ export default {
         const data = await response.json()
         if (!response.ok) throw new Error('Unable to load requests. Please retry.')
         if (version !== this.loadVersion) return
-        this.requests = data; this.loading = false
+        const eventId = this.$route.query.eventId
+        const eventRequests = eventId ? data.filter(request => request.event_id === eventId) : data
+        if (eventId && eventRequests.length === 1) {
+          this.$router.replace({ name: 'venue-booking-review', params: { id: eventRequests[0].id } })
+          return
+        }
+        this.requests = eventRequests; this.loading = false
         await Promise.all(data.map(async request => {
           try {
             const result = await fetch(`/api/bookings/${encodeURIComponent(request.id)}/review?summary=1`, { headers: authHeaders() })

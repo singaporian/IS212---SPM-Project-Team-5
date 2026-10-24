@@ -35,7 +35,7 @@
             <div class="col-md-3"><label class="form-label">End date<input v-model="form.endDate" class="form-control" type="date" required /></label></div>
             <div class="col-md-3"><label class="form-label">Start time<input v-model="form.startTime" class="form-control" type="time" required /></label></div>
             <div class="col-md-3"><label class="form-label">End time<input v-model="form.endTime" class="form-control" :class="{ 'is-invalid': timeValidationError }" type="time" required /><div v-if="timeValidationError" class="invalid-feedback">{{ timeValidationError }}</div></label></div>
-            <div class="col-12"><label class="form-label">Venue requirements<textarea v-model="form.requirements" class="form-control" rows="3" placeholder="Layout, accessibility, facilities, or other requirements"></textarea></label></div>
+            <div class="col-12"><label class="form-label">Arrangement requests for Venue Staff<textarea v-model="form.requirements" class="form-control" rows="3" placeholder="Describe the setup or accommodation you are requesting, e.g. wheelchair-accessible seating near an accessible entrance."></textarea></label><div class="form-text">These are requests for Venue Staff to assess. They are not automatically guaranteed by the system.</div></div>
           </div>
           <div v-if="error" class="alert alert-danger mt-3">{{ error }}</div>
           <button class="btn btn-accent mt-2" type="submit">Review request</button>

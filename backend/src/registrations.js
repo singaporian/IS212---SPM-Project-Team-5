@@ -52,15 +52,21 @@ router.use((req, res, next) => { res.set('Cache-Control', 'no-store'); next(); }
 router.get('/registrable', ...attendeeOnly, async (req, res) => {
   try {
     const result = await db.query(
-      `SELECT e.id, e.title, e.purpose, e.event_type, e.preferred_start, e.preferred_end,
+      `SELECT e.id, e.title, e.description, e.purpose, e.event_type, e.preferred_start, e.preferred_end,
               e.registration_required, e.registration_capacity, e.registration_opens_at, e.registration_closes_at,
               e.status,
-              v.name AS venue_name, v.location AS venue_location,
+              venue.venue_name, venue.venue_location,
               (SELECT COUNT(*)::int FROM registrations r WHERE r.event_id = e.id AND r.status = 'registered') AS registered_count,
               (SELECT r.id FROM registrations r WHERE r.event_id = e.id AND r.attendee_id = $1 AND r.status = 'registered') AS my_registration_id
        FROM events e
-       LEFT JOIN bookings b ON b.event_id = e.id AND b.status = 'confirmed'
-       LEFT JOIN venues v ON v.id = b.venue_id
+      JOIN operational_safety_checks osc ON osc.event_id = e.id AND osc.status = 'approved'
+       LEFT JOIN LATERAL (
+         SELECT v.name AS venue_name, v.location AS venue_location
+         FROM bookings b JOIN venues v ON v.id = b.venue_id
+         WHERE b.event_id = e.id AND b.status IN ('approved', 'confirmed')
+         ORDER BY b.start_time ASC
+         LIMIT 1
+       ) venue ON true
        WHERE e.status = 'confirmed' AND e.registration_required = true
        ORDER BY e.preferred_start ASC NULLS LAST`,
       [req.auth.sub]
@@ -70,6 +76,7 @@ router.get('/registrable', ...attendeeOnly, async (req, res) => {
       return {
         id: row.id,
         title: row.title,
+        description: row.description,
         purpose: row.purpose,
         event_type: row.event_type,
         preferred_start: row.preferred_start,
@@ -81,6 +88,7 @@ router.get('/registrable', ...attendeeOnly, async (req, res) => {
         registration_closes_at: row.registration_closes_at,
         registered_count: row.registered_count,
         registration_open: windowStatus.open,
+        registration_status: windowStatus.open ? 'open' : 'closed',
         registration_closed_reason: windowStatus.open ? null : windowStatus.reason,
         my_registration_id: row.my_registration_id || null
       };
