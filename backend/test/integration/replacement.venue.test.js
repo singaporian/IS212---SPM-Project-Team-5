@@ -5,6 +5,10 @@ const { Pool } = require('pg');
 const jwt = require('jsonwebtoken');
 const db = require('../../src/db');
 
+// US-037 — Venue Unavailability and Replacement Venues
+// These integration tests verify the real unavailability, notification, and
+// replacement-booking API behavior against an isolated PostgreSQL schema.
+
 const secret = process.env.JWT_SECRET || 'local-development-secret-change-me';
 
 // [AC-037-001: assigned Coordinator is notified]
@@ -16,7 +20,7 @@ const secret = process.env.JWT_SECRET || 'local-development-secret-change-me';
 // [AC-037-008: original and replacement bookings keep separate statuses]
 // This integration test uses an isolated PostgreSQL schema and drops it in
 // finally so affected/replacement bookings never persist after the test.
-test('US-037 preserves affected bookings, notifies the Coordinator, and allows a replacement venue', async () => {
+test('US-037 preserves affected bookings, notifies the Coordinator, and allows a replacement venue', async (t) => {
   const originalPool = db.pool;
   const originalQuery = db.query;
   const schema = `us037_test_${randomUUID().replaceAll('-', '')}`;
@@ -24,6 +28,7 @@ test('US-037 preserves affected bookings, notifies the Coordinator, and allows a
   let server;
 
   try {
+    // Use an isolated schema so the real affected-booking data is never changed.
     await originalPool.query(`CREATE SCHEMA "${schema}"`);
     for (const table of ['users', 'events', 'venues', 'bookings', 'notifications', 'venue_unavailabilities']) {
       await originalPool.query(`CREATE TABLE "${schema}".${table} (LIKE public.${table} INCLUDING ALL)`);
@@ -39,6 +44,7 @@ test('US-037 preserves affected bookings, notifies the Coordinator, and allows a
     db.pool = pool;
     db.query = (sql, params) => pool.query(sql, params);
 
+    // Create the three roles and the original/replacement venues used by the test.
     const organiserId = randomUUID();
     const coordinatorId = randomUUID();
     const venueStaffId = randomUUID();
@@ -76,6 +82,7 @@ test('US-037 preserves affected bookings, notifies the Coordinator, and allows a
     const base = `http://127.0.0.1:${server.address().port}`;
     const authToken = (id, role) => jwt.sign({ sub: id, role }, secret);
     async function request(path, options = {}) {
+      // Call the real API with the role that is allowed to perform the action.
       const response = await fetch(base + path, {
         ...options,
         headers: { 'Content-Type': 'application/json', ...(options.headers || {}) }
@@ -83,33 +90,39 @@ test('US-037 preserves affected bookings, notifies the Coordinator, and allows a
       return { status: response.status, body: await response.json() };
     }
 
-    // AC-037-001/002/003/007: Venue Staff creates unavailability; the original
-    // booking is reported as affected and the Coordinator is notified without
-    // changing the original booking status.
+    await t.test('AC-037-001/002/003/007: unavailability identifies and preserves the affected booking', async () => {
+    // AC-037-001: creating unavailability identifies affected bookings.
     const unavailable = await request(`/api/venues/${originalVenueId}/unavailability`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${authToken(venueStaffId, 'venue_staff')}` },
       body: JSON.stringify({ startTime: '2027-02-10T09:00:00+08:00', endTime: '2027-02-10T13:00:00+08:00', reason: 'Maintenance' })
     });
-    assert.equal(unavailable.status, 201);
-    assert.equal(unavailable.body.affected_bookings.length, 1);
-    assert.equal(unavailable.body.affected_bookings[0].id, originalBookingId);
+    assert.equal(unavailable.status, 201); // AC-037-001: Venue Staff can record unavailability.
+    assert.equal(unavailable.body.affected_bookings.length, 1); // AC-037-007: the original booking is identified as affected.
+    assert.equal(unavailable.body.affected_bookings[0].id, originalBookingId); // AC-037-002/007: the original booking remains the affected arrangement.
 
+    // Check the notification table directly because notification delivery is a
+    // database side effect of recording venue unavailability.
+    // AC-037-001: the assigned Coordinator receives an event notification.
     const notifications = await pool.query('SELECT user_id, message FROM notifications WHERE event_id = $1', [eventId]);
-    assert.equal(notifications.rows.length, 1);
-    assert.equal(notifications.rows[0].user_id, coordinatorId);
-    assert.match(notifications.rows[0].message, /replacement arrangements/i);
+    assert.equal(notifications.rows.length, 1); // AC-037-001: exactly one notification is created.
+    assert.equal(notifications.rows[0].user_id, coordinatorId); // AC-037-001: notification targets the assigned Coordinator.
+    assert.match(notifications.rows[0].message, /replacement arrangements/i); // AC-037-001: message explains why action is needed.
 
+    // AC-037-003: the Coordinator can view the venue, reason, and unavailable period.
     const affected = await request('/api/bookings/affected', {
       headers: { Authorization: `Bearer ${authToken(coordinatorId, 'event_coordinator')}` }
     });
-    assert.equal(affected.status, 200);
-    assert.equal(affected.body.length, 1);
-    assert.equal(affected.body[0].venue_name, 'Original venue');
-    assert.equal(affected.body[0].unavailable_reason, 'Maintenance');
+    assert.equal(affected.status, 200); // AC-037-003: affected-booking view is accessible.
+    assert.equal(affected.body.length, 1); // AC-037-007: original booking appears once.
+    assert.equal(affected.body[0].venue_name, 'Original venue'); // AC-037-003: original venue is shown.
+    assert.equal(affected.body[0].unavailable_reason, 'Maintenance'); // AC-037-003: reason is shown.
+    });
 
-    // AC-037-005/006/008: submit a replacement for the same event and verify it
-    // becomes a separate pending booking while the original remains approved.
+    await t.test('AC-037-005/006/008: replacement request is linked and independent', async () => {
+    // Submit a replacement through the same Coordinator endpoint used by the UI.
+    // AC-037-005: Coordinator submits a replacement venue request.
+    // AC-037-006: replacement remains linked to the original event.
     const replacement = await request('/api/bookings/requests/batch', {
       method: 'POST',
       headers: { Authorization: `Bearer ${authToken(coordinatorId, 'event_coordinator')}` },
@@ -118,13 +131,16 @@ test('US-037 preserves affected bookings, notifies the Coordinator, and allows a
         bookings: [{ venueId: replacementVenueId, requiredCapacity: 50, startTime: '2027-02-10T10:00:00+08:00', endTime: '2027-02-10T12:00:00+08:00', venueRequirements: { description: 'Replacement arrangement' } }]
       })
     });
-    assert.equal(replacement.status, 201);
-    assert.equal(replacement.body.bookings.length, 1);
+    assert.equal(replacement.status, 201); // AC-037-005: replacement request is accepted.
+    assert.equal(replacement.body.bookings.length, 1); // AC-037-005: one replacement row is created.
 
+    // AC-037-002/006/008: original and replacement rows are preserved separately
+    // and can have independent statuses.
     const stored = await pool.query('SELECT id, venue_id, status FROM bookings WHERE event_id = $1 ORDER BY id', [eventId]);
-    assert.equal(stored.rows.length, 2);
-    assert.equal(stored.rows.find((row) => row.id === originalBookingId).status, 'approved');
-    assert.equal(stored.rows.find((row) => row.id !== originalBookingId).status, 'pending');
+    assert.equal(stored.rows.length, 2); // AC-037-002/006: original and replacement both remain stored for the event.
+    assert.equal(stored.rows.find((row) => row.id === originalBookingId).status, 'approved'); // AC-037-002/007: original remains preserved and identifiable.
+    assert.equal(stored.rows.find((row) => row.id !== originalBookingId).status, 'pending'); // AC-037-008: replacement has its own pending status.
+    });
   } finally {
     if (server) await new Promise((resolve) => server.close(resolve));
     db.pool = originalPool;
