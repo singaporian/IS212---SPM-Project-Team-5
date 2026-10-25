@@ -225,7 +225,7 @@ export default {
       this.loading = true
       this.loadError = ''
       try {
-        const draft = await draftRequest('/' + id, {}, this.editing ? '/api/requests' : undefined)
+        const draft = await draftRequest('/' + id, undefined, this.editing ? '/api/requests' : undefined)
         if (this.draftId !== id) return
         this.form = { ...this.form, ...draft.draft_data }
         this.savedVersion = draft.version || ''
