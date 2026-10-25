@@ -1,9 +1,10 @@
 import { authHeaders } from './auth'
 
-export async function draftRequest(path = '', options = {}) {
+// US-031: `base` lets the same helper edit a submitted request at /api/requests.
+export async function draftRequest(path = '', options = {}, base = '/api/drafts') {
   let response
   try {
-    response = await fetch(`/api/drafts${path}`, {
+    response = await fetch(`${base}${path}`, {
     ...options,
     headers: { ...authHeaders(), 'Content-Type': 'application/json' }
     })

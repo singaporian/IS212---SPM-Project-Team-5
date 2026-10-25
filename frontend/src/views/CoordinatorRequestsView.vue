@@ -39,6 +39,12 @@
               <div v-if="ev.status === 'submitted'" class="mt-3 d-flex gap-2">
                 <button class="btn btn-sm btn-success" @click="openDecision(ev.id, 'approved')">Approve</button>
                 <button class="btn btn-sm btn-outline-danger" @click="openDecision(ev.id, 'rejected')">Reject</button>
+                <button class="btn btn-sm btn-outline-secondary" @click="openDecision(ev.id, 'returned')">Return for clarification</button>
+              </div>
+
+              <!-- US-031 (AC-031-006): waiting for the Organiser to update and resubmit. -->
+              <div v-else-if="ev.status === 'clarification_requested'" class="alert alert-warning mt-3 mb-0 py-2" role="status">
+                <strong>Returned for clarification.</strong> Waiting for the Organiser to update and resubmit the request.
               </div>
 
               <div v-else-if="ev.status === 'rejected'" class="alert alert-danger mt-3 mb-0 py-2" role="status">
@@ -51,7 +57,12 @@
               </div>
 
               <div v-if="decisionEventId === ev.id" class="mt-3 p-3 border rounded bg-white">
-                <div class="fw-semibold mb-2">{{ decisionType === 'approved' ? 'Confirm you want to approve this request?' : 'Confirm you want to reject this request?' }}</div>
+                <div class="fw-semibold mb-2">{{ decisionType === 'approved' ? 'Confirm you want to approve this request?' : decisionType === 'returned' ? 'Return this request to the Organiser for clarification?' : 'Confirm you want to reject this request?' }}</div>
+
+                <div v-if="decisionType === 'returned'" class="mb-3">
+                  <label :for="'return-note-' + ev.id" class="form-label d-block">Note to the Organiser</label>
+                  <textarea :id="'return-note-' + ev.id" v-model="returnNote" class="form-control form-control-sm" rows="3" placeholder="What should the Organiser clarify or change? (optional)"></textarea>
+                </div>
 
                 <div v-if="decisionType === 'rejected'" class="mb-3">
                   <label class="form-label d-block">Reason</label>
@@ -98,6 +109,7 @@ export default {
       decisionType: '',
       rejectReason: '',
       rejectDetail: '',
+      returnNote: '',
       decisionError: ''
     }
   },
@@ -111,6 +123,7 @@ export default {
       this.decisionType = type
       this.rejectReason = ''
       this.rejectDetail = ''
+      this.returnNote = ''
       this.decisionError = ''
     },
     cancelDecision() {
@@ -134,11 +147,14 @@ export default {
         }
       }
 
-      const body = this.decisionType === 'rejected'
-        ? { decision: 'rejected', reason: this.rejectReason, reasonDetail: this.rejectDetail }
-        : { decision: 'approved' }
+      const returning = this.decisionType === 'returned' // US-031: return for clarification with an optional note
+      const body = returning
+        ? { note: this.returnNote }
+        : this.decisionType === 'rejected'
+          ? { decision: 'rejected', reason: this.rejectReason, reasonDetail: this.rejectDetail }
+          : { decision: 'approved' }
 
-      const res = await fetch(`/api/events/${id}/decision`, {
+      const res = await fetch(`/api/events/${id}/${returning ? 'return' : 'decision'}`, {
         method: 'PATCH',
         headers: { ...authHeaders(), 'Content-Type': 'application/json' },
         body: JSON.stringify(body)
