@@ -1,11 +1,13 @@
+// US-037 — Venue Unavailability and Replacement Venues
+// These tests check replacement-booking rules in memory. Database preservation,
+// notifications, and API behavior are covered by integration tests.
+
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { occupiedInterval, overlaps } = require('../../src/venueOccupancy');
 const { Venue, Booking } = require('../../src/domain');
 
-// [AC-037-002: original event and booking are preserved] [AC-037-007: original booking remains identifiable as affected]
-// The original booking's occupied interval remains a concrete value that can be
-// compared with a venue unavailability period; no cancellation is performed here.
+// AC-037-002/007: setup and turnaround determine the original booking's affected interval.
 test('calculates the original booking occupied interval with setup and turnaround', () => {
   const booking = {
     start_time: '2027-02-10T10:00:00+08:00',
@@ -20,9 +22,8 @@ test('calculates the original booking occupied interval with setup and turnaroun
   });
 });
 
-// [AC-037-001: Coordinator is notified] [AC-037-002: original booking is preserved] [AC-037-007: affected overlap is identified]
-// A booking is affected only when the unavailability interval overlaps its
-// occupied interval. Exact boundaries are not treated as an overlap.
+// AC-037-001/002/007: a booking is affected only when unavailability overlaps its occupied
+// interval. A period that starts exactly when the booking ends is not an overlap.
 test('detects an affected booking only when unavailability overlaps occupancy', () => {
   const booking = {
     start_time: '2027-02-10T10:00:00+08:00',
@@ -36,9 +37,8 @@ test('detects an affected booking only when unavailability overlaps occupancy', 
   assert.equal(overlaps(occupied, { start: occupied.end, end: '2027-02-10T06:00:00.000Z' }), false);
 });
 
-// [AC-037-004: Coordinator can check replacement venue suitability]
-// Replacement venue suitability checks capacity and the event's operational needs
-// before a Coordinator submits a replacement booking.
+// AC-037-005: a replacement venue must meet the event's capacity, facility, layout, and
+// accessibility needs.
 test('checks replacement venue suitability independently', () => {
   const replacementVenue = new Venue({
     id: 'replacement-venue',
@@ -58,9 +58,8 @@ test('checks replacement venue suitability independently', () => {
   assert.equal(replacementVenue.isSuitableFor({ expectedAttendance: 100 }), false);
 });
 
-// [AC-037-005: replacement request can be created] [AC-037-006: replacement stays linked to the event] [AC-037-008: replacement has its own status]
-// The replacement is a separate Booking object linked to the same event. Its
-// status can change independently from the preserved original booking.
+// AC-037-006/007/008: a replacement is a separate booking for the same event, so its status can
+// change without changing the preserved original booking.
 test('keeps original and replacement bookings associated but independent', () => {
   const original = new Booking({
     id: 'original-booking',

@@ -12,6 +12,11 @@
       </div>
     </div>
 
+    <div v-if="deletedMessage" class="alert alert-success alert-dismissible" role="status">
+      <i class="bi bi-check-circle-fill me-1"></i>{{ deletedMessage }}
+      <button class="btn-close" type="button" aria-label="Dismiss" @click="deletedMessage = ''"></button>
+    </div>
+
     <div v-if="equipment.length" class="row g-3 mb-4">
       <div v-for="tile in summary" :key="tile.label" class="col-6 col-md-3">
         <div class="card stat-tile h-100">
@@ -79,7 +84,10 @@
                   </div>
                 </td>
                 <td class="text-end">
-                  <router-link class="btn btn-sm btn-outline-primary" :to="`/equipment/${item.id}/edit`" :aria-label="`Edit ${item.name}`"><i class="bi bi-pencil"></i> Edit</router-link>
+                  <div class="d-inline-flex gap-1">
+                    <router-link class="btn btn-sm btn-outline-primary" :to="`/equipment/${item.id}/edit`" :aria-label="`Edit ${item.name}`"><i class="bi bi-pencil"></i> Edit</router-link>
+                    <button class="btn btn-sm btn-outline-danger" type="button" :aria-label="`Delete ${item.name}`" @click="deletingId = item.id"><i class="bi bi-trash"></i> Delete</button>
+                  </div>
                 </td>
               </tr>
             </tbody>
@@ -87,21 +95,27 @@
         </div>
       </div>
     </div>
+
+    <DeleteEquipmentDialog v-if="deletingId" :equipment-id="deletingId" @close="deletingId = null" @deleted="onDeleted" />
   </div>
 </template>
 
 <script>
 import { listEquipment } from '../services/equipment'
+import DeleteEquipmentDialog from '../components/DeleteEquipmentDialog.vue'
 
 export default {
   name: 'EquipmentInventoryView',
+  components: { DeleteEquipmentDialog },
   data() {
     return {
       equipment: [],
       loading: false,
       loadError: '',
       search: '',
-      statusFilter: ''
+      statusFilter: '',
+      deletingId: null,
+      deletedMessage: ''
     }
   },
   computed: {
@@ -126,6 +140,12 @@ export default {
     }
   },
   created() {
+    // A deletion made from the Edit page lands here with its confirmation message.
+    const state = typeof window !== 'undefined' && window.history ? window.history.state : null
+    if (state && typeof state.deletedMessage === 'string') {
+      this.deletedMessage = state.deletedMessage
+      window.history.replaceState({ ...state, deletedMessage: undefined }, '') // not shown again on reload
+    }
     this.load()
   },
   methods: {
@@ -139,6 +159,12 @@ export default {
       } finally {
         this.loading = false
       }
+    },
+    onDeleted(result) {
+      this.deletingId = null
+      this.deletedMessage = result.message
+      this.equipment = this.equipment.filter(item => item.id !== result.deleted.id)
+      window.scrollTo({ top: 0, behavior: 'smooth' })
     },
     // One badge per status that has units, so a partly damaged batch shows both.
     statusBadges(item) {

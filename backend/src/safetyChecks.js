@@ -12,7 +12,7 @@ function parseSafetyDecision(body = {}) {
   const comments = body.comments ?? '';
   const scopes = Array.isArray(body.changeScope) ? [...new Set(body.changeScope)] : [];
   if (!SAFETY_DECISIONS.includes(decision)) throw safetyError('Choose approve, reject, or request changes');
-  if (typeof comments !== 'string' || comments.trim().length > 2000) throw safetyError('Comments must be 2,000 characters or fewer');
+  if (typeof comments !== 'string') throw safetyError('Comments must be text');
   if (decision === 'changes_requested' && (!scopes.length || scopes.some(scope => !['venue', 'technical'].includes(scope)))) {
     throw safetyError('Select whether venue arrangements, technical arrangements, or both require changes');
   }

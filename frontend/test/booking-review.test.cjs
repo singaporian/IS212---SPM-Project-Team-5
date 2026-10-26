@@ -9,7 +9,7 @@ const descriptor = parse(fs.readFileSync(path.join(__dirname, '../src/components
 function instance(fetch) {
   const script = descriptor.script.content.replace(/import .*\r?\n/g, '').replace('export default', 'return');
   const options = new Function('fetch', 'authHeaders', script)(fetch, () => ({}));
-  const state = { ...options.data(), bookingId: 'request', fullPage: true };
+  const state = { ...options.data(), bookingId: 'request', fullPage: true, disabled: false };
   for (const [name, method] of Object.entries(options.methods)) state[name] = method.bind(state);
   for (const [name, getter] of Object.entries(options.computed || {})) Object.defineProperty(state, name, { enumerable: true, get: () => getter.call(state) });
   return state;
@@ -51,7 +51,7 @@ test('TC-US019-FE-04 AC3: US-019 refresh uses GET and renders current conflicts 
   await state.load();
   assert.ok((await render(state)).includes('Pending Review'));
   assert.ok((await render(state)).includes('Approved contextual record'));
-  assert.ok((await render(state)).includes('Reserved'));
+  assert.ok((await render(state)).includes('Approved — venue reserved'));
   assert.ok((await render(state)).includes('No overlapping reserved bookings'));
   await state.load();
   const html = await render(state);
@@ -85,24 +85,25 @@ test('TC-US019-FE-01/06: US-019 inbox links each request to its own read-only pa
   const options = new Function('BookingReview', inbox.script.content.replace(/import .*\r?\n/g, '').replace('export default', 'return'))({ methods: instance(async () => Response.json(payload())) });
   const state = { ...options.data(), requests: [{ id: 'one', event_title: 'First event', venue_name: 'Hall' }, { id: 'two', event_title: 'Second event', venue_name: 'Room' }], summaries: { one: { expected_attendance: 23, reserved_conflicts: 1, unavailable_conflicts: 0 }, two: { expected_attendance: 10, reserved_conflicts: 0, unavailable_conflicts: 1 } } };
   const app = createSSRApp({ render: compile(inbox.template.content), data: () => state, methods: options.methods });
+  app.config.globalProperties.$route = { path: '/bookings/pending' };
   app.component('router-link', { props: ['to'], template: '<a :href="typeof to === \'string\' ? to : \'/bookings/pending/\' + to.params.id"><slot /></a>' });
   const html = await renderToString(app);
   for (const text of ['/bookings/pending/one', '/bookings/pending/two', 'Attendance: 23', 'Warning: Reserved booking conflict', 'Warning: Recorded venue unavailability', 'Review Request']) assert.ok(html.includes(text), text);
   assert.ok(!html.includes('Event Requirements'));
-  for (const text of ['Approve', 'Reject', 'Suggest Alternative', 'Decision', 'Reviewed']) assert.ok(!html.includes(text), text);
+  for (const text of ['Approve', 'Reject', 'Suggest Alternative', 'Decision']) assert.ok(!html.includes(text), text);
 });
 
-test('TC-US019-FE-06: US-019 dedicated page renders review details and back navigation without decision actions', async () => {
+test('US-019 dedicated page retains review details and back navigation alongside US-033', async () => {
   const page = parse(fs.readFileSync(path.join(__dirname, '../src/views/VenueBookingReviewView.vue'), 'utf8')).descriptor;
   const reviewState = instance(async () => Response.json(payload()));
   await reviewState.load();
-  const app = createSSRApp({ render: compile(page.template.content), data: () => ({ review: null }), methods: { onLoading() {}, onLoaded() {} } });
+  const app = createSSRApp({ render: compile(page.template.content), data: () => ({ review: null, latestReview: null, saving: false }), methods: { onLoading() {}, onLoaded() {} } });
   app.config.globalProperties.$route = { params: { id: 'request' } };
   app.component('router-link', { props: ['to'], template: '<a :href="to"><slot /></a>' });
   app.component('BookingReview', { props: { bookingId: String, fullPage: Boolean }, render: compile(descriptor.template.content), data: () => { const { bookingId, fullPage, ...data } = reviewState; return data } });
   const html = await renderToString(app);
   for (const text of ['Back to requests', 'Booking Request', 'Event Requirements', 'Venue information', 'Availability &amp; Conflicts']) assert.ok(html.includes(text), text);
-  for (const text of ['Approve', 'Reject', 'Suggest Alternative', 'Confirm decision', 'Reviewed', 'aria-label="Decision"']) assert.ok(!html.includes(text), text);
+  for (const text of ['Confirm decision']) assert.ok(!html.includes(text), text);
 });
 
  test('TC-US019-FE-07 and TC-US019-10: capacity and missing optional fields render safely', async () => {

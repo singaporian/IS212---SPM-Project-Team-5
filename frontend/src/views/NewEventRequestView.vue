@@ -1,8 +1,9 @@
 <template>
   <div>
     <RequestNavigation />
-    <router-link to="/requests/drafts" class="d-inline-block mb-3 small">&larr; All drafts</router-link>
-    <EventRequestForm ref="form" />
+    <router-link v-if="mode === 'edit'" :to="{ name: 'submitted-event-request', params: { id: $route.params.id } }" class="d-inline-block mb-3 small">&larr; Back to request</router-link>
+    <router-link v-else to="/requests/drafts" class="d-inline-block mb-3 small">&larr; All drafts</router-link>
+    <EventRequestForm ref="form" :mode="mode" />
   </div>
 </template>
 
@@ -13,6 +14,7 @@ import EventRequestForm from '../components/EventRequestForm.vue'
 export default {
   name: 'NewEventRequestView',
   components: { EventRequestForm, RequestNavigation },
+  props: { mode: { type: String, default: 'draft' } }, // US-031: 'edit' for a Submitted or returned request
   beforeRouteLeave() {
     const form = this.$refs.form
     if (!form || form.submitted) return true

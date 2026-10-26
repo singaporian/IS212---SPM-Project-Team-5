@@ -12,7 +12,8 @@
           <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
             <div>
               <div class="fw-semibold">{{ ev.title }}</div>
-              <div class="small text-muted">{{ formatWhen(ev) }}<span v-if="ev.venue_name"> · {{ ev.venue_name }}</span></div>
+              <div class="small text-muted">{{ formatWhen(ev) }}<span v-if="ev.venue_name"> · {{ ev.venue_name }}<span v-if="ev.venue_location">, {{ ev.venue_location }}</span></span></div>
+              <p class="small mt-2 mb-1">{{ ev.description || ev.purpose || 'No event description provided.' }}</p>
               <div class="small text-muted" v-if="ev.registration_capacity != null">{{ ev.registered_count }} / {{ ev.registration_capacity }} registered</div>
             </div>
             <div class="text-end">
@@ -22,7 +23,8 @@
                   {{ withdrawing === ev.my_registration_id ? 'Withdrawing...' : 'Withdraw registration' }}
                 </button>
               </div>
-              <div v-else-if="ev.registration_open">
+              <div><span class="badge mb-2" :class="ev.registration_status === 'open' ? 'bg-success' : 'bg-secondary'">Registration {{ ev.registration_status }}</span></div>
+              <div v-if="ev.registration_open">
                 <button class="btn btn-sm btn-accent" @click="openForm(ev)">Register</button>
               </div>
               <span v-else class="small text-muted">{{ ev.registration_closed_reason }}</span>

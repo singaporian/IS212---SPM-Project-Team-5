@@ -28,6 +28,7 @@ import EventChangeRequestView from '../views/EventChangeRequestView.vue'
 import VenueUnavailabilityView from '../views/VenueUnavailabilityView.vue'
 import VenueSetupTurnaroundView from '../views/VenueSetupTurnaroundView.vue'
 import AttendeeEventsView from '../views/AttendeeEventsView.vue'
+import AttendeeCalendarView from '../views/AttendeeCalendarView.vue'
 import AffectedBookingsView from '../views/AffectedBookingsView.vue'
 import ChangeRequestReviewView from '../views/ChangeRequestReviewView.vue'
 import PreparationStatusView from '../views/PreparationStatusView.vue'
@@ -38,9 +39,12 @@ const routes = [
   { path: '/venue/unavailability', name: 'venue-unavailability', component: VenueUnavailabilityView, meta: { requiresAuth: true, roles: ['venue_staff'] } },
   { path: '/venue/setup-turnaround', name: 'venue-setup-turnaround', component: VenueSetupTurnaroundView, meta: { requiresAuth: true, roles: ['venue_staff'] } },
   { path: '/attendee/events', name: 'attendee-events', component: AttendeeEventsView, meta: { requiresAuth: true, roles: ['attendee'] } },
+  { path: '/attendee/calendar', name: 'attendee-calendar', component: AttendeeCalendarView, meta: { requiresAuth: true, roles: ['attendee'] } },
+  { path: '/bookings/reviewed', component: PendingBookingRequestsView, meta: { requiresAuth: true, roles: ['venue_staff'] } },
   { path: '/bookings/pending/:id', name: 'venue-booking-review', component: VenueBookingReviewView, meta: { requiresAuth: true, roles: ['venue_staff'] } },
   { path: '/requests/submitted', name: 'submitted-event-requests', component: SubmittedRequestsView, meta: { requiresAuth: true, roles: ['event_organiser'] } },
   { path: '/requests/submitted/:id', name: 'submitted-event-request', component: SubmittedRequestsView, meta: { requiresAuth: true, roles: ['event_organiser'] } },
+  { path: '/requests/submitted/:id/edit', name: 'edit-submitted-request', component: NewEventRequestView, props: { mode: 'edit' }, meta: { requiresAuth: true, roles: ['event_organiser'] } }, // US-031
   { path: '/requests/drafts', name: 'event-drafts', component: DraftsView, meta: { requiresAuth: true, roles: ['event_organiser'] } },
   { path: '/requests/drafts/:id', name: 'edit-event-draft', component: NewEventRequestView, meta: { requiresAuth: true, roles: ['event_organiser'] } },
   { path: '/login', name: 'login', component: LoginView, meta: { guestOnly: true } },

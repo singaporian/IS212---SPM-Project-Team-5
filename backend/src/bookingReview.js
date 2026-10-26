@@ -28,10 +28,10 @@ router.get('/:id/review', auth.authenticate, auth.requireRoles('venue_staff'), a
   }
   try {
     const result = await db.query(`SELECT b.*, e.title AS event_title,
-      u.name AS coordinator_name, u.email AS coordinator_email,
+      d.name AS decision_author, u.name AS coordinator_name, u.email AS coordinator_email,
       e.expected_attendance, e.preferred_start, e.preferred_end, e.venue_layout_preference,
       e.accessibility_requirements, e.equipment_requirements, e.draft_data
-      FROM bookings b JOIN events e ON e.id = b.event_id LEFT JOIN users u ON u.id = b.requested_by WHERE b.id = $1`, [req.params.id]);
+      FROM bookings b JOIN events e ON e.id = b.event_id LEFT JOIN users u ON u.id = b.requested_by LEFT JOIN users d ON d.id = b.decided_by WHERE b.id = $1`, [req.params.id]);
     const request = result.rows[0];
     if (!request) return res.status(404).json({ error: 'Booking request not found.' });
     const occupied = occupiedInterval(request);
