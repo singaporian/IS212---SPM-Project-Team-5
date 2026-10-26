@@ -2,9 +2,10 @@
   <main class="venue-inbox">
     <router-link to="/" class="small">Back to Dashboard</router-link>
     <header class="inbox-heading">
-      <div><p class="eyebrow">VENUE WORKSPACE</p><h1>Pending venue booking requests</h1><p class="text-muted">Review the requested arrangement before making a decision. Times are in Singapore time.</p></div>
+      <div><p class="eyebrow">VENUE WORKSPACE</p><h1>{{ $route.path === '/bookings/reviewed' ? 'Reviewed venue booking requests' : 'Pending venue booking requests' }}</h1><p class="text-muted">Review the requested arrangement before making a decision. Times are in Singapore time.</p></div>
       <button class="btn btn-outline-primary" :disabled="loading" @click="load">Refresh inbox</button>
     </header>
+    <nav class="mb-3 d-flex gap-3" aria-label="Request status"><router-link to="/bookings/pending" :aria-current="$route.path === '/bookings/pending' ? 'page' : undefined">Pending</router-link><router-link to="/bookings/reviewed" :aria-current="$route.path === '/bookings/reviewed' ? 'page' : undefined">Reviewed</router-link></nav>
     <p v-if="loading" role="status">Loading requests...</p>
     <div v-else-if="error" class="alert alert-danger" role="alert">{{ error }} <button class="btn btn-link" @click="load">Retry</button></div>
     <p v-else-if="!requests.length" class="empty-state">No requests in this view.</p>
@@ -21,7 +22,7 @@
           </template>
           <p v-else role="status" class="text-muted">{{ summaryErrors[request.id] || 'Loading attendance and availability...' }}</p>
         </div>
-        <router-link class="btn btn-primary" :to="{ name: 'venue-booking-review', params: { id: request.id } }">Review Request</router-link>
+        <router-link class="btn btn-primary" :to="{ name: 'venue-booking-review', params: { id: request.id }, query: { from: $route.path === '/bookings/reviewed' ? 'reviewed' : 'pending' } }">Review Request</router-link>
       </div>
     </article>
   </main>
@@ -40,7 +41,7 @@ export default {
       const version = ++this.loadVersion
       this.loading = true; this.error = ''; this.requests = []; this.summaries = {}; this.summaryErrors = {}
       try {
-        const response = await fetch('/api/bookings/pending', { headers: authHeaders() })
+        const response = await fetch(this.$route.path === '/bookings/reviewed' ? '/api/bookings/reviewed' : '/api/bookings/pending', { headers: authHeaders() })
         if (version !== this.loadVersion) return
         if (response.status === 401) { clearSession(); this.$router.push('/login'); return }
         const data = await response.json()
@@ -67,6 +68,7 @@ export default {
       finally { if (version === this.loadVersion) this.loading = false }
     }
   },
+  watch: { '$route.path'() { this.load() } },
   mounted() { this.load() }
 }
 </script>

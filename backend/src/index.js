@@ -740,61 +740,69 @@ app.get('/api/bookings/pending', auth.authenticate, auth.requireRoles('venue_sta
   res.json(result.rows);
 });
 
+// US-033: decisions use the existing booking row and recheck committed availability.
 app.patch('/api/bookings/:id/decision', auth.authenticate, auth.requireRoles('venue_staff'), async (req, res) => {
-  const { decision, reason = '', comment = '', alternativeStartTime, alternativeEndTime } = req.body;
-  if (!['approved', 'rejected', 'alternative_suggested'].includes(decision)) return res.status(400).json({ error: 'Invalid booking decision' });
-  if (decision === 'rejected' && !reason.trim()) return res.status(400).json({ error: 'A rejection reason is required' });
-  if (decision === 'alternative_suggested' && (!alternativeStartTime || !alternativeEndTime)) return res.status(400).json({ error: 'An alternative start and end time are required' });
+  if (!uuidPattern.test(req.params.id)) return res.status(404).json({ error: 'Booking request not found' });
+  let input;
+  try { input = require('./bookingDecisions').parseBookingDecision(req.body); }
+  catch (error) { return res.status(error.status).json({ error: error.message }); }
+  const { decision, reason, comment, alternativeStart, alternativeEnd } = input;
   let client;
   try {
     client = await db.pool.connect();
     await client.query('BEGIN');
+    // Serialise reservation writes and blocked-period edits during check + decision.
+    // Existing submission writers also take the conflicting PostgreSQL row-exclusive table lock.
+    await client.query('LOCK TABLE bookings, venue_unavailabilities, venue_holds IN SHARE ROW EXCLUSIVE MODE');
+    const found = await client.query('SELECT * FROM bookings WHERE id = $1', [req.params.id]);
+    const booking = found.rows[0];
+    if (!booking) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Booking request not found' }); }
+    if (booking.status !== 'pending') { await client.query('ROLLBACK'); return res.status(409).json({ error: 'This request is no longer pending.' }); }
     if (decision === 'approved') {
-      await client.query('LOCK TABLE bookings, venue_unavailabilities, venue_holds IN SHARE ROW EXCLUSIVE MODE');
-      const booking = (await client.query('SELECT * FROM bookings WHERE id=$1', [req.params.id])).rows[0];
-      if (booking) {
-        const unavailable = await findUnavailability(client.query.bind(client), booking);
-        if (unavailable) {
-          await client.query('ROLLBACK');
-          return res.status(409).json({ error: `This venue is unavailable. ${unavailableMessage(unavailable)}`, unavailable });
-        }
-      }
-      if (booking && (await holdConflicts(client, booking)).length) {
+      const bookings = await client.query('SELECT * FROM bookings WHERE venue_id = $1 AND id <> $2', [booking.venue_id, booking.id]);
+      const unavailable = await findUnavailability(client.query.bind(client), booking);
+      const conflicts = [...require('./bookingReview').reviewConflicts(booking, bookings.rows, unavailable ? [{ ...unavailable, venue_id: booking.venue_id }] : []), ...await holdConflicts(client, booking)];
+      if (conflicts.length) {
         await client.query('ROLLBACK');
-        return res.status(409).json({ error: 'An active tentative hold blocks this occupied slot. Wait for the hold to expire before approval.' });
+        return res.status(409).json({ error: 'The venue is unavailable for this occupied interval. Refresh the review before deciding.', conflicts });
       }
     }
     const result = await client.query(
       `UPDATE bookings SET status = $1, decision_reason = $2, decision_comment = $3,
-             alternative_start_time = $4, alternative_end_time = $5, decided_by = $6, decided_at = now()
-       WHERE id = $7 AND status = 'pending'
-       RETURNING id, event_id, status, decision_reason, decision_comment, alternative_start_time, alternative_end_time, decided_at`,
-      [decision, reason.trim() || null, comment.trim() || null, alternativeStartTime || null, alternativeEndTime || null, req.auth.sub, req.params.id]
-    );
-    if (!result.rows[0]) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Pending booking request not found' }); }
-    const resultRow = result.rows[0];
+       alternative_start_time = $4, alternative_end_time = $5, decided_by = $6, decided_at = now()
+       WHERE id = $7 AND status = 'pending' RETURNING *`,
+      [decision, reason.trim() || null, comment.trim() || null, alternativeStart, alternativeEnd, req.auth.sub, booking.id]);
+    // Preserve main's event-readiness workflow and its safety notification atomically.
     if (decision === 'approved') {
-      const confirmedEvent = await promoteEventIfReady(client.query.bind(client), resultRow.event_id);
-      if (confirmedEvent) await client.query(
+      const readyEvent = await promoteEventIfReady(client.query.bind(client), booking.event_id);
+      if (readyEvent) await client.query(
         `INSERT INTO notifications (user_id, event_id, message)
          SELECT id, $1, $2 FROM users WHERE role = 'safety_officer'`,
-        [confirmedEvent.id, `Event "${confirmedEvent.title}" is ready for an Operational Safety Check.`]
+        [readyEvent.id, `Event "${readyEvent.title}" is ready for an Operational Safety Check.`]
       );
     }
-    // US-034: tell the event's current coordinator, who may have taken over from the one who requested the booking.
-    await client.query(
-      `INSERT INTO notifications (user_id, event_id, message)
-       SELECT COALESCE(e.assigned_coordinator_id, b.requested_by), b.event_id, $1
-       FROM bookings b LEFT JOIN events e ON e.id = b.event_id WHERE b.id = $2`,
-      [`Venue booking request ${decision.replace('_', ' ')}${reason ? `: ${reason}` : ''}`, req.params.id]
-    );
+    // Preserve US-034's notification recipient after coordinator reassignment.
+    await client.query(`INSERT INTO notifications (user_id, event_id, message)
+      SELECT COALESCE(e.assigned_coordinator_id, b.requested_by), b.event_id, $1
+      FROM bookings b LEFT JOIN events e ON e.id = b.event_id WHERE b.id = $2`,
+      [`Venue booking request ${decision.replaceAll('_', ' ')}${reason.trim() ? ': ' + reason.trim() : ''}`, booking.id]);
     await client.query('COMMIT');
-    res.json(resultRow);
+    res.json(result.rows[0]);
   } catch (error) {
     if (client) await client.query('ROLLBACK');
-    console.error(error);
+    console.error('Booking decision failed:', error.code || error.message);
     res.status(500).json({ error: 'Unable to save booking decision. Please retry.' });
   } finally { if (client) client.release(); }
+});
+
+app.get('/api/bookings/reviewed', auth.authenticate, auth.requireRoles('venue_staff'), async (req, res) => {
+  try {
+    const result = await db.query(`SELECT b.*, v.name AS venue_name, e.title AS event_title,
+      u.name AS coordinator_name FROM bookings b JOIN venues v ON v.id = b.venue_id
+      JOIN events e ON e.id = b.event_id LEFT JOIN users u ON u.id = b.requested_by
+      WHERE b.status IN ('approved', 'confirmed', 'rejected', 'alternative_suggested') ORDER BY b.decided_at DESC NULLS LAST`);
+    res.json(result.rows);
+  } catch { res.status(500).json({ error: 'Unable to load reviewed requests. Please retry.' }); }
 });
 
 // US-013: approve or reject a submitted request assigned to this coordinator

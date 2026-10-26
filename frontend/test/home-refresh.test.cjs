@@ -48,3 +48,25 @@ test('Refresh still loads the venue list for Venue Staff', async () => {
   assert.ok(fetched.includes('/api/venues'));
   assert.deepEqual(instance.venues.map(v => v.name), ['Hall']);
 });
+
+
+test('Venue Staff dashboard exposes Pending Booking Requests alongside holds and upcoming bookings', async () => {
+  const { compile, createSSRApp } = require('vue');
+  const { renderToString } = require('@vue/server-renderer');
+  const descriptor = parse(fs.readFileSync(path.join(__dirname, '../src/views/HomePage.vue'), 'utf8')).descriptor;
+  const script = descriptor.script.content.replace(/import .* from .*\r?\n/g, '').replace('export default', 'return');
+  for (const role of ['venue_staff', 'event_coordinator', 'event_organiser', 'attendee', 'safety_officer', 'technical_support_staff', 'event_coordinator_lead']) {
+    const options = new Function('authHeaders', 'clearSession', 'getUser', script)(()=>({}), ()=>{}, ()=>({name:'Tester',role}));
+    const html = (await renderToString(createSSRApp({...options, mounted:undefined,
+      render:compile(descriptor.template.content),
+      components:{RouterLink:{props:['to'],template:'<a :href="to"><slot /></a>'}}
+    }))).replace(/<!--.*?-->/g,'');
+    assert.equal(html.includes('href="/bookings/pending"'), role === 'venue_staff', role);
+    if (role === 'venue_staff') {
+      for (const [route,label] of [['/bookings/pending','Pending Venue Booking Requests'],['/venue/holds','Tentative Venue Holds'],['/venue/bookings','Upcoming Bookings']]) {
+        assert.ok(html.includes('href="'+route+'"'), route);
+        assert.ok(html.includes('>'+label+'</a>'), label);
+      }
+    }
+  }
+});

@@ -78,7 +78,7 @@ export default {
     toggleDetails(id) { this.selectedId = this.selectedId === id ? null : id },
     formatDate(value) { return value ? new Date(value).toLocaleString() : 'Time not provided' },
     statusLabel(status) {
-      const labels = { pending: 'Pending Review', approved: 'Reserved', confirmed: 'Reserved', alternative_suggested: 'Alternative Suggested' }
+      const labels = { pending: 'Pending Review', approved: 'Approved — venue reserved', confirmed: 'Reserved', alternative_suggested: 'Alternative Suggested' }
       return labels[status] || (status ? status.replaceAll('_', ' ') : 'Unknown Status')
     },
     statusClass(status) {
