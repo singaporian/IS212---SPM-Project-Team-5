@@ -67,6 +67,7 @@
             <div><strong>Venue's current turnaround requirement:</strong> {{ booking.default_turnaround_minutes ?? 0 }}</div>
             <div><strong>Booking status:</strong> Reserved</div>
             <div><strong>Event status:</strong> {{ booking.event_status }}</div>
+            <BookingNotes v-if="booking.status === 'confirmed'" :key="booking.id" :booking-id="booking.id" />
           </div>
         </div>
       </div>
@@ -76,9 +77,11 @@
 
 <script>
 import { authHeaders, clearSession } from '../services/auth'
+import BookingNotes from '../components/BookingNotes.vue'
 
 export default {
   name: 'VenueBookingsCalendarView',
+  components: { BookingNotes },
   data() {
     return {
       viewMode: 'week',

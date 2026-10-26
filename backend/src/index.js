@@ -23,6 +23,7 @@ app.use('/api/equipment', require('./equipment').router);
 app.use('/api/equipment', require('./equipmentReservations').router);
 app.use('/api', require('./submissions').router);
 app.use('/api/bookings', require('./bookingReview').router);
+app.use('/api/bookings', require('./bookingNotes').router);
 app.use('/api/venue-holds', require('./venueHolds').router);
 app.use('/api/safety', require('./safetyChecks').router);
 app.use('/api/preparation', require('./preparation').router); // US-021
