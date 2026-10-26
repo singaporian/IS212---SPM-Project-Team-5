@@ -40,6 +40,7 @@ const routes = [
   { path: '/venue/setup-turnaround', name: 'venue-setup-turnaround', component: VenueSetupTurnaroundView, meta: { requiresAuth: true, roles: ['venue_staff'] } },
   { path: '/attendee/events', name: 'attendee-events', component: AttendeeEventsView, meta: { requiresAuth: true, roles: ['attendee'] } },
   { path: '/attendee/calendar', name: 'attendee-calendar', component: AttendeeCalendarView, meta: { requiresAuth: true, roles: ['attendee'] } },
+  { path: '/bookings/reviewed', component: PendingBookingRequestsView, meta: { requiresAuth: true, roles: ['venue_staff'] } },
   { path: '/bookings/pending/:id', name: 'venue-booking-review', component: VenueBookingReviewView, meta: { requiresAuth: true, roles: ['venue_staff'] } },
   { path: '/requests/submitted', name: 'submitted-event-requests', component: SubmittedRequestsView, meta: { requiresAuth: true, roles: ['event_organiser'] } },
   { path: '/requests/submitted/:id', name: 'submitted-event-request', component: SubmittedRequestsView, meta: { requiresAuth: true, roles: ['event_organiser'] } },
