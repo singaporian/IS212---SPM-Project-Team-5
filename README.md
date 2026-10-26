@@ -246,6 +246,10 @@ The equipment type `Other` includes a details field, so coordinators can describ
 
 Technical Support Staff can open `/technical-support/queue` to see the latest requirements for all events. Replaced requirements are marked **Updated**, and requirements saved after the event start time are marked **Late request**.
 
+US-022 adds an explicit technical resource review workflow in the same queue. For each request, Technical Support Staff now see the event name, date/time, all booked venues, equipment quantities by type, staff required, and per-type current availability for the requested schedule (factoring overlapping equipment reservations). They record one of **Sufficient Resources Available** or **Insufficient Resources**, with an optional note.
+
+Insufficient decisions remain visibly flagged in the queue until the Event Coordinator updates the technical support requirements. If a Safety Officer requests technical changes, the request is flagged as **Re-review – Safety Check** in the queue with the Safety Officer comments.
+
 The US-016 schema is created by the normal initializer:
 
 ```bash
@@ -338,4 +342,3 @@ npm test
 ```
 
 The end-to-end tests start the backend and frontend themselves (or reuse ones already running locally) and need the database from `docker compose up -d db`. The full test plan and AC traceability are in `docs/testing/US-032-test-plan.md`.
-

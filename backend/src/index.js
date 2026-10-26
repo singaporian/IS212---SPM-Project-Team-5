@@ -8,9 +8,10 @@ const db = require('./db');
 const auth = require('./auth');
 const { activeHoldSql, holdConflicts, processHoldExpiries } = require('./holdAvailability');
 const { Venue, Booking } = require('./domain');
-const { occupiedInterval, overlaps } = require('./venueOccupancy');
+const { occupiedInterval, overlaps, OCCUPYING_STATUSES } = require('./venueOccupancy');
 const { promoteEventIfReady } = require('./eventReadiness');
 const { findUnavailability, unavailableMessage } = require('./venueAvailability');
+const { loadOtherReservations, inServiceQuantity, windowsOverlap, peakCommitted } = require('./equipmentReservations');
 
 dotenv.config();
 const app = express();
@@ -884,6 +885,11 @@ app.patch('/api/events/:id/decision', auth.authenticate, auth.requireRoles('even
 });
 
 const SUPPORT_EQUIPMENT_TYPES = Object.freeze(['Audio', 'Video & Display', 'Lighting', 'Staging', 'Networking', 'Power & Cabling', 'Furniture', 'Other']);
+const SUPPORT_STATUS_LABELS = Object.freeze({
+  pending: 'Pending Review',
+  confirmed: 'Sufficient Resources Available',
+  changes_requested: 'Insufficient Resources'
+});
 
 function validateSupportRequirements(body) {
   const equipment = Array.isArray(body.equipment) ? body.equipment : [];
@@ -910,6 +916,88 @@ function validateSupportRequirements(body) {
     throw Object.assign(new Error('No technical support can only be selected when no equipment or staff is required'), { status: 400 });
   }
   return { equipment: normalizedEquipment, staffRequired, supportRequired: !noSupportRequired };
+}
+
+function supportDecisionLabel(status) {
+  return SUPPORT_STATUS_LABELS[status] || status;
+}
+
+function parseSupportDecision(body = {}) {
+  const rawDecision = typeof body.decision === 'string' ? body.decision.trim() : '';
+  const decision = rawDecision.toLowerCase().replace(/[^a-z]+/g, '_').replace(/^_+|_+$/g, '');
+  const comments = body.comments ?? '';
+  const statusByDecision = {
+    confirmed: 'confirmed',
+    sufficient_resources_available: 'confirmed',
+    changes_requested: 'changes_requested',
+    insufficient_resources: 'changes_requested'
+  };
+  const status = statusByDecision[decision];
+  if (!status) throw Object.assign(new Error('Decision must be "Sufficient Resources Available" or "Insufficient Resources"'), { status: 400 });
+  if (typeof comments !== 'string' || comments.trim().length > 2000) throw Object.assign(new Error('Comments must be 2,000 characters or fewer'), { status: 400 });
+  return { status, comments: comments.trim(), label: supportDecisionLabel(status) };
+}
+
+function validWindow(start, end) {
+  return Number.isFinite(new Date(start).getTime()) &&
+    Number.isFinite(new Date(end).getTime()) &&
+    new Date(end).getTime() > new Date(start).getTime();
+}
+
+function eventWindowsForAvailability(event, bookings) {
+  const windows = (bookings || [])
+    .filter((booking) => OCCUPYING_STATUSES.includes(booking.status) && validWindow(booking.start_time, booking.end_time))
+    .map((booking) => ({ start: booking.start_time, end: booking.end_time }));
+  if (windows.length) return { windows, basis: 'bookings' };
+  if (validWindow(event.preferred_start, event.preferred_end)) {
+    return { windows: [{ start: event.preferred_start, end: event.preferred_end }], basis: 'event_preferred_time' };
+  }
+  return { windows: [], basis: 'unscheduled' };
+}
+
+async function equipmentAvailabilityByType(query, { eventId, equipmentRequirements, preferredStart, preferredEnd, bookings }) {
+  const requestedByType = new Map();
+  for (const item of Array.isArray(equipmentRequirements) ? equipmentRequirements : []) {
+    if (!item || typeof item !== 'object') continue;
+    const type = typeof item.type === 'string' ? item.type.trim() : '';
+    const quantity = Number(item.quantity);
+    if (!SUPPORT_EQUIPMENT_TYPES.includes(type) || !Number.isInteger(quantity) || quantity <= 0) continue;
+    requestedByType.set(type, (requestedByType.get(type) || 0) + quantity);
+  }
+  const requestedTypes = [...requestedByType.keys()];
+  if (!requestedTypes.length) return { byType: [], windowsBasis: 'unscheduled' };
+
+  const { windows, basis } = eventWindowsForAvailability(
+    { preferred_start: preferredStart, preferred_end: preferredEnd },
+    bookings
+  );
+  const [equipmentRows, otherReservations] = await Promise.all([
+    query(
+      `SELECT id, equipment_type, status, total_quantity, damaged_quantity, maintenance_quantity
+       FROM equipment
+       WHERE equipment_type = ANY($1::text[])`,
+      [requestedTypes]
+    ),
+    windows.length ? loadOtherReservations(query, eventId) : Promise.resolve([])
+  ]);
+  const availableByType = new Map(requestedTypes.map((type) => [type, { type, requested_quantity: requestedByType.get(type), available_quantity: 0, in_service_quantity: 0, committed_elsewhere: 0, sufficient: false }]));
+  for (const item of equipmentRows.rows) {
+    const entry = availableByType.get(item.equipment_type);
+    if (!entry) continue;
+    const inService = item.status === 'available' ? inServiceQuantity(item) : 0;
+    const overlapping = windows.length
+      ? otherReservations.filter((reservation) => reservation.equipment_id === item.id && windowsOverlap(windows, reservation.windows))
+      : [];
+    const committedElsewhere = windows.length ? peakCommitted(windows, overlapping) : 0;
+    entry.in_service_quantity += inService;
+    entry.committed_elsewhere += committedElsewhere;
+    entry.available_quantity += Math.max(0, inService - committedElsewhere);
+  }
+  const byType = requestedTypes.map((type) => {
+    const entry = availableByType.get(type);
+    return { ...entry, sufficient: entry.available_quantity >= entry.requested_quantity };
+  });
+  return { byType, windowsBasis: basis };
 }
 
 // US-016: save or replace the latest technical support requirements for an assigned event.
@@ -980,7 +1068,20 @@ app.get('/api/events/:id/technical-support', auth.authenticate, async (req, res)
        WHERE tsr.event_id = $1`,
       [req.params.id]
     );
-    res.json(result.rows[0] || { event_id: req.params.id, event_title: event.title, equipment_requirements: [], staff_required: 0, support_required: true, status: 'pending', late_request: false, updated: false });
+    if (!result.rows[0]) {
+      return res.json({
+        event_id: req.params.id,
+        event_title: event.title,
+        equipment_requirements: [],
+        staff_required: 0,
+        support_required: true,
+        status: 'pending',
+        resource_decision: supportDecisionLabel('pending'),
+        late_request: false,
+        updated: false
+      });
+    }
+    res.json({ ...result.rows[0], resource_decision: supportDecisionLabel(result.rows[0].status) });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Unable to load technical support requirements' });
@@ -990,11 +1091,55 @@ app.get('/api/events/:id/technical-support', auth.authenticate, async (req, res)
 app.get('/api/technical-support/requirements', auth.authenticate, auth.requireRoles('technical_support_staff'), async (req, res) => {
   try {
     const result = await db.query(
-      `SELECT tsr.*, (tsr.update_count > 0) AS updated, e.title AS event_title, e.preferred_start, e.preferred_end
-       FROM technical_support_requirements tsr JOIN events e ON e.id = tsr.event_id
+      `SELECT tsr.*, (tsr.update_count > 0) AS updated, e.title AS event_title, e.preferred_start, e.preferred_end,
+              osc.status AS safety_status, osc.comments AS safety_comments, osc.change_scope AS safety_change_scope
+       FROM technical_support_requirements tsr
+       JOIN events e ON e.id = tsr.event_id
+       LEFT JOIN operational_safety_checks osc ON osc.event_id = tsr.event_id
        ORDER BY e.preferred_start NULLS LAST, tsr.updated_at DESC`
     );
-    res.json(result.rows);
+    const eventIds = result.rows.map((row) => row.event_id);
+    const bookings = eventIds.length
+      ? (await db.query(
+        `SELECT b.event_id, b.status, b.start_time, b.end_time, v.name AS venue_name
+         FROM bookings b
+         LEFT JOIN venues v ON v.id = b.venue_id
+         WHERE b.event_id = ANY($1::uuid[])
+           AND b.status IN ('pending', 'approved', 'confirmed')
+         ORDER BY b.start_time ASC`,
+        [eventIds]
+      )).rows
+      : [];
+    const bookingsByEvent = bookings.reduce((acc, booking) => {
+      const list = acc.get(booking.event_id) || [];
+      list.push(booking);
+      acc.set(booking.event_id, list);
+      return acc;
+    }, new Map());
+    const hydrated = await Promise.all(result.rows.map(async (row) => {
+      const eventBookings = bookingsByEvent.get(row.event_id) || [];
+      const venues = [...new Set(eventBookings.map((booking) => booking.venue_name).filter(Boolean))];
+      const availability = await equipmentAvailabilityByType(db.query, {
+        eventId: row.event_id,
+        equipmentRequirements: row.equipment_requirements,
+        preferredStart: row.preferred_start,
+        preferredEnd: row.preferred_end,
+        bookings: eventBookings
+      });
+      const reReviewSafetyCheck = row.safety_status === 'changes_requested' &&
+        Array.isArray(row.safety_change_scope) &&
+        row.safety_change_scope.includes('technical');
+      return {
+        ...row,
+        venues,
+        venue_bookings: eventBookings,
+        resource_decision: supportDecisionLabel(row.status),
+        re_review_safety_check: reReviewSafetyCheck,
+        equipment_availability: availability.byType,
+        equipment_availability_window_basis: availability.windowsBasis
+      };
+    }));
+    res.json(hydrated);
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Unable to load technical support requirements' });
@@ -1003,9 +1148,9 @@ app.get('/api/technical-support/requirements', auth.authenticate, auth.requireRo
 
 // Technical Support Staff confirm arrangements or send them back for changes.
 app.patch('/api/events/:id/technical-support/decision', auth.authenticate, auth.requireRoles('technical_support_staff'), async (req, res) => {
-  const { decision, comments = '' } = req.body || {};
-  if (!['confirmed', 'changes_requested'].includes(decision)) return res.status(400).json({ error: 'Decision must be confirmed or changes_requested' });
-  if (typeof comments !== 'string' || comments.trim().length > 2000) return res.status(400).json({ error: 'Comments must be 2,000 characters or fewer' });
+  let decision;
+  try { decision = parseSupportDecision(req.body); }
+  catch (error) { return res.status(error.status || 400).json({ error: error.message }); }
   const client = await db.pool.connect();
   try {
     await client.query('BEGIN');
@@ -1014,15 +1159,15 @@ app.patch('/api/events/:id/technical-support/decision', auth.authenticate, auth.
        SET status = $1, decision_comments = $2, decided_by = $3, decided_at = now(), updated_at = now()
        WHERE event_id = $4
        RETURNING event_id, status, decision_comments, decided_by, decided_at`,
-      [decision, comments.trim() || null, req.auth.sub, req.params.id]
+      [decision.status, decision.comments || null, req.auth.sub, req.params.id]
     );
     if (!result.rows[0]) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Technical support requirements not found' }); }
     const event = (await client.query('SELECT id, title, assigned_coordinator_id FROM events WHERE id = $1', [req.params.id])).rows[0];
     if (event?.assigned_coordinator_id) await client.query(
       `INSERT INTO notifications (user_id, event_id, message) VALUES ($1, $2, $3)`,
-      [event.assigned_coordinator_id, event.id, `Technical support arrangements ${decision.replace('_', ' ')} for ${event.title}${comments.trim() ? `: ${comments.trim()}` : ''}`]
+      [event.assigned_coordinator_id, event.id, `Technical support review for ${event.title}: ${decision.label}${decision.comments ? ` — ${decision.comments}` : ''}`]
     );
-    if (decision === 'confirmed') {
+    if (decision.status === 'confirmed') {
       const confirmedEvent = await promoteEventIfReady(client.query.bind(client), req.params.id);
       if (confirmedEvent) await client.query(
         `INSERT INTO notifications (user_id, event_id, message)
@@ -1031,7 +1176,7 @@ app.patch('/api/events/:id/technical-support/decision', auth.authenticate, auth.
       );
     }
     await client.query('COMMIT');
-    res.json(result.rows[0]);
+    res.json({ ...result.rows[0], resource_decision: supportDecisionLabel(result.rows[0].status) });
   } catch (error) {
     await client.query('ROLLBACK').catch(() => {});
     console.error(error);
