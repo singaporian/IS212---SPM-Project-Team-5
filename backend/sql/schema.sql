@@ -325,3 +325,15 @@ ALTER TABLE bookings ADD COLUMN IF NOT EXISTS preparation_status text NOT NULL D
 ALTER TABLE bookings DROP CONSTRAINT IF EXISTS bookings_preparation_status_check;
 ALTER TABLE bookings ADD CONSTRAINT bookings_preparation_status_check
   CHECK (preparation_status IN ('not_started', 'in_progress', 'ready'));
+
+
+-- US-018: internal notes are separate from booking responses shared with other roles.
+CREATE TABLE IF NOT EXISTS booking_notes (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  booking_id uuid NOT NULL REFERENCES bookings(id) ON DELETE CASCADE,
+  note_text text NOT NULL CHECK (length(btrim(note_text)) > 0 AND length(note_text) <= 10000),
+  created_by uuid NOT NULL REFERENCES users(id),
+  created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+  updated_at timestamptz NOT NULL DEFAULT clock_timestamp()
+);
+CREATE INDEX IF NOT EXISTS booking_notes_chronological ON booking_notes (booking_id, created_at, id);
