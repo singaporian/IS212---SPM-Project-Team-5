@@ -66,7 +66,8 @@ test('submission integrates with real PostgreSQL and coordinator routes', async 
     await pool.query('ALTER TABLE events ADD FOREIGN KEY (organiser_id) REFERENCES users(id)');
     await pool.query('ALTER TABLE events ADD FOREIGN KEY (assigned_coordinator_id) REFERENCES users(id)');
     const owner = randomUUID(), other = randomUUID(), coordinator = randomUUID();
-    for (const [id, role] of [[owner, 'event_organiser'], [other, 'event_organiser'], [coordinator, 'event_coordinator']]) {
+    const lead = randomUUID(), secondLead = randomUUID(), staff = randomUUID(), attendee = randomUUID();
+    for (const [id, role] of [[owner, 'event_organiser'], [other, 'event_organiser'], [coordinator, 'event_coordinator'], [lead, 'event_coordinator_lead'], [secondLead, 'event_coordinator_lead'], [staff, 'venue_staff'], [attendee, 'attendee']]) {
       await pool.query('INSERT INTO users (id,name,email,password_hash,role) VALUES ($1,$2,$3,$4,$5)',
         [id, role, id + '@test.local', 'unused-test-hash', role]);
     }
@@ -90,8 +91,58 @@ test('submission integrates with real PostgreSQL and coordinator routes', async 
     const row = async id => (await pool.query('SELECT * FROM events WHERE id=$1', [id])).rows[0];
     const coordToken = token(coordinator, 'event_coordinator');
     // US-034: submitted requests wait in the Event Coordinator Lead's unassigned queue.
-    const leadToken = token(randomUUID(), 'event_coordinator_lead');
+    const leadToken = token(lead, 'event_coordinator_lead');
     const inLeadQueue = async id => (await request('/coordinator-lead/overview', 'GET', undefined, leadToken)).body.unassigned.some(item => item.id === id);
+    const submissionNotifications = async id => (await pool.query(
+      "SELECT user_id, event_id, message FROM notifications WHERE event_id=$1 AND message LIKE 'Event request %awaiting assignment.' ORDER BY user_id", [id])).rows;
+    const leadIds = [lead, secondLead].sort();
+    await t.test('[IT-US006-N01] successful submission notifies only Leads through the shared notification API', async () => {
+      const draft = await save({ ...complete, eventName: 'Lead notification workshop' });
+      assert.deepEqual(await submissionNotifications(draft.id), [], 'saving a draft creates no submission notification');
+      assert.equal((await submit(draft)).status, 200);
+      const notifications = await submissionNotifications(draft.id);
+      assert.deepEqual(notifications.map(n => n.user_id), leadIds);
+      for (const note of notifications) {
+        assert.equal(note.event_id, draft.id);
+        assert.equal(note.message, 'Event request "Lead notification workshop" has been submitted and is awaiting assignment.');
+      }
+      const inbox = await request('/notifications', 'GET', undefined, leadToken);
+      assert.equal(inbox.status, 200);
+      assert.ok(inbox.body.some(n => n.event_id === draft.id && n.message.includes('awaiting assignment')));
+      for (const [id, role] of [[owner,'event_organiser'],[other,'event_organiser'],[staff,'venue_staff'],[attendee,'attendee']]) {
+        const unrelated = await request('/notifications', 'GET', undefined, token(id,role));
+        assert.equal(unrelated.status, 200);
+        assert.ok(!unrelated.body.some(n => n.event_id === draft.id));
+      }
+    });
+    await t.test('[IT-US006-N02] invalid, stale and unauthorised submissions create no notifications', async () => {
+      const draft = await save();
+      const path = '/drafts/' + draft.id + '/submit';
+      assert.equal((await request(path, 'POST', { version: draft.version, draft: { ...complete, expectedAttendance: '0' } })).status, 422);
+      assert.equal((await request(path, 'POST', { version: draft.version }, token(other))).status, 404);
+      assert.equal((await request(path, 'POST', { version: draft.version }, token(coordinator,'event_coordinator'))).status, 403);
+      await save({ ...complete, purpose: 'Newer version' }, draft.id);
+      assert.equal((await submit(draft)).status, 409);
+      assert.equal((await row(draft.id)).status, 'draft');
+      assert.equal((await pool.query('SELECT count(*)::int AS n FROM notifications WHERE event_id=$1',[draft.id])).rows[0].n,0);
+    });
+    await t.test('[IT-US006-N03] failed notification persistence rolls back submission and retry notifies once', async () => {
+      const draft = await save({ ...complete, eventName: 'Notification failure' });
+      const before = await row(draft.id);
+      await pool.query(`ALTER TABLE notifications ADD CONSTRAINT force_notification_failure
+        CHECK (message NOT LIKE 'Event request "Notification failure"%')`);
+      assert.equal((await submit(draft)).status, 500);
+      assert.deepEqual(await row(draft.id), before);
+      assert.deepEqual(await submissionNotifications(draft.id), []);
+      const newId = randomUUID(), newBody = { version: null, draft: { ...complete, eventName: 'Notification failure' } };
+      assert.equal((await request('/drafts/'+newId+'/submit','POST',newBody)).status,500);
+      assert.equal(await row(newId),undefined,'failed direct creation leaves no partial event');
+      assert.deepEqual(await submissionNotifications(newId),[]);
+      await pool.query('ALTER TABLE notifications DROP CONSTRAINT force_notification_failure');
+      assert.equal((await submit(draft)).status, 200);
+      assert.equal((await submit(draft)).status, 200);
+      assert.deepEqual((await submissionNotifications(draft.id)).map(n=>n.user_id),leadIds);
+    });
     // Lark: US-006-003 through US-006-006; invalid-clock and DEF-001 regressions.
     await t.test('US-006 rejected values give corrective errors and preserve the entire draft', async () => {
       const cases = [
@@ -150,7 +201,7 @@ test('submission integrates with real PostgreSQL and coordinator routes', async 
       }
     });
     // Lark: US-006-001, US-006-002, US-006-006.
-    await t.test('direct submit saves current values on the same ID and matching retries are idempotent', async () => {
+    await t.test('[IT-US006-N04] direct submit saves current values and concurrent retries notify Leads once', async () => {
       const draft = await save({ purpose: 'Old saved draft' });
       const current = { ...complete, eventName: 'Current title', purpose: 'Unsaved purpose', startTime: '10:05', endTime: '10:10', expectedAttendance: '1' };
       const body = { version: draft.version, draft: current };
@@ -162,6 +213,7 @@ test('submission integrates with real PostgreSQL and coordinator routes', async 
       assert.equal(stored.status, 'submitted');
       for (const [key, value] of Object.entries(current)) assert.equal(stored.draft_data[key], value);
       assert.equal(stored.title, current.eventName);
+      assert.deepEqual((await submissionNotifications(draft.id)).map(n=>n.user_id),leadIds);
       assert.equal(stored.expected_attendance, 1);
       assert.equal((await pool.query('SELECT count(*) FROM events WHERE id=$1', [draft.id])).rows[0].count, '1');
       assert.ok(await inLeadQueue(draft.id));
@@ -195,6 +247,7 @@ test('submission integrates with real PostgreSQL and coordinator routes', async 
       assert.equal((await row(id)).status, 'submitted');
       assert.equal((await pool.query('SELECT count(*) FROM events WHERE id=$1', [id])).rows[0].count, '1');
       assert.ok(await inLeadQueue(id));
+      assert.deepEqual((await submissionNotifications(id)).map(n=>n.user_id),leadIds,'new-form concurrent retries notify once per Lead');
     });
     // Organiser five-minute timing regression; DEF-001 ordering retained.
     await t.test('Organiser midnight direct submission preserves Singapore dates and minute values', async () => {
@@ -310,6 +363,7 @@ test('submission integrates with real PostgreSQL and coordinator routes', async 
       assert.deepEqual(results[0].body, results[1].body);
       assert.deepEqual((await submit(draft)).body, results[0].body);
       assert.equal((await pool.query('SELECT count(*) FROM events WHERE id=$1', [draft.id])).rows[0].count, '1');
+      assert.deepEqual((await submissionNotifications(draft.id)).map(n=>n.user_id),leadIds,'saved-draft retries notify once per Lead');
       await pool.query("UPDATE events SET status='approved' WHERE id=$1", [draft.id]);
       assert.equal((await submit(draft)).status, 409);
       assert.equal((await row(draft.id)).status, 'approved');
@@ -320,6 +374,7 @@ test('submission integrates with real PostgreSQL and coordinator routes', async 
       const before = await row(draft.id);
       assert.equal((await submit(draft)).status, 500);
       assert.deepEqual(await row(draft.id), before);
+      assert.deepEqual(await submissionNotifications(draft.id),[],'event-save failure produces no submission notification');
       await pool.query('ALTER TABLE events DROP CONSTRAINT forced_submission_failure');
       assert.equal((await submit(draft)).status, 200);
     });

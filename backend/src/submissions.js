@@ -129,6 +129,11 @@ router.post('/drafts/:id/submit', async (req, res) => {
       Number(data.expectedAttendance.trim()), data.venueRequirements,
       JSON.stringify(accessibility ? { notes: accessibility } : {}), JSON.stringify(equipment ? [equipment] : []),
       data.registrationNeeds === 'not_decided' ? null : data.registrationNeeds === 'yes', event.id, req.auth.sub, JSON.stringify(data)]);
+    // Notify the assignment role only for the first Draft -> Submitted transition.
+    // The event row lock and existing retry path prevent duplicates; commit both writes together.
+    await client.query(`INSERT INTO notifications (user_id, event_id, message)
+      SELECT id, $1, $2 FROM users WHERE role = 'event_coordinator_lead'`,
+      [event.id, `Event request "${data.eventName}" has been submitted and is awaiting assignment.`]);
     await client.query('COMMIT');
     res.json(updated.rows[0]);
   } catch (error) {
