@@ -34,6 +34,10 @@ export function getEquipmentAvailability(eventId) {
   return request(`/api/equipment/availability?eventId=${encodeURIComponent(eventId)}`, {}, 'Unable to load equipment availability. Please retry.')
 }
 
+export function getTechnicalSupportRequirements(eventId) {
+  return request(`/api/events/${encodeURIComponent(eventId)}/technical-support`, {}, 'Unable to load technical support requirements for this event. Please retry.')
+}
+
 export function reserveEquipment(payload) {
   return request('/api/equipment/reservations', { method: 'POST', body: JSON.stringify(payload) }, 'Unable to save the reservation. Please retry.')
 }

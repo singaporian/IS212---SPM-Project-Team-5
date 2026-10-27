@@ -884,7 +884,6 @@ app.patch('/api/events/:id/decision', auth.authenticate, auth.requireRoles('even
   }
 });
 
-const SUPPORT_EQUIPMENT_TYPES = Object.freeze(['Audio', 'Video & Display', 'Lighting', 'Staging', 'Networking', 'Power & Cabling', 'Furniture', 'Other']);
 const SUPPORT_STATUS_LABELS = Object.freeze({
   pending: 'Pending Review',
   confirmed: 'Sufficient Resources Available',
@@ -896,21 +895,33 @@ function validateSupportRequirements(body) {
   const noSupportRequired = body.noSupportRequired === true;
   const seen = new Set();
   const normalizedEquipment = equipment.map((item) => {
+    const equipmentId = typeof item.equipmentId === 'string'
+      ? item.equipmentId.trim()
+      : (typeof item.equipment_id === 'string' ? item.equipment_id.trim() : '');
     const type = typeof item.type === 'string' ? item.type.trim() : '';
     const quantity = Number(item.quantity);
     const details = typeof item.details === 'string' ? item.details.trim() : '';
-    if (!SUPPORT_EQUIPMENT_TYPES.includes(type)) throw Object.assign(new Error('Choose a valid equipment type'), { status: 400 });
-    if (seen.has(type)) throw Object.assign(new Error('Each equipment type may only be listed once'), { status: 400 });
     if (!Number.isInteger(quantity) || quantity <= 0) throw Object.assign(new Error('Equipment quantities must be positive whole numbers'), { status: 400 });
+    if (equipmentId) {
+      if (!uuidPattern.test(equipmentId)) throw Object.assign(new Error('Choose a valid equipment item.'), { status: 400 });
+      const key = 'id:' + equipmentId;
+      if (seen.has(key)) throw Object.assign(new Error('Each equipment item may only be listed once'), { status: 400 });
+      seen.add(key);
+      return { equipmentId, quantity };
+    }
+
+    // Backward-compatible payload support for older clients.
+    if (!type) throw Object.assign(new Error('Choose equipment to request.'), { status: 400 });
     if (details.length > 500) throw Object.assign(new Error('Equipment details must be at most 500 characters'), { status: 400 });
-    if (type === 'Other' && !details) throw Object.assign(new Error('Describe the equipment when using Other'), { status: 400 });
-    seen.add(type);
-    return { type, quantity, ...(details ? { details } : {}) };
+    const legacyKey = 'legacy:' + type.toLowerCase();
+    if (seen.has(legacyKey)) throw Object.assign(new Error('Each equipment type may only be listed once'), { status: 400 });
+    seen.add(legacyKey);
+    return { legacyType: type, legacyDetails: details, quantity };
   });
   const staffRequired = Number(body.staffRequired);
   if (!Number.isInteger(staffRequired) || staffRequired < 0) throw Object.assign(new Error('Number of staff must be a non-negative whole number'), { status: 400 });
   if (!noSupportRequired && staffRequired === 0 && normalizedEquipment.length === 0) {
-    throw Object.assign(new Error('Select at least one equipment type or require at least one technical support staff member'), { status: 400 });
+    throw Object.assign(new Error('Select at least one equipment item or require at least one technical support staff member'), { status: 400 });
   }
   if (noSupportRequired && (staffRequired !== 0 || normalizedEquipment.length !== 0)) {
     throw Object.assign(new Error('No technical support can only be selected when no equipment or staff is required'), { status: 400 });
@@ -955,50 +966,193 @@ function eventWindowsForAvailability(event, bookings) {
   return { windows: [], basis: 'unscheduled' };
 }
 
-async function equipmentAvailabilityByType(query, { eventId, equipmentRequirements, preferredStart, preferredEnd, bookings }) {
-  const requestedByType = new Map();
-  for (const item of Array.isArray(equipmentRequirements) ? equipmentRequirements : []) {
-    if (!item || typeof item !== 'object') continue;
-    const type = typeof item.type === 'string' ? item.type.trim() : '';
-    const quantity = Number(item.quantity);
-    if (!SUPPORT_EQUIPMENT_TYPES.includes(type) || !Number.isInteger(quantity) || quantity <= 0) continue;
-    requestedByType.set(type, (requestedByType.get(type) || 0) + quantity);
-  }
-  const requestedTypes = [...requestedByType.keys()];
-  if (!requestedTypes.length) return { byType: [], windowsBasis: 'unscheduled' };
+function normalizeSupportEquipmentRequirements(rawRequirements = []) {
+  return rawRequirements
+    .map((item) => {
+      if (!item || typeof item !== 'object') return null;
+      const quantity = Number(item.quantity);
+      if (!Number.isInteger(quantity) || quantity <= 0) return null;
+      const equipmentId = typeof item.equipment_id === 'string' && uuidPattern.test(item.equipment_id.trim())
+        ? item.equipment_id.trim()
+        : null;
+      const equipmentName = typeof item.equipment_name === 'string' && item.equipment_name.trim()
+        ? item.equipment_name.trim()
+        : (typeof item.type === 'string' ? item.type.trim() : '');
+      const equipmentType = typeof item.equipment_type === 'string' && item.equipment_type.trim()
+        ? item.equipment_type.trim()
+        : (typeof item.type === 'string' ? item.type.trim() : '');
+      const details = typeof item.details === 'string' && item.details.trim() ? item.details.trim() : '';
+      return {
+        equipment_id: equipmentId,
+        equipment_name: equipmentName || equipmentType || 'Unknown equipment',
+        equipment_type: equipmentType || null,
+        quantity,
+        ...(details ? { details } : {})
+      };
+    })
+    .filter(Boolean);
+}
 
+function presentSupportEquipment(item) {
+  return {
+    ...item,
+    type: item.equipment_name
+  };
+}
+
+function presentEquipmentCatalogRow(row) {
+  const availableQuantity = row.status === 'available' ? inServiceQuantity(row) : 0;
+  return {
+    id: row.id,
+    name: row.name,
+    equipment_type: row.equipment_type,
+    status: row.status,
+    total_quantity: row.total_quantity,
+    damaged_quantity: row.damaged_quantity || 0,
+    maintenance_quantity: row.maintenance_quantity || 0,
+    available_quantity: availableQuantity
+  };
+}
+
+async function equipmentAvailabilityByRequirement(query, { eventId, equipmentRequirements, preferredStart, preferredEnd, bookings }) {
+  const requested = normalizeSupportEquipmentRequirements(equipmentRequirements);
+  if (!requested.length) return { rows: [], windowsBasis: 'unscheduled' };
+
+  const requestedIds = [...new Set(requested.map((item) => item.equipment_id).filter(Boolean))];
+  const legacyTypes = [...new Set(requested.filter((item) => !item.equipment_id && item.equipment_type).map((item) => item.equipment_type))];
   const { windows, basis } = eventWindowsForAvailability(
     { preferred_start: preferredStart, preferred_end: preferredEnd },
     bookings
   );
   const [equipmentRows, otherReservations] = await Promise.all([
-    query(
-      `SELECT id, equipment_type, status, total_quantity, damaged_quantity, maintenance_quantity
-       FROM equipment
-       WHERE equipment_type = ANY($1::text[])`,
-      [requestedTypes]
-    ),
+    (requestedIds.length || legacyTypes.length)
+      ? query(
+        `SELECT id, name, equipment_type, status, total_quantity, damaged_quantity, maintenance_quantity
+         FROM equipment
+         WHERE ($1::uuid[] <> '{}'::uuid[] AND id = ANY($1::uuid[]))
+            OR ($2::text[] <> '{}'::text[] AND equipment_type = ANY($2::text[]))`,
+        [requestedIds, legacyTypes]
+      )
+      : Promise.resolve({ rows: [] }),
     windows.length ? loadOtherReservations(query, eventId) : Promise.resolve([])
   ]);
-  const availableByType = new Map(requestedTypes.map((type) => [type, { type, requested_quantity: requestedByType.get(type), available_quantity: 0, in_service_quantity: 0, committed_elsewhere: 0, sufficient: false }]));
-  for (const item of equipmentRows.rows) {
-    const entry = availableByType.get(item.equipment_type);
-    if (!entry) continue;
-    const inService = item.status === 'available' ? inServiceQuantity(item) : 0;
-    const overlapping = windows.length
-      ? otherReservations.filter((reservation) => reservation.equipment_id === item.id && windowsOverlap(windows, reservation.windows))
-      : [];
-    const committedElsewhere = windows.length ? peakCommitted(windows, overlapping) : 0;
-    entry.in_service_quantity += inService;
-    entry.committed_elsewhere += committedElsewhere;
-    entry.available_quantity += Math.max(0, inService - committedElsewhere);
-  }
-  const byType = requestedTypes.map((type) => {
-    const entry = availableByType.get(type);
-    return { ...entry, sufficient: entry.available_quantity >= entry.requested_quantity };
-  });
-  return { byType, windowsBasis: basis };
+  const equipmentById = new Map(equipmentRows.rows.map((row) => [row.id, row]));
+  const equipmentByType = equipmentRows.rows.reduce((map, row) => {
+    const existing = map.get(row.equipment_type) || [];
+    existing.push(row);
+    map.set(row.equipment_type, existing);
+    return map;
+  }, new Map());
+
+  return {
+    windowsBasis: basis,
+    rows: requested.map((item, index) => {
+      const equipment = item.equipment_id ? equipmentById.get(item.equipment_id) : null;
+      if (equipment) {
+        const inService = equipment.status === 'available' ? inServiceQuantity(equipment) : 0;
+        const overlapping = windows.length
+          ? otherReservations.filter((reservation) => reservation.equipment_id === equipment.id && windowsOverlap(windows, reservation.windows))
+          : [];
+        const committedElsewhere = windows.length ? peakCommitted(windows, overlapping) : 0;
+        const available = Math.max(0, inService - committedElsewhere);
+        return {
+          key: equipment.id,
+          equipment_id: equipment.id,
+          equipment_name: equipment.name,
+          equipment_type: equipment.equipment_type,
+          requested_quantity: item.quantity,
+          available_quantity: available,
+          in_service_quantity: inService,
+          committed_elsewhere: committedElsewhere,
+          sufficient: available >= item.quantity
+        };
+      }
+
+      const byType = item.equipment_type ? (equipmentByType.get(item.equipment_type) || []) : [];
+      let inService = 0;
+      let committedElsewhere = 0;
+      let available = 0;
+      for (const row of byType) {
+        const rowInService = row.status === 'available' ? inServiceQuantity(row) : 0;
+        const overlapping = windows.length
+          ? otherReservations.filter((reservation) => reservation.equipment_id === row.id && windowsOverlap(windows, reservation.windows))
+          : [];
+        const rowCommittedElsewhere = windows.length ? peakCommitted(windows, overlapping) : 0;
+        inService += rowInService;
+        committedElsewhere += rowCommittedElsewhere;
+        available += Math.max(0, rowInService - rowCommittedElsewhere);
+      }
+      return {
+        key: `legacy-${index}-${item.equipment_name}`,
+        equipment_id: null,
+        equipment_name: item.equipment_name,
+        equipment_type: item.equipment_type,
+        requested_quantity: item.quantity,
+        available_quantity: available,
+        in_service_quantity: inService,
+        committed_elsewhere: committedElsewhere,
+        sufficient: available >= item.quantity
+      };
+    })
+  };
 }
+
+async function buildSupportEquipmentRequirements(query, normalizedEquipment) {
+  const inventoryItems = normalizedEquipment.filter((item) => item.equipmentId);
+  if (!inventoryItems.length) {
+    return normalizedEquipment.map((item) => ({
+      type: item.legacyType,
+      quantity: item.quantity,
+      ...(item.legacyDetails ? { details: item.legacyDetails } : {})
+    }));
+  }
+
+  const uniqueIds = [...new Set(inventoryItems.map((item) => item.equipmentId))];
+  const inventory = await query(
+    `SELECT id, name, equipment_type
+     FROM equipment
+     WHERE id = ANY($1::uuid[])`,
+    [uniqueIds]
+  );
+  if (inventory.rows.length !== uniqueIds.length) {
+    throw Object.assign(new Error('One or more selected equipment items are no longer in the inventory. Refresh and try again.'), { status: 400 });
+  }
+  const byId = new Map(inventory.rows.map((row) => [row.id, row]));
+  return normalizedEquipment.map((item) => {
+    if (!item.equipmentId) {
+      return {
+        type: item.legacyType,
+        quantity: item.quantity,
+        ...(item.legacyDetails ? { details: item.legacyDetails } : {})
+      };
+    }
+    const equipment = byId.get(item.equipmentId);
+    return {
+      equipment_id: equipment.id,
+      equipment_name: equipment.name,
+      equipment_type: equipment.equipment_type,
+      quantity: item.quantity
+    };
+  });
+}
+
+async function supportEquipmentCatalog(query) {
+  const result = await query(
+    `SELECT id, name, equipment_type, status, total_quantity, damaged_quantity, maintenance_quantity
+     FROM equipment
+     ORDER BY lower(name), id`
+  );
+  return result.rows.map(presentEquipmentCatalogRow);
+}
+
+app.get('/api/technical-support/equipment-catalog', auth.authenticate, auth.requireRoles('event_coordinator', 'technical_support_staff'), async (req, res) => {
+  try {
+    res.json(await supportEquipmentCatalog(db.query));
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Unable to load the equipment inventory for technical support.' });
+  }
+});
 
 // US-016: save or replace the latest technical support requirements for an assigned event.
 app.put('/api/events/:id/technical-support', auth.authenticate, auth.requireRoles('event_coordinator'), async (req, res) => {
@@ -1015,6 +1169,7 @@ app.put('/api/events/:id/technical-support', auth.authenticate, auth.requireRole
     if (event.preferred_end && new Date() > new Date(event.preferred_end)) {
       return res.status(400).json({ error: 'Technical support requirements cannot be submitted after the event has ended' });
     }
+    const equipmentRequirements = await buildSupportEquipmentRequirements(db.query, requirements.equipment);
     const lateRequest = event.preferred_start ? new Date() >= new Date(event.preferred_start) : false;
     const existingRequirement = await db.query('SELECT id FROM technical_support_requirements WHERE event_id = $1', [req.params.id]);
     const result = await db.query(
@@ -1026,7 +1181,7 @@ app.put('/api/events/:id/technical-support', auth.authenticate, auth.requireRole
          decision_comments = NULL, decided_by = NULL, decided_at = NULL,
          updated_by = EXCLUDED.updated_by, updated_at = now(), update_count = technical_support_requirements.update_count + 1
        RETURNING id, event_id, equipment_requirements, staff_required, support_required, status, late_request, update_count, updated_at`,
-      [req.params.id, JSON.stringify(requirements.equipment), requirements.staffRequired, requirements.supportRequired, lateRequest, req.auth.sub]
+      [req.params.id, JSON.stringify(equipmentRequirements), requirements.staffRequired, requirements.supportRequired, lateRequest, req.auth.sub]
     );
     if (requirements.supportRequired) await db.query(
       `INSERT INTO notifications (user_id, event_id, message)
@@ -1043,8 +1198,10 @@ app.put('/api/events/:id/technical-support', auth.authenticate, auth.requireRole
     }
     res.json({ ...result.rows[0], updated: existingRequirement.rows.length > 0 });
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: 'Unable to save technical support requirements. Your input is still available; please retry.' });
+    if (!error.status) console.error(error);
+    res.status(error.status || 500).json({
+      error: error.status ? error.message : 'Unable to save technical support requirements. Your input is still available; please retry.'
+    });
   }
 });
 
@@ -1081,7 +1238,12 @@ app.get('/api/events/:id/technical-support', auth.authenticate, async (req, res)
         updated: false
       });
     }
-    res.json({ ...result.rows[0], resource_decision: supportDecisionLabel(result.rows[0].status) });
+    const equipmentRequirements = normalizeSupportEquipmentRequirements(result.rows[0].equipment_requirements).map(presentSupportEquipment);
+    res.json({
+      ...result.rows[0],
+      equipment_requirements: equipmentRequirements,
+      resource_decision: supportDecisionLabel(result.rows[0].status)
+    });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Unable to load technical support requirements' });
@@ -1119,23 +1281,25 @@ app.get('/api/technical-support/requirements', auth.authenticate, auth.requireRo
     const hydrated = await Promise.all(result.rows.map(async (row) => {
       const eventBookings = bookingsByEvent.get(row.event_id) || [];
       const venues = [...new Set(eventBookings.map((booking) => booking.venue_name).filter(Boolean))];
-      const availability = await equipmentAvailabilityByType(db.query, {
+      const equipmentRequirements = normalizeSupportEquipmentRequirements(row.equipment_requirements).map(presentSupportEquipment);
+      const availability = await equipmentAvailabilityByRequirement(db.query, {
         eventId: row.event_id,
-        equipmentRequirements: row.equipment_requirements,
+        equipmentRequirements,
         preferredStart: row.preferred_start,
         preferredEnd: row.preferred_end,
         bookings: eventBookings
       });
-      const reReviewSafetyCheck = row.safety_status === 'changes_requested' &&
-        Array.isArray(row.safety_change_scope) &&
-        row.safety_change_scope.includes('technical');
+      const requiresTechnicalSafetyReapproval = Array.isArray(row.safety_change_scope) &&
+        row.safety_change_scope.includes('technical') &&
+        row.safety_status !== 'approved';
       return {
         ...row,
         venues,
         venue_bookings: eventBookings,
+        equipment_requirements: equipmentRequirements,
         resource_decision: supportDecisionLabel(row.status),
-        re_review_safety_check: reReviewSafetyCheck,
-        equipment_availability: availability.byType,
+        re_review_safety_check: requiresTechnicalSafetyReapproval,
+        equipment_availability: availability.rows,
         equipment_availability_window_basis: availability.windowsBasis
       };
     }));
@@ -1193,7 +1357,11 @@ app.get('/api/technical-support/my-requirements', auth.authenticate, auth.requir
        ORDER BY tsr.updated_at DESC`,
       [req.auth.sub]
     );
-    res.json(result.rows);
+    res.json(result.rows.map((row) => ({
+      ...row,
+      equipment_requirements: normalizeSupportEquipmentRequirements(row.equipment_requirements).map(presentSupportEquipment),
+      resource_decision: supportDecisionLabel(row.status)
+    })));
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Unable to load your technical support requirements' });

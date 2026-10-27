@@ -34,6 +34,15 @@
             <ul class="mb-0 ps-3">
               <li v-for="(window, index) in selectedEvent.windows" :key="index">{{ formatWindow(window) }}<span v-if="window.venue" class="text-muted"> · {{ window.venue }}</span></li>
             </ul>
+            <div class="mt-2">
+              <span class="text-muted">Requested equipment:</span>
+              <div v-if="loadingRequestedEquipment" class="text-muted">Loading requested equipment...</div>
+              <div v-else-if="requestedEquipmentError" class="text-danger">{{ requestedEquipmentError }}</div>
+              <ul v-else-if="requestedEquipment.length" class="mb-0 ps-3">
+                <li v-for="equipment in requestedEquipment" :key="equipment.equipment_id || equipment.equipment_name">{{ equipmentLabel(equipment) }} — {{ equipment.quantity }}</li>
+              </ul>
+              <div v-else class="text-muted">No technical support equipment request saved for this event.</div>
+            </div>
           </div>
         </template>
       </div>
@@ -145,7 +154,7 @@
 </template>
 
 <script>
-import { listReservableEvents, getEquipmentAvailability, reserveEquipment, removeReservation } from '../services/equipment'
+import { listReservableEvents, getEquipmentAvailability, reserveEquipment, removeReservation, getTechnicalSupportRequirements } from '../services/equipment'
 
 const MAX_QUANTITY = 2147483647
 
@@ -157,6 +166,9 @@ export default {
       loadingEvents: false,
       eventsError: '',
       selectedEventId: '',
+      requestedEquipment: [],
+      loadingRequestedEquipment: false,
+      requestedEquipmentError: '',
       equipment: [],
       loadingAvailability: false,
       availabilityError: '',
@@ -224,6 +236,9 @@ export default {
       const time = value => value.toLocaleTimeString('en-US', { ...options, hour: 'numeric', minute: '2-digit', hour12: true })
       return `${day}, ${time(start)} – ${time(end)}`
     },
+    equipmentLabel(item) {
+      return item.equipment_name || item.type || item.equipment_type || 'Unknown equipment'
+    },
     clearMessages() {
       this.successMessage = ''
       this.conflictMessage = ''
@@ -251,7 +266,31 @@ export default {
       this.form = { equipmentId: '', quantity: '' }
       this.showErrors = false
       this.equipment = []
-      if (this.selectedEventId) return this.loadAvailability()
+      this.requestedEquipment = []
+      this.requestedEquipmentError = ''
+      if (this.selectedEventId) {
+        this.loadRequestedEquipment()
+        return this.loadAvailability()
+      }
+    },
+    async loadRequestedEquipment() {
+      const eventId = this.selectedEventId
+      if (!eventId) return
+      this.loadingRequestedEquipment = true
+      this.requestedEquipmentError = ''
+      try {
+        const data = await getTechnicalSupportRequirements(eventId)
+        if (eventId === this.selectedEventId) {
+          this.requestedEquipment = Array.isArray(data.equipment_requirements) ? data.equipment_requirements : []
+        }
+      } catch (error) {
+        if (eventId === this.selectedEventId) {
+          this.requestedEquipment = []
+          this.requestedEquipmentError = error.message || 'Unable to load requested equipment.'
+        }
+      } finally {
+        if (eventId === this.selectedEventId) this.loadingRequestedEquipment = false
+      }
     },
     async loadAvailability() {
       const eventId = this.selectedEventId

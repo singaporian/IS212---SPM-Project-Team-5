@@ -37,8 +37,8 @@
         <div class="mt-3">
           <strong class="small">Requested equipment</strong>
           <ul class="small mb-0">
-            <li v-for="equipment in item.equipment_requirements" :key="equipment.type">
-              {{ equipment.type }}: {{ equipment.quantity }}<span v-if="equipment.details"> — {{ equipment.details }}</span>
+            <li v-for="equipment in item.equipment_requirements" :key="equipment.equipment_id || equipment.equipment_name">
+              {{ equipmentLabel(equipment) }}: {{ equipment.quantity }}<span v-if="equipment.details"> — {{ equipment.details }}</span>
             </li>
             <li v-if="!item.equipment_requirements.length">No equipment specified</li>
           </ul>
@@ -50,15 +50,15 @@
             <table class="table table-sm align-middle mb-0">
               <thead>
                 <tr>
-                  <th>Type</th>
+                  <th>Equipment</th>
                   <th class="text-end">Requested</th>
                   <th class="text-end">Available</th>
                   <th>Status</th>
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="availability in item.equipment_availability" :key="availability.type">
-                  <td>{{ availability.type }}</td>
+                <tr v-for="availability in item.equipment_availability" :key="availability.key || availability.equipment_id || availability.equipment_name">
+                  <td>{{ availability.equipment_name }}</td>
                   <td class="text-end">{{ availability.requested_quantity }}</td>
                   <td class="text-end">{{ availability.available_quantity }}</td>
                   <td>
@@ -86,12 +86,37 @@
             placeholder="Optional note (required details if resources are insufficient)"
           ></textarea>
           <div class="d-flex flex-wrap gap-2">
-            <button class="btn btn-success btn-sm" @click="decide(item, 'sufficient_resources_available')">Sufficient Resources Available</button>
+            <button class="btn btn-success btn-sm" @click="decide(item, 'sufficient_resources_available', { redirectToReserve: true })">Sufficient Resources Available</button>
             <button class="btn btn-outline-danger btn-sm" @click="decide(item, 'insufficient_resources')">Insufficient Resources</button>
           </div>
         </div>
       </div>
     </article>
+
+    <template v-if="safetyGateModal.visible">
+      <div class="modal d-block" tabindex="-1" role="dialog" aria-modal="true" aria-labelledby="safety-gate-title" @click.self="closeSafetyGateModal" @keydown.esc="closeSafetyGateModal">
+        <div class="modal-dialog modal-dialog-centered">
+          <div class="modal-content">
+            <div class="modal-header">
+              <h5 id="safety-gate-title" class="modal-title">Safety approval required</h5>
+              <button class="btn-close" type="button" aria-label="Close" @click="closeSafetyGateModal"></button>
+            </div>
+            <div class="modal-body">
+              <p class="mb-2">
+                <strong>{{ safetyGateModal.eventTitle || 'This event' }}</strong> is marked as <strong>Re-review – Safety Check</strong>.
+              </p>
+              <p class="mb-0 text-muted">
+                The Safety Officer has not yet approved the technical arrangements. Your “Sufficient Resources Available” decision can be saved, but you cannot proceed to reserve equipment yet.
+              </p>
+            </div>
+            <div class="modal-footer">
+              <button class="btn btn-primary" type="button" @click="closeSafetyGateModal">Understood</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-backdrop fade show"></div>
+    </template>
   </div>
 </template>
 
@@ -100,7 +125,14 @@ import { authHeaders, clearSession } from '../services/auth'
 
 export default {
   name: 'TechnicalSupportRequirementsView',
-  data() { return { requirements: [], comments: {}, error: '' } },
+  data() {
+    return {
+      requirements: [],
+      comments: {},
+      error: '',
+      safetyGateModal: { visible: false, eventTitle: '' }
+    }
+  },
   methods: {
     formatDate(value) { return value ? new Date(value).toLocaleString() : 'Not specified' },
     statusLabel(status) {
@@ -122,6 +154,9 @@ export default {
       if (!item.preferred_start && !item.preferred_end) return 'Event time not specified'
       return `${this.formatDate(item.preferred_start)} to ${this.formatDate(item.preferred_end)}`
     },
+    equipmentLabel(item) {
+      return item.equipment_name || item.type || item.equipment_type || 'Unknown equipment'
+    },
     venueText(item) {
       if (!item.venues?.length) return 'Venue not specified'
       return item.venues.join(', ')
@@ -139,11 +174,32 @@ export default {
       if (!response.ok) { this.error = data.error || 'Unable to load requirements'; return }
       this.requirements = data
     },
-    async decide(item, decision) {
+    shouldBlockSufficientDecision(item) {
+      return Array.isArray(item?.safety_change_scope) &&
+        item.safety_change_scope.includes('technical') &&
+        item?.safety_status !== 'approved'
+    },
+    openSafetyGateModal(item) {
+      this.safetyGateModal = { visible: true, eventTitle: item?.event_title || '' }
+    },
+    closeSafetyGateModal() {
+      this.safetyGateModal = { visible: false, eventTitle: '' }
+    },
+    async decide(item, decision, options = {}) {
+      const { redirectToReserve = false } = options
+      const blockReserveRedirect = redirectToReserve && this.shouldBlockSufficientDecision(item)
       const response = await fetch(`/api/events/${item.event_id}/technical-support/decision`, { method: 'PATCH', headers: { ...authHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify({ decision, comments: this.comments[item.event_id] || '' }) })
       const data = await response.json()
       if (!response.ok) { this.error = data.error || 'Unable to save technical support decision'; return }
       await this.load()
+      if (redirectToReserve) {
+        const latest = this.requirements.find((entry) => entry.event_id === item.event_id) || item
+        if (blockReserveRedirect || this.shouldBlockSufficientDecision(latest)) {
+          this.openSafetyGateModal(latest)
+          return
+        }
+        this.$router.push({ name: 'reserve-equipment', query: { eventId: item.event_id } })
+      }
     }
   },
   mounted() { this.load() }

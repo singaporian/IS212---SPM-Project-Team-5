@@ -75,22 +75,21 @@ test('US-022 technical support queue shows availability, review labels, and safe
     );
 
     await client.query(
-      `INSERT INTO technical_support_requirements (event_id, equipment_requirements, staff_required, support_required, status)
-       VALUES ($1, $2::jsonb, 2, true, 'pending')`,
-      [ids.eventMain, JSON.stringify([{ type: 'Audio', quantity: 5 }])]
-    );
-    await client.query(
-      `INSERT INTO operational_safety_checks (event_id, status, change_scope, comments)
-       VALUES ($1, 'changes_requested', ARRAY['technical']::text[], 'Adjust cable routes near emergency exits.')`,
-      [ids.eventMain]
-    );
-
-    await client.query(
       `INSERT INTO equipment (id, name, equipment_type, total_quantity, status, damaged_quantity, maintenance_quantity)
        VALUES
        ($1, 'Wireless Microphone Set', 'Audio', 5, 'available', 0, 0),
        ($2, 'Mixer Console', 'Audio', 3, 'available', 0, 0)`,
       [ids.equipmentA, ids.equipmentB]
+    );
+    await client.query(
+      `INSERT INTO technical_support_requirements (event_id, equipment_requirements, staff_required, support_required, status)
+       VALUES ($1, $2::jsonb, 2, true, 'pending')`,
+      [ids.eventMain, JSON.stringify([{ equipment_id: ids.equipmentA, equipment_name: 'Wireless Microphone Set', equipment_type: 'Audio', quantity: 5 }])]
+    );
+    await client.query(
+      `INSERT INTO operational_safety_checks (event_id, status, change_scope, comments)
+       VALUES ($1, 'changes_requested', ARRAY['technical']::text[], 'Adjust cable routes near emergency exits.')`,
+      [ids.eventMain]
     );
     await client.query(
       `INSERT INTO equipment_reservations (equipment_id, event_id, quantity, status, reserved_by)
@@ -114,6 +113,22 @@ test('US-022 technical support queue shows availability, review labels, and safe
       return { status: response.status, body: await response.json() };
     }
 
+    await t.test('equipment catalog exposes inventory names for coordinator form alignment', async () => {
+      const result = await api('/technical-support/equipment-catalog', {
+        role: 'event_coordinator',
+        userId: ids.coordinator
+      });
+      assert.equal(result.status, 200);
+      assert.equal(result.body.length, 2);
+      assert.deepEqual(
+        result.body.map((item) => ({ id: item.id, name: item.name })),
+        [
+          { id: ids.equipmentB, name: 'Mixer Console' },
+          { id: ids.equipmentA, name: 'Wireless Microphone Set' }
+        ]
+      );
+    });
+
     await t.test('queue includes event details, venue, availability, and safety re-review marker', async () => {
       const result = await api('/technical-support/requirements');
       assert.equal(result.status, 200);
@@ -124,12 +139,15 @@ test('US-022 technical support queue shows availability, review labels, and safe
       assert.deepEqual(request.venues, ['Grand Hall']);
       assert.equal(request.re_review_safety_check, true);
       assert.equal(request.safety_comments, 'Adjust cable routes near emergency exits.');
-      const audio = request.equipment_availability.find((item) => item.type === 'Audio');
-      assert.deepEqual(audio, {
-        type: 'Audio',
+      const microphone = request.equipment_availability.find((item) => item.equipment_id === ids.equipmentA);
+      assert.deepEqual(microphone, {
+        key: ids.equipmentA,
+        equipment_id: ids.equipmentA,
+        equipment_name: 'Wireless Microphone Set',
+        equipment_type: 'Audio',
         requested_quantity: 5,
-        available_quantity: 4,
-        in_service_quantity: 8,
+        available_quantity: 1,
+        in_service_quantity: 5,
         committed_elsewhere: 4,
         sufficient: false
       });
@@ -161,7 +179,7 @@ test('US-022 technical support queue shows availability, review labels, and safe
         method: 'PUT',
         role: 'event_coordinator',
         userId: ids.coordinator,
-        body: { equipment: [{ type: 'Audio', quantity: 2 }], staffRequired: 1, noSupportRequired: false }
+        body: { equipment: [{ equipmentId: ids.equipmentB, quantity: 2 }], staffRequired: 1, noSupportRequired: false }
       });
       assert.equal(update.status, 200);
       const stored = (await client.query(

@@ -156,7 +156,7 @@
             <ul v-if="supportRequirements.length" class="list-unstyled mb-0 summary-list">
               <li v-for="item in recentSupportRequirements" :key="item.id" class="support-summary-item" :class="{ 'support-summary-selected': selectedSupportId === item.id }" tabindex="0" role="button" @click="toggleSupportDetails(item.id)" @keydown.enter="toggleSupportDetails(item.id)">
                 <div class="d-flex justify-content-between gap-2">
-                  <div><strong>{{ item.event_title }}</strong><div class="small text-muted">{{ item.staff_required }} staff · {{ item.equipment_requirements.length }} equipment type{{ item.equipment_requirements.length === 1 ? '' : 's' }}</div></div>
+                  <div><strong>{{ item.event_title }}</strong><div class="small text-muted">{{ item.staff_required }} staff · {{ item.equipment_requirements.length }} equipment item{{ item.equipment_requirements.length === 1 ? '' : 's' }}</div></div>
                   <div class="d-flex gap-1"><span v-if="item.updated" class="badge bg-info text-dark">Updated</span><span v-if="item.late_request" class="badge bg-warning text-dark">Late</span></div>
                 </div>
                 <div class="small text-muted mt-1">{{ supportEquipmentSummary(item.equipment_requirements) }}</div>
@@ -306,7 +306,7 @@ export default {
     },
     supportEquipmentSummary(items) {
       if (!items.length) return 'No equipment specified'
-      return items.map(item => `${item.type}: ${item.quantity}${item.details ? ` (${item.details})` : ''}`).join(', ')
+      return items.map(item => `${item.equipment_name || item.type || item.equipment_type || 'Unknown equipment'}: ${item.quantity}${item.details ? ` (${item.details})` : ''}`).join(', ')
     },
     supportEventTime(item) {
       if (!item.preferred_start && !item.preferred_end) return 'Event time not specified'

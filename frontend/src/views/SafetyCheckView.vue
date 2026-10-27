@@ -23,7 +23,7 @@
 
         <section class="review-section">
           <h3 class="h6">Technical arrangements</h3>
-          <dl class="review-grid"><dt>Technical status</dt><dd><span class="badge" :class="check.technical_status === 'confirmed' ? 'bg-success' : 'bg-warning text-dark'">{{ check.technical_status }}</span></dd><dt>Support required</dt><dd>{{ check.technical_support_required ? 'Yes' : 'No technical support required' }}</dd><dt>Staff required</dt><dd>{{ check.technical_staff_required ?? 0 }}</dd><dt>Equipment</dt><dd>{{ describe(check.technical_equipment_requirements) }}</dd><dt>Technical comments</dt><dd>{{ check.technical_decision_comments || 'None' }}</dd></dl>
+          <dl class="review-grid"><dt>Technical status</dt><dd><span class="badge" :class="check.technical_status === 'confirmed' ? 'bg-success' : 'bg-warning text-dark'">{{ check.technical_status }}</span></dd><dt>Support required</dt><dd>{{ check.technical_support_required ? 'Yes' : 'No technical support required' }}</dd><dt>Staff required</dt><dd>{{ check.technical_staff_required ?? 0 }}</dd><dt>Equipment</dt><dd>{{ formatTechnicalEquipment(check.technical_equipment_requirements) }}</dd><dt>Technical comments</dt><dd>{{ check.technical_decision_comments || 'None' }}</dd></dl>
         </section>
 
         <section class="review-section">
@@ -59,6 +59,14 @@ export default {
       if (Array.isArray(value)) return value.length ? value.map(item => typeof item === 'string' ? item : `${item.type || 'Item'}${item.quantity ? ` x${item.quantity}` : ''}`).join(', ') : 'Not specified'
       if (typeof value === 'object') return Object.keys(value).length ? Object.entries(value).map(([key, item]) => `${key.replaceAll('_', ' ')}: ${this.describe(item)}`).join('; ') : 'Not specified'
       return String(value)
+    },
+    formatTechnicalEquipment(items) {
+      if (!Array.isArray(items) || !items.length) return 'Not specified'
+      return items.map((item) => {
+        if (typeof item === 'string') return item
+        const name = item.equipment_name || item.name || item.type || item.equipment_type || 'Item'
+        return item.quantity ? `${name} x${item.quantity}` : name
+      }).join(', ')
     },
     formatHours(hours) { if (!hours?.length) return 'Not recorded'; return hours.map(hour => `${['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][hour.day_of_week]} ${hour.opens_at}–${hour.closes_at}`).join(', ') },
     isScopeSelected(eventId, scope) { return (this.changeScopes[eventId] || []).includes(scope) },
