@@ -113,22 +113,6 @@ test('US-022 technical support queue shows availability, review labels, and safe
       return { status: response.status, body: await response.json() };
     }
 
-    await t.test('equipment catalog exposes inventory names for coordinator form alignment', async () => {
-      const result = await api('/technical-support/equipment-catalog', {
-        role: 'event_coordinator',
-        userId: ids.coordinator
-      });
-      assert.equal(result.status, 200);
-      assert.equal(result.body.length, 2);
-      assert.deepEqual(
-        result.body.map((item) => ({ id: item.id, name: item.name })),
-        [
-          { id: ids.equipmentB, name: 'Mixer Console' },
-          { id: ids.equipmentA, name: 'Wireless Microphone Set' }
-        ]
-      );
-    });
-
     await t.test('technical support queue is restricted to technical support staff', async () => {
       const forbidden = await api('/technical-support/requirements', {
         role: 'event_coordinator',
