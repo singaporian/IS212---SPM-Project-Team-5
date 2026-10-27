@@ -11,6 +11,10 @@
     </div>
 
     <div v-if="error" class="alert alert-danger">{{ error }}</div>
+    <div v-if="successMessage && successEventId === null" class="alert alert-success d-flex justify-content-between align-items-center">
+      <span>{{ successMessage }}</span>
+      <button type="button" class="btn-close" aria-label="Close" @click="clearSuccessMessage"></button>
+    </div>
     <div v-else-if="!requirements.length" class="empty-state text-center">No technical support requirements have been submitted yet.</div>
     <article v-for="item in requirements" :key="item.id" class="card mb-3" :class="{ 'queue-flag': item.status === 'changes_requested' || item.re_review_safety_check }">
       <div class="card-body">
@@ -86,37 +90,17 @@
             placeholder="Optional note (required details if resources are insufficient)"
           ></textarea>
           <div class="d-flex flex-wrap gap-2">
-            <button class="btn btn-success btn-sm" @click="decide(item, 'sufficient_resources_available', { redirectToReserve: true })">Sufficient Resources Available</button>
+            <button class="btn btn-success btn-sm" @click="decide(item, 'sufficient_resources_available')">Sufficient Resources Available</button>
             <button class="btn btn-outline-danger btn-sm" @click="decide(item, 'insufficient_resources')">Insufficient Resources</button>
           </div>
         </div>
-      </div>
-    </article>
 
-    <template v-if="safetyGateModal.visible">
-      <div class="modal d-block" tabindex="-1" role="dialog" aria-modal="true" aria-labelledby="safety-gate-title" @click.self="closeSafetyGateModal" @keydown.esc="closeSafetyGateModal">
-        <div class="modal-dialog modal-dialog-centered">
-          <div class="modal-content">
-            <div class="modal-header">
-              <h5 id="safety-gate-title" class="modal-title">Safety approval required</h5>
-              <button class="btn-close" type="button" aria-label="Close" @click="closeSafetyGateModal"></button>
-            </div>
-            <div class="modal-body">
-              <p class="mb-2">
-                <strong>{{ safetyGateModal.eventTitle || 'This event' }}</strong> is marked as <strong>Re-review – Safety Check</strong>.
-              </p>
-              <p class="mb-0 text-muted">
-                The Safety Officer has not yet approved the technical arrangements. Your “Sufficient Resources Available” decision can be saved, but you cannot proceed to reserve equipment yet.
-              </p>
-            </div>
-            <div class="modal-footer">
-              <button class="btn btn-primary" type="button" @click="closeSafetyGateModal">Understood</button>
-            </div>
-          </div>
+        <div v-if="successMessage && successEventId === item.event_id" class="alert alert-success py-2 small mt-3 mb-0 d-flex justify-content-between align-items-center">
+          <span>{{ successMessage }}</span>
+          <button type="button" class="btn-close" aria-label="Close" @click="clearSuccessMessage"></button>
         </div>
       </div>
-      <div class="modal-backdrop fade show"></div>
-    </template>
+    </article>
   </div>
 </template>
 
@@ -130,7 +114,8 @@ export default {
       requirements: [],
       comments: {},
       error: '',
-      safetyGateModal: { visible: false, eventTitle: '' }
+      successMessage: '',
+      successEventId: null
     }
   },
   methods: {
@@ -174,31 +159,21 @@ export default {
       if (!response.ok) { this.error = data.error || 'Unable to load requirements'; return }
       this.requirements = data
     },
-    shouldBlockSufficientDecision(item) {
-      return Array.isArray(item?.safety_change_scope) &&
-        item.safety_change_scope.includes('technical') &&
-        item?.safety_status !== 'approved'
+    clearSuccessMessage() {
+      this.successMessage = ''
+      this.successEventId = null
     },
-    openSafetyGateModal(item) {
-      this.safetyGateModal = { visible: true, eventTitle: item?.event_title || '' }
-    },
-    closeSafetyGateModal() {
-      this.safetyGateModal = { visible: false, eventTitle: '' }
-    },
-    async decide(item, decision, options = {}) {
-      const { redirectToReserve = false } = options
-      const blockReserveRedirect = redirectToReserve && this.shouldBlockSufficientDecision(item)
+    async decide(item, decision) {
+      this.error = ''
+      if (decision !== 'sufficient_resources_available') this.clearSuccessMessage()
       const response = await fetch(`/api/events/${item.event_id}/technical-support/decision`, { method: 'PATCH', headers: { ...authHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify({ decision, comments: this.comments[item.event_id] || '' }) })
       const data = await response.json()
       if (!response.ok) { this.error = data.error || 'Unable to save technical support decision'; return }
       await this.load()
-      if (redirectToReserve) {
-        const latest = this.requirements.find((entry) => entry.event_id === item.event_id) || item
-        if (blockReserveRedirect || this.shouldBlockSufficientDecision(latest)) {
-          this.openSafetyGateModal(latest)
-          return
-        }
-        this.$router.push({ name: 'reserve-equipment', query: { eventId: item.event_id } })
+      if (decision === 'sufficient_resources_available') {
+        const eventTitle = item?.event_title || 'event'
+        this.successMessage = `Saved "Sufficient Resources Available" for ${eventTitle}.`
+        this.successEventId = this.requirements.some((entry) => entry.event_id === item?.event_id) ? item.event_id : null
       }
     }
   },

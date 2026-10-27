@@ -246,9 +246,9 @@ Technical Support Staff can open `/technical-support/queue` to see the latest re
 
 US-022 adds an explicit technical resource review workflow in the same queue. For each request, Technical Support Staff now see the event name, date/time, all booked venues, equipment quantities by inventory item, staff required, and per-item current availability for the requested schedule (factoring overlapping equipment reservations). They record one of **Sufficient Resources Available** or **Insufficient Resources**, with an optional note.
 
-When Technical Support Staff mark **Sufficient Resources Available**, the queue now redirects them to `/equipment/reserve` with the same event preselected. The Reserve Equipment page shows the event schedule together with the latest requested equipment list (equipment name and quantity) so staff can reserve against the coordinator's request without switching pages.
+When Technical Support Staff mark **Sufficient Resources Available**, the queue saves the decision in place and does not navigate away from the queue.
 
-For requests flagged **Re-review – Safety Check**, Technical Support Staff can still save **Sufficient Resources Available**, but redirect to `/equipment/reserve` is blocked until the Safety Officer status is `approved`. The queue shows an explanatory modal when redirect is blocked.
+The Reserve Equipment page shows the event schedule together with the latest requested equipment list (equipment name and quantity) for the selected event, so staff can reserve against the coordinator's request with the same technical context.
 
 Insufficient decisions remain visibly flagged in the queue until the Event Coordinator updates the technical support requirements. If a Safety Officer requests technical changes, the request is flagged as **Re-review – Safety Check** in the queue with the Safety Officer comments.
 
