@@ -1000,6 +1000,12 @@ function presentSupportEquipment(item) {
   };
 }
 
+function requiresTechnicalSafetyReapproval(item) {
+  return Array.isArray(item?.safety_change_scope) &&
+    item.safety_change_scope.includes('technical') &&
+    item.safety_status !== 'approved';
+}
+
 function presentEquipmentCatalogRow(row) {
   const availableQuantity = row.status === 'available' ? inServiceQuantity(row) : 0;
   return {
@@ -1289,16 +1295,13 @@ app.get('/api/technical-support/requirements', auth.authenticate, auth.requireRo
         preferredEnd: row.preferred_end,
         bookings: eventBookings
       });
-      const requiresTechnicalSafetyReapproval = Array.isArray(row.safety_change_scope) &&
-        row.safety_change_scope.includes('technical') &&
-        row.safety_status !== 'approved';
       return {
         ...row,
         venues,
         venue_bookings: eventBookings,
         equipment_requirements: equipmentRequirements,
         resource_decision: supportDecisionLabel(row.status),
-        re_review_safety_check: requiresTechnicalSafetyReapproval,
+        re_review_safety_check: requiresTechnicalSafetyReapproval(row),
         equipment_availability: availability.rows,
         equipment_availability_window_basis: availability.windowsBasis
       };
@@ -1382,4 +1385,14 @@ app.post('/api/init', async (req, res) => {
 
 const port = process.env.PORT || 3000;
 if (require.main === module) app.listen(port, () => console.log(`Backend listening on port ${port}`));
+app.__test__ = {
+  validateSupportRequirements,
+  parseSupportDecision,
+  normalizeSupportEquipmentRequirements,
+  presentSupportEquipment,
+  eventWindowsForAvailability,
+  equipmentAvailabilityByRequirement,
+  buildSupportEquipmentRequirements,
+  requiresTechnicalSafetyReapproval
+};
 module.exports = app;
