@@ -129,6 +129,15 @@ test('US-022 technical support queue shows availability, review labels, and safe
       );
     });
 
+    await t.test('technical support queue is restricted to technical support staff', async () => {
+      const forbidden = await api('/technical-support/requirements', {
+        role: 'event_coordinator',
+        userId: ids.coordinator
+      });
+      assert.equal(forbidden.status, 403);
+      assert.match(forbidden.body.error, /permission/i);
+    });
+
     await t.test('queue includes event details, venue, availability, and safety re-review marker', async () => {
       const result = await api('/technical-support/requirements');
       assert.equal(result.status, 200);
