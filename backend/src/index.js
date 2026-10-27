@@ -8,9 +8,10 @@ const db = require('./db');
 const auth = require('./auth');
 const { activeHoldSql, holdConflicts, processHoldExpiries } = require('./holdAvailability');
 const { Venue, Booking } = require('./domain');
-const { occupiedInterval, overlaps } = require('./venueOccupancy');
+const { occupiedInterval, overlaps, OCCUPYING_STATUSES } = require('./venueOccupancy');
 const { promoteEventIfReady } = require('./eventReadiness');
 const { findUnavailability, unavailableMessage } = require('./venueAvailability');
+const { loadOtherReservations, inServiceQuantity, windowsOverlap, peakCommitted } = require('./equipmentReservations');
 
 dotenv.config();
 const app = express();
@@ -883,34 +884,281 @@ app.patch('/api/events/:id/decision', auth.authenticate, auth.requireRoles('even
   }
 });
 
-const SUPPORT_EQUIPMENT_TYPES = Object.freeze(['Audio', 'Video & Display', 'Lighting', 'Staging', 'Networking', 'Power & Cabling', 'Furniture', 'Other']);
+const SUPPORT_STATUS_LABELS = Object.freeze({
+  pending: 'Pending Review',
+  confirmed: 'Sufficient Resources Available',
+  changes_requested: 'Insufficient Resources'
+});
 
 function validateSupportRequirements(body) {
   const equipment = Array.isArray(body.equipment) ? body.equipment : [];
   const noSupportRequired = body.noSupportRequired === true;
   const seen = new Set();
   const normalizedEquipment = equipment.map((item) => {
+    const equipmentId = typeof item.equipmentId === 'string'
+      ? item.equipmentId.trim()
+      : (typeof item.equipment_id === 'string' ? item.equipment_id.trim() : '');
     const type = typeof item.type === 'string' ? item.type.trim() : '';
     const quantity = Number(item.quantity);
     const details = typeof item.details === 'string' ? item.details.trim() : '';
-    if (!SUPPORT_EQUIPMENT_TYPES.includes(type)) throw Object.assign(new Error('Choose a valid equipment type'), { status: 400 });
-    if (seen.has(type)) throw Object.assign(new Error('Each equipment type may only be listed once'), { status: 400 });
     if (!Number.isInteger(quantity) || quantity <= 0) throw Object.assign(new Error('Equipment quantities must be positive whole numbers'), { status: 400 });
+    if (equipmentId) {
+      if (!uuidPattern.test(equipmentId)) throw Object.assign(new Error('Choose a valid equipment item.'), { status: 400 });
+      const key = 'id:' + equipmentId;
+      if (seen.has(key)) throw Object.assign(new Error('Each equipment item may only be listed once'), { status: 400 });
+      seen.add(key);
+      return { equipmentId, quantity };
+    }
+
+    // Backward-compatible payload support for older clients.
+    if (!type) throw Object.assign(new Error('Choose equipment to request.'), { status: 400 });
     if (details.length > 500) throw Object.assign(new Error('Equipment details must be at most 500 characters'), { status: 400 });
-    if (type === 'Other' && !details) throw Object.assign(new Error('Describe the equipment when using Other'), { status: 400 });
-    seen.add(type);
-    return { type, quantity, ...(details ? { details } : {}) };
+    const legacyKey = 'legacy:' + type.toLowerCase();
+    if (seen.has(legacyKey)) throw Object.assign(new Error('Each equipment type may only be listed once'), { status: 400 });
+    seen.add(legacyKey);
+    return { legacyType: type, legacyDetails: details, quantity };
   });
   const staffRequired = Number(body.staffRequired);
   if (!Number.isInteger(staffRequired) || staffRequired < 0) throw Object.assign(new Error('Number of staff must be a non-negative whole number'), { status: 400 });
   if (!noSupportRequired && staffRequired === 0 && normalizedEquipment.length === 0) {
-    throw Object.assign(new Error('Select at least one equipment type or require at least one technical support staff member'), { status: 400 });
+    throw Object.assign(new Error('Select at least one equipment item or require at least one technical support staff member'), { status: 400 });
   }
   if (noSupportRequired && (staffRequired !== 0 || normalizedEquipment.length !== 0)) {
     throw Object.assign(new Error('No technical support can only be selected when no equipment or staff is required'), { status: 400 });
   }
   return { equipment: normalizedEquipment, staffRequired, supportRequired: !noSupportRequired };
 }
+
+function supportDecisionLabel(status) {
+  return SUPPORT_STATUS_LABELS[status] || status;
+}
+
+function parseSupportDecision(body = {}) {
+  const rawDecision = typeof body.decision === 'string' ? body.decision.trim() : '';
+  const decision = rawDecision.toLowerCase().replace(/[^a-z]+/g, '_').replace(/^_+|_+$/g, '');
+  const comments = body.comments ?? '';
+  const statusByDecision = {
+    confirmed: 'confirmed',
+    sufficient_resources_available: 'confirmed',
+    changes_requested: 'changes_requested',
+    insufficient_resources: 'changes_requested'
+  };
+  const status = statusByDecision[decision];
+  if (!status) throw Object.assign(new Error('Decision must be "Sufficient Resources Available" or "Insufficient Resources"'), { status: 400 });
+  if (typeof comments !== 'string' || comments.trim().length > 2000) throw Object.assign(new Error('Comments must be 2,000 characters or fewer'), { status: 400 });
+  return { status, comments: comments.trim(), label: supportDecisionLabel(status) };
+}
+
+function validWindow(start, end) {
+  return Number.isFinite(new Date(start).getTime()) &&
+    Number.isFinite(new Date(end).getTime()) &&
+    new Date(end).getTime() > new Date(start).getTime();
+}
+
+function eventWindowsForAvailability(event, bookings) {
+  const windows = (bookings || [])
+    .filter((booking) => OCCUPYING_STATUSES.includes(booking.status) && validWindow(booking.start_time, booking.end_time))
+    .map((booking) => ({ start: booking.start_time, end: booking.end_time }));
+  if (windows.length) return { windows, basis: 'bookings' };
+  if (validWindow(event.preferred_start, event.preferred_end)) {
+    return { windows: [{ start: event.preferred_start, end: event.preferred_end }], basis: 'event_preferred_time' };
+  }
+  return { windows: [], basis: 'unscheduled' };
+}
+
+function normalizeSupportEquipmentRequirements(rawRequirements = []) {
+  return rawRequirements
+    .map((item) => {
+      if (!item || typeof item !== 'object') return null;
+      const quantity = Number(item.quantity);
+      if (!Number.isInteger(quantity) || quantity <= 0) return null;
+      const equipmentId = typeof item.equipment_id === 'string' && uuidPattern.test(item.equipment_id.trim())
+        ? item.equipment_id.trim()
+        : null;
+      const equipmentName = typeof item.equipment_name === 'string' && item.equipment_name.trim()
+        ? item.equipment_name.trim()
+        : (typeof item.type === 'string' ? item.type.trim() : '');
+      const equipmentType = typeof item.equipment_type === 'string' && item.equipment_type.trim()
+        ? item.equipment_type.trim()
+        : (typeof item.type === 'string' ? item.type.trim() : '');
+      const details = typeof item.details === 'string' && item.details.trim() ? item.details.trim() : '';
+      return {
+        equipment_id: equipmentId,
+        equipment_name: equipmentName || equipmentType || 'Unknown equipment',
+        equipment_type: equipmentType || null,
+        quantity,
+        ...(details ? { details } : {})
+      };
+    })
+    .filter(Boolean);
+}
+
+function presentSupportEquipment(item) {
+  return {
+    ...item,
+    type: item.equipment_name
+  };
+}
+
+function requiresTechnicalSafetyReapproval(item) {
+  return Array.isArray(item?.safety_change_scope) &&
+    item.safety_change_scope.includes('technical') &&
+    item.safety_status !== 'approved';
+}
+
+function presentEquipmentCatalogRow(row) {
+  const availableQuantity = row.status === 'available' ? inServiceQuantity(row) : 0;
+  return {
+    id: row.id,
+    name: row.name,
+    equipment_type: row.equipment_type,
+    status: row.status,
+    total_quantity: row.total_quantity,
+    damaged_quantity: row.damaged_quantity || 0,
+    maintenance_quantity: row.maintenance_quantity || 0,
+    available_quantity: availableQuantity
+  };
+}
+
+async function equipmentAvailabilityByRequirement(query, { eventId, equipmentRequirements, preferredStart, preferredEnd, bookings }) {
+  const requested = normalizeSupportEquipmentRequirements(equipmentRequirements);
+  if (!requested.length) return { rows: [], windowsBasis: 'unscheduled' };
+
+  const requestedIds = [...new Set(requested.map((item) => item.equipment_id).filter(Boolean))];
+  const legacyTypes = [...new Set(requested.filter((item) => !item.equipment_id && item.equipment_type).map((item) => item.equipment_type))];
+  const { windows, basis } = eventWindowsForAvailability(
+    { preferred_start: preferredStart, preferred_end: preferredEnd },
+    bookings
+  );
+  const [equipmentRows, otherReservations] = await Promise.all([
+    (requestedIds.length || legacyTypes.length)
+      ? query(
+        `SELECT id, name, equipment_type, status, total_quantity, damaged_quantity, maintenance_quantity
+         FROM equipment
+         WHERE ($1::uuid[] <> '{}'::uuid[] AND id = ANY($1::uuid[]))
+            OR ($2::text[] <> '{}'::text[] AND equipment_type = ANY($2::text[]))`,
+        [requestedIds, legacyTypes]
+      )
+      : Promise.resolve({ rows: [] }),
+    windows.length ? loadOtherReservations(query, eventId) : Promise.resolve([])
+  ]);
+  const equipmentById = new Map(equipmentRows.rows.map((row) => [row.id, row]));
+  const equipmentByType = equipmentRows.rows.reduce((map, row) => {
+    const existing = map.get(row.equipment_type) || [];
+    existing.push(row);
+    map.set(row.equipment_type, existing);
+    return map;
+  }, new Map());
+
+  return {
+    windowsBasis: basis,
+    rows: requested.map((item, index) => {
+      const equipment = item.equipment_id ? equipmentById.get(item.equipment_id) : null;
+      if (equipment) {
+        const inService = equipment.status === 'available' ? inServiceQuantity(equipment) : 0;
+        const overlapping = windows.length
+          ? otherReservations.filter((reservation) => reservation.equipment_id === equipment.id && windowsOverlap(windows, reservation.windows))
+          : [];
+        const committedElsewhere = windows.length ? peakCommitted(windows, overlapping) : 0;
+        const available = Math.max(0, inService - committedElsewhere);
+        return {
+          key: equipment.id,
+          equipment_id: equipment.id,
+          equipment_name: equipment.name,
+          equipment_type: equipment.equipment_type,
+          requested_quantity: item.quantity,
+          available_quantity: available,
+          in_service_quantity: inService,
+          committed_elsewhere: committedElsewhere,
+          sufficient: available >= item.quantity
+        };
+      }
+
+      const byType = item.equipment_type ? (equipmentByType.get(item.equipment_type) || []) : [];
+      let inService = 0;
+      let committedElsewhere = 0;
+      let available = 0;
+      for (const row of byType) {
+        const rowInService = row.status === 'available' ? inServiceQuantity(row) : 0;
+        const overlapping = windows.length
+          ? otherReservations.filter((reservation) => reservation.equipment_id === row.id && windowsOverlap(windows, reservation.windows))
+          : [];
+        const rowCommittedElsewhere = windows.length ? peakCommitted(windows, overlapping) : 0;
+        inService += rowInService;
+        committedElsewhere += rowCommittedElsewhere;
+        available += Math.max(0, rowInService - rowCommittedElsewhere);
+      }
+      return {
+        key: `legacy-${index}-${item.equipment_name}`,
+        equipment_id: null,
+        equipment_name: item.equipment_name,
+        equipment_type: item.equipment_type,
+        requested_quantity: item.quantity,
+        available_quantity: available,
+        in_service_quantity: inService,
+        committed_elsewhere: committedElsewhere,
+        sufficient: available >= item.quantity
+      };
+    })
+  };
+}
+
+async function buildSupportEquipmentRequirements(query, normalizedEquipment) {
+  const inventoryItems = normalizedEquipment.filter((item) => item.equipmentId);
+  if (!inventoryItems.length) {
+    return normalizedEquipment.map((item) => ({
+      type: item.legacyType,
+      quantity: item.quantity,
+      ...(item.legacyDetails ? { details: item.legacyDetails } : {})
+    }));
+  }
+
+  const uniqueIds = [...new Set(inventoryItems.map((item) => item.equipmentId))];
+  const inventory = await query(
+    `SELECT id, name, equipment_type
+     FROM equipment
+     WHERE id = ANY($1::uuid[])`,
+    [uniqueIds]
+  );
+  if (inventory.rows.length !== uniqueIds.length) {
+    throw Object.assign(new Error('One or more selected equipment items are no longer in the inventory. Refresh and try again.'), { status: 400 });
+  }
+  const byId = new Map(inventory.rows.map((row) => [row.id, row]));
+  return normalizedEquipment.map((item) => {
+    if (!item.equipmentId) {
+      return {
+        type: item.legacyType,
+        quantity: item.quantity,
+        ...(item.legacyDetails ? { details: item.legacyDetails } : {})
+      };
+    }
+    const equipment = byId.get(item.equipmentId);
+    return {
+      equipment_id: equipment.id,
+      equipment_name: equipment.name,
+      equipment_type: equipment.equipment_type,
+      quantity: item.quantity
+    };
+  });
+}
+
+async function supportEquipmentCatalog(query) {
+  const result = await query(
+    `SELECT id, name, equipment_type, status, total_quantity, damaged_quantity, maintenance_quantity
+     FROM equipment
+     ORDER BY lower(name), id`
+  );
+  return result.rows.map(presentEquipmentCatalogRow);
+}
+
+app.get('/api/technical-support/equipment-catalog', auth.authenticate, auth.requireRoles('event_coordinator', 'technical_support_staff'), async (req, res) => {
+  try {
+    res.json(await supportEquipmentCatalog(db.query));
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Unable to load the equipment inventory for technical support.' });
+  }
+});
 
 // US-016: save or replace the latest technical support requirements for an assigned event.
 app.put('/api/events/:id/technical-support', auth.authenticate, auth.requireRoles('event_coordinator'), async (req, res) => {
@@ -927,6 +1175,7 @@ app.put('/api/events/:id/technical-support', auth.authenticate, auth.requireRole
     if (event.preferred_end && new Date() > new Date(event.preferred_end)) {
       return res.status(400).json({ error: 'Technical support requirements cannot be submitted after the event has ended' });
     }
+    const equipmentRequirements = await buildSupportEquipmentRequirements(db.query, requirements.equipment);
     const lateRequest = event.preferred_start ? new Date() >= new Date(event.preferred_start) : false;
     const existingRequirement = await db.query('SELECT id FROM technical_support_requirements WHERE event_id = $1', [req.params.id]);
     const result = await db.query(
@@ -938,7 +1187,7 @@ app.put('/api/events/:id/technical-support', auth.authenticate, auth.requireRole
          decision_comments = NULL, decided_by = NULL, decided_at = NULL,
          updated_by = EXCLUDED.updated_by, updated_at = now(), update_count = technical_support_requirements.update_count + 1
        RETURNING id, event_id, equipment_requirements, staff_required, support_required, status, late_request, update_count, updated_at`,
-      [req.params.id, JSON.stringify(requirements.equipment), requirements.staffRequired, requirements.supportRequired, lateRequest, req.auth.sub]
+      [req.params.id, JSON.stringify(equipmentRequirements), requirements.staffRequired, requirements.supportRequired, lateRequest, req.auth.sub]
     );
     if (requirements.supportRequired) await db.query(
       `INSERT INTO notifications (user_id, event_id, message)
@@ -955,8 +1204,10 @@ app.put('/api/events/:id/technical-support', auth.authenticate, auth.requireRole
     }
     res.json({ ...result.rows[0], updated: existingRequirement.rows.length > 0 });
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: 'Unable to save technical support requirements. Your input is still available; please retry.' });
+    if (!error.status) console.error(error);
+    res.status(error.status || 500).json({
+      error: error.status ? error.message : 'Unable to save technical support requirements. Your input is still available; please retry.'
+    });
   }
 });
 
@@ -980,7 +1231,25 @@ app.get('/api/events/:id/technical-support', auth.authenticate, async (req, res)
        WHERE tsr.event_id = $1`,
       [req.params.id]
     );
-    res.json(result.rows[0] || { event_id: req.params.id, event_title: event.title, equipment_requirements: [], staff_required: 0, support_required: true, status: 'pending', late_request: false, updated: false });
+    if (!result.rows[0]) {
+      return res.json({
+        event_id: req.params.id,
+        event_title: event.title,
+        equipment_requirements: [],
+        staff_required: 0,
+        support_required: true,
+        status: 'pending',
+        resource_decision: supportDecisionLabel('pending'),
+        late_request: false,
+        updated: false
+      });
+    }
+    const equipmentRequirements = normalizeSupportEquipmentRequirements(result.rows[0].equipment_requirements).map(presentSupportEquipment);
+    res.json({
+      ...result.rows[0],
+      equipment_requirements: equipmentRequirements,
+      resource_decision: supportDecisionLabel(result.rows[0].status)
+    });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Unable to load technical support requirements' });
@@ -990,11 +1259,54 @@ app.get('/api/events/:id/technical-support', auth.authenticate, async (req, res)
 app.get('/api/technical-support/requirements', auth.authenticate, auth.requireRoles('technical_support_staff'), async (req, res) => {
   try {
     const result = await db.query(
-      `SELECT tsr.*, (tsr.update_count > 0) AS updated, e.title AS event_title, e.preferred_start, e.preferred_end
-       FROM technical_support_requirements tsr JOIN events e ON e.id = tsr.event_id
+      `SELECT tsr.*, (tsr.update_count > 0) AS updated, e.title AS event_title, e.preferred_start, e.preferred_end,
+              osc.status AS safety_status, osc.comments AS safety_comments, osc.change_scope AS safety_change_scope
+       FROM technical_support_requirements tsr
+       JOIN events e ON e.id = tsr.event_id
+       LEFT JOIN operational_safety_checks osc ON osc.event_id = tsr.event_id
        ORDER BY e.preferred_start NULLS LAST, tsr.updated_at DESC`
     );
-    res.json(result.rows);
+    const eventIds = result.rows.map((row) => row.event_id);
+    const bookings = eventIds.length
+      ? (await db.query(
+        `SELECT b.event_id, b.status, b.start_time, b.end_time, v.name AS venue_name
+         FROM bookings b
+         LEFT JOIN venues v ON v.id = b.venue_id
+         WHERE b.event_id = ANY($1::uuid[])
+           AND b.status IN ('pending', 'approved', 'confirmed')
+         ORDER BY b.start_time ASC`,
+        [eventIds]
+      )).rows
+      : [];
+    const bookingsByEvent = bookings.reduce((acc, booking) => {
+      const list = acc.get(booking.event_id) || [];
+      list.push(booking);
+      acc.set(booking.event_id, list);
+      return acc;
+    }, new Map());
+    const hydrated = await Promise.all(result.rows.map(async (row) => {
+      const eventBookings = bookingsByEvent.get(row.event_id) || [];
+      const venues = [...new Set(eventBookings.map((booking) => booking.venue_name).filter(Boolean))];
+      const equipmentRequirements = normalizeSupportEquipmentRequirements(row.equipment_requirements).map(presentSupportEquipment);
+      const availability = await equipmentAvailabilityByRequirement(db.query, {
+        eventId: row.event_id,
+        equipmentRequirements,
+        preferredStart: row.preferred_start,
+        preferredEnd: row.preferred_end,
+        bookings: eventBookings
+      });
+      return {
+        ...row,
+        venues,
+        venue_bookings: eventBookings,
+        equipment_requirements: equipmentRequirements,
+        resource_decision: supportDecisionLabel(row.status),
+        re_review_safety_check: requiresTechnicalSafetyReapproval(row),
+        equipment_availability: availability.rows,
+        equipment_availability_window_basis: availability.windowsBasis
+      };
+    }));
+    res.json(hydrated);
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Unable to load technical support requirements' });
@@ -1003,9 +1315,9 @@ app.get('/api/technical-support/requirements', auth.authenticate, auth.requireRo
 
 // Technical Support Staff confirm arrangements or send them back for changes.
 app.patch('/api/events/:id/technical-support/decision', auth.authenticate, auth.requireRoles('technical_support_staff'), async (req, res) => {
-  const { decision, comments = '' } = req.body || {};
-  if (!['confirmed', 'changes_requested'].includes(decision)) return res.status(400).json({ error: 'Decision must be confirmed or changes_requested' });
-  if (typeof comments !== 'string' || comments.trim().length > 2000) return res.status(400).json({ error: 'Comments must be 2,000 characters or fewer' });
+  let decision;
+  try { decision = parseSupportDecision(req.body); }
+  catch (error) { return res.status(error.status || 400).json({ error: error.message }); }
   const client = await db.pool.connect();
   try {
     await client.query('BEGIN');
@@ -1014,15 +1326,15 @@ app.patch('/api/events/:id/technical-support/decision', auth.authenticate, auth.
        SET status = $1, decision_comments = $2, decided_by = $3, decided_at = now(), updated_at = now()
        WHERE event_id = $4
        RETURNING event_id, status, decision_comments, decided_by, decided_at`,
-      [decision, comments.trim() || null, req.auth.sub, req.params.id]
+      [decision.status, decision.comments || null, req.auth.sub, req.params.id]
     );
     if (!result.rows[0]) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Technical support requirements not found' }); }
     const event = (await client.query('SELECT id, title, assigned_coordinator_id FROM events WHERE id = $1', [req.params.id])).rows[0];
     if (event?.assigned_coordinator_id) await client.query(
       `INSERT INTO notifications (user_id, event_id, message) VALUES ($1, $2, $3)`,
-      [event.assigned_coordinator_id, event.id, `Technical support arrangements ${decision.replace('_', ' ')} for ${event.title}${comments.trim() ? `: ${comments.trim()}` : ''}`]
+      [event.assigned_coordinator_id, event.id, `Technical support review for ${event.title}: ${decision.label}${decision.comments ? ` — ${decision.comments}` : ''}`]
     );
-    if (decision === 'confirmed') {
+    if (decision.status === 'confirmed') {
       const confirmedEvent = await promoteEventIfReady(client.query.bind(client), req.params.id);
       if (confirmedEvent) await client.query(
         `INSERT INTO notifications (user_id, event_id, message)
@@ -1031,7 +1343,7 @@ app.patch('/api/events/:id/technical-support/decision', auth.authenticate, auth.
       );
     }
     await client.query('COMMIT');
-    res.json(result.rows[0]);
+    res.json({ ...result.rows[0], resource_decision: supportDecisionLabel(result.rows[0].status) });
   } catch (error) {
     await client.query('ROLLBACK').catch(() => {});
     console.error(error);
@@ -1048,7 +1360,11 @@ app.get('/api/technical-support/my-requirements', auth.authenticate, auth.requir
        ORDER BY tsr.updated_at DESC`,
       [req.auth.sub]
     );
-    res.json(result.rows);
+    res.json(result.rows.map((row) => ({
+      ...row,
+      equipment_requirements: normalizeSupportEquipmentRequirements(row.equipment_requirements).map(presentSupportEquipment),
+      resource_decision: supportDecisionLabel(row.status)
+    })));
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Unable to load your technical support requirements' });
@@ -1069,4 +1385,14 @@ app.post('/api/init', async (req, res) => {
 
 const port = process.env.PORT || 3000;
 if (require.main === module) app.listen(port, () => console.log(`Backend listening on port ${port}`));
+app.__test__ = {
+  validateSupportRequirements,
+  parseSupportDecision,
+  normalizeSupportEquipmentRequirements,
+  presentSupportEquipment,
+  eventWindowsForAvailability,
+  equipmentAvailabilityByRequirement,
+  buildSupportEquipmentRequirements,
+  requiresTechnicalSafetyReapproval
+};
 module.exports = app;

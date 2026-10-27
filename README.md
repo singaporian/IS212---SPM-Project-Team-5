@@ -240,11 +240,17 @@ for the field mapping, setup, test cases and actual automated/browser results.
 
 ## Technical Support Requirements (US-016)
 
-Event Coordinators can open `/technical-support/requirements` from the dashboard to select an assigned event, choose multiple equipment types with quantities, and specify the number of technical support staff required. Saving replaces the previous requirements version for that event and notifies Technical Support Staff.
-
-The equipment type `Other` includes a details field, so coordinators can describe equipment that is not covered by the standard list. A description is required when `Other` is selected.
+Event Coordinators can open `/technical-support/requirements` from the dashboard to select an assigned event, choose exact equipment items from the inventory by name, set a quantity per selected item, and specify the number of technical support staff required. Saving replaces the previous requirements version for that event and notifies Technical Support Staff.
 
 Technical Support Staff can open `/technical-support/queue` to see the latest requirements for all events. Replaced requirements are marked **Updated**, and requirements saved after the event start time are marked **Late request**.
+
+US-022 adds an explicit technical resource review workflow in the same queue. For each request, Technical Support Staff now see the event name, date/time, all booked venues, equipment quantities by inventory item, staff required, and per-item current availability for the requested schedule (factoring overlapping equipment reservations). They record one of **Sufficient Resources Available** or **Insufficient Resources**, with an optional note.
+
+When Technical Support Staff mark **Sufficient Resources Available**, the queue saves the decision in place and does not navigate away from the queue.
+
+The Reserve Equipment page shows the event schedule together with the latest requested equipment list (equipment name and quantity) for the selected event, so staff can reserve against the coordinator's request with the same technical context.
+
+Insufficient decisions remain visibly flagged in the queue until the Event Coordinator updates the technical support requirements. If a Safety Officer requests technical changes, the request is flagged as **Re-review – Safety Check** in the queue with the Safety Officer comments.
 
 The US-016 schema is created by the normal initializer:
 
@@ -338,4 +344,3 @@ npm test
 ```
 
 The end-to-end tests start the backend and frontend themselves (or reuse ones already running locally) and need the database from `docker compose up -d db`. The full test plan and AC traceability are in `docs/testing/US-032-test-plan.md`.
-
