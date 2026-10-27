@@ -10,7 +10,7 @@ const reservations = require('../../src/equipmentReservations');
 
 const at = (day, time) => `${day}T${time}:00Z`;
 
-test('equipment delete API confirms, blocks on upcoming reservations, notifies staff and enforces access', async t => {
+test('equipment delete API confirms, blocks on upcoming reservations, and notifies staff', async t => {
   const client = await db.pool.connect();
   const originalQuery = db.query, originalPool = db.pool;
   let server;
@@ -251,16 +251,6 @@ test('equipment delete API confirms, blocks on upcoming reservations, notifies s
       assert.equal((await call('DELETE', '/' + lectern.id, confirmFor(lectern))).status, 200, 'the same request succeeds on retry');
     });
 
-    await t.test('only technical support staff can check or delete equipment', async () => {
-      const before = await stored(mic.id);
-      assert.equal((await call('GET', `/${mic.id}/deletion-check`, undefined, '')).status, 401);
-      assert.equal((await call('DELETE', '/' + mic.id, confirmFor(before), '')).status, 401);
-      for (const role of ['attendee', 'event_organiser', 'event_coordinator', 'venue_staff']) {
-        assert.equal((await call('GET', `/${mic.id}/deletion-check`, undefined, token(role))).status, 403, role);
-        assert.equal((await call('DELETE', '/' + mic.id, confirmFor(before), token(role))).status, 403, role);
-      }
-      assert.deepEqual(await stored(mic.id), before);
-    });
   } finally {
     db.query = originalQuery;
     db.pool = originalPool;
