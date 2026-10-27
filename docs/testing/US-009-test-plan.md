@@ -14,7 +14,7 @@
 | ID | Acceptance criterion | Source |
 | --- | --- | --- |
 | AC-009-001 | Each of the Organiser's requests shows its current status, in plain words, on both the list and the request page: Submitted, Returned for clarification, Approved, In planning, Confirmed, Rejected, Cancelled. | Week 4, Event Review and Approval: "The outcome of the review should be visible to the relevant users." |
-| AC-009-002 | A rejected request shows the Coordinator's rejection reason. | Week 4 (same); G7: rejection reason is mandatory |
+| AC-009-002 | A rejected request shows the Coordinator's rejection reason, plus any comment the Coordinator added. The Coordinator can add a comment to any reason (still required for Other). | Week 4 (same); G7: rejection reason is mandatory |
 | AC-009-003 | Each status says what the Organiser can do next: edit (Submitted or Returned), request changes (Approved, In planning or Confirmed), or nothing (Rejected or Cancelled). | Week 4, Event Request Creation and Event Change Requests; US-031 and US-008 rules |
 | AC-009-004 | For each change request on an approved event, its own status (Pending Review, Approved or Rejected) is shown alongside the event, separately from the event's status. | Week 4, Event Change Requests |
 | AC-009-005 | If a change request was rejected, the event details are unchanged; if it was approved, the event shows the updated values. | Week 4, Event Change Requests |
@@ -38,6 +38,7 @@
 ### Design decisions
 
 - **Rejection reason without changing US-013.** US-013 already writes an audit row to `event_changes` when it rejects (`Decision: rejected … for reason: <reason>[ Details: <detail>]`). `GET /api/requests/:id` reads the latest such row and returns `rejection_reason` (e.g. `Other: Venue closed`). No schema change. Requests rejected before this story also show their reason. Risk: if US-013's summary wording changes, the reason disappears. IT-01 calls the real decision endpoint, so it would fail.
+- **Rejection comment for every reason (added after review).** The Coordinator's reject form now shows the comment box for every reason, not only Other (required for Other, optional otherwise). The decision endpoint saves the comment in the same audit row for any reason. This is the only change to US-013 code: one line in `index.js` and the comment box in `CoordinatorRequestsView.vue`; US-013's rules (reason mandatory, detail required for Other) are unchanged.
 - **Change requests** are returned inside `GET /api/requests/:id` as `change_requests` (newest first). No new endpoint.
 - **AC-009-005** needs no new code: US-032 already writes approved values into the event and its `draft_data` (which the request page shows) and leaves rejected ones unchanged. Covered by US-032 IT-03 and IT-04; not duplicated here.
 
@@ -46,7 +47,8 @@
 | Layer | File | Function / endpoint / page |
 | --- | --- | --- |
 | API | `backend/src/submissions.js` | `GET /api/requests/:id` (adds `rejection_reason`, `change_requests`), `rejectionReason()` |
-| API (unchanged, used) | `backend/src/index.js` | `PATCH /api/events/:id/decision` (US-013) |
+| API | `backend/src/index.js` | `PATCH /api/events/:id/decision` (US-013): saves the comment for any reason |
+| UI | `frontend/src/views/CoordinatorRequestsView.vue` | Reject form: comment box shown for every reason |
 | Schema | `backend/sql/schema.sql` | — (none) |
 | UI | `frontend/src/views/SubmittedRequestsView.vue` | `/requests/submitted` and `/requests/submitted/:id`: status labels, next step, rejection reason, change requests |
 
@@ -72,20 +74,21 @@ Full app (`index.js`) and SQL on temporary tables, rolled back after the run.
 | --- | --- | --- | --- | --- |
 | IT-01 | `PATCH /api/events/:id/decision`, `GET /api/requests/:id` | Coordinator rejects with "Other" + "Venue closed for renovation" | 200; status `rejected`, `rejection_reason` = "Other: Venue closed for renovation" | AC-009-002 |
 | IT-02 | `GET /api/requests/:id` | approved event with an older approved and a newer pending change request | 200; event status still `approved`; `change_requests` statuses `['pending', 'approved']` | AC-009-004 |
+| IT-03 | `PATCH /api/events/:id/decision`, `GET /api/requests/:id` | Coordinator rejects with "Insufficient Information" + comment "Please add the event programme." | 200; `rejection_reason` = "Insufficient Information: Please add the event programme." | AC-009-002 |
 
 ### Functional (manual) — TC-009-FT-01
 No E2E for now. Run by hand once before the PR (frontend, backend and database running).
 
 | ID | User journey | Expected | ACs |
 | --- | --- | --- | --- |
-| FT-01 | 1. Organiser submits requests A and B. 2. Coordinator rejects A with reason Other: "Venue closed". 3. Coordinator approves B. 4. Organiser sends a change request on B (attendance 100 → 150); Coordinator approves it. 5. Organiser sends another change request on B (attendance 150 → 300); Coordinator rejects it. 6. Organiser opens Submitted requests, then A, then B. | List: A "Rejected" with disabled "Request changes"; B "Approved" with "Request changes". A's page: reason "Other: Venue closed" and "No further action". B's page: "Change requests" with one "Approved" and one "Rejected" badge, separate from the event's "Approved" badge; Expected Attendance shows 150 (not 300). | AC-009-001 to AC-009-005 |
+| FT-01 | 1. Organiser submits requests A and B. 2. Coordinator rejects A with reason Insufficient Information and the comment "Please add the programme". 3. Coordinator approves B. 4. Organiser sends a change request on B (attendance 100 → 150); Coordinator approves it. 5. Organiser sends another change request on B (attendance 150 → 300); Coordinator rejects it. 6. Organiser opens Submitted requests, then A, then B. | List: A "Rejected" with disabled "Request changes"; B "Approved" with "Request changes". A's page: reason "Insufficient Information: Please add the programme" and "No further action". B's page: "Change requests" with one "Approved" and one "Rejected" badge, separate from the event's "Approved" badge; Expected Attendance shows 150 (not 300). | AC-009-001 to AC-009-005 |
 
 ## 4. Traceability
 
 | AC | Unit | Integration | Frontend | E2E / Manual |
 | --- | --- | --- | --- | --- |
 | AC-009-001 | — | — | UT-01 | FT-01 |
-| AC-009-002 | — | IT-01 | UT-03 | FT-01 |
+| AC-009-002 | — | IT-01, IT-03 | UT-03 | FT-01 |
 | AC-009-003 | — | — | UT-02 | FT-01 |
 | AC-009-004 | — | IT-02 | UT-04 | FT-01 |
 | AC-009-005 | — | US-032 IT-03, IT-04 | — | FT-01 |

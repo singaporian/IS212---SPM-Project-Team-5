@@ -76,6 +76,16 @@ test('US-009 track my request status', async (t) => {
       assert.equal(view.body.status, 'approved');
       assert.deepEqual(view.body.change_requests.map((change) => change.status), ['pending', 'approved']);
     });
+
+    await t.test('[IT-03] a comment added to any rejection reason is returned with the reason', async () => {
+      const id = await makeRequest('submitted');
+      const rejected = await call('PATCH', `/events/${id}/decision`,
+        { decision: 'rejected', reason: 'insufficient_information', reasonDetail: 'Please add the event programme.' },
+        token(coordinator, 'event_coordinator'));
+      assert.equal(rejected.status, 200);
+      const view = await call('GET', `/requests/${id}`);
+      assert.equal(view.body.rejection_reason, 'Insufficient Information: Please add the event programme.');
+    });
   } finally {
     if (server) await new Promise((resolve) => server.close(resolve));
     db.query = originalQuery;
