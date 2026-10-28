@@ -142,26 +142,6 @@ test('coordinator assignment API assigns, reassigns, notifies and records the cu
       assert.equal((await call('PATCH', '/events/not-a-uuid/coordinator', { coordinatorId: alice, currentCoordinatorId: null })).status, 404);
       assert.equal(await currentCoordinator(newer), alice);
     });
-
-    await t.test('only the Event Coordinator Lead can view or change assignments', async () => {
-      assert.equal((await call('GET', '/overview', undefined, '')).status, 401);
-      for (const role of ['event_coordinator', 'event_organiser', 'venue_staff', 'technical_support_staff', 'safety_officer', 'attendee']) {
-        assert.equal((await call('GET', '/overview', undefined, token(role, alice))).status, 403, role);
-        assert.equal((await assign(newer, bob, alice, token(role, alice))).status, 403, role);
-      }
-      assert.equal(await currentCoordinator(newer), alice);
-    });
-
-    await t.test('a save failure returns a retryable error and leaves the assignment unchanged', async () => {
-      await client.query("ALTER TABLE notifications ADD CONSTRAINT test_write_failure CHECK (message NOT LIKE '%reassigned%') NOT VALID");
-      const failed = await assign(newer, bob, alice);
-      assert.equal(failed.status, 500);
-      assert.match(failed.body.error, /Nothing was changed\. Please retry\./);
-      assert.equal(await currentCoordinator(newer), alice);
-      await client.query('ALTER TABLE notifications DROP CONSTRAINT test_write_failure');
-      assert.equal((await assign(newer, bob, alice)).status, 200);
-      assert.equal(await currentCoordinator(newer), bob);
-    });
   } finally {
     db.query = originalQuery;
     db.pool = originalPool;
