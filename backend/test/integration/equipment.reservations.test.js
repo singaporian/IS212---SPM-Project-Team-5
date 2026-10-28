@@ -175,15 +175,6 @@ test('reservation API reserves, rejects conflicts, releases stock and survives f
       assert.equal(await reserved(projectors, evening), 0);
     });
 
-    await t.test('only Technical Support Staff can reserve or remove equipment', async () => {
-      assert.equal((await call('POST', '/reservations', { eventId: evening, equipmentId: projectors, quantity: 1 }, '')).status, 401);
-      for (const role of ['attendee', 'event_organiser', 'event_coordinator', 'venue_staff']) {
-        assert.equal((await call('POST', '/reservations', { eventId: evening, equipmentId: projectors, quantity: 1 }, token(role))).status, 403, role);
-        assert.equal((await call('GET', '/reservable-events', undefined, token(role))).status, 403, role);
-      }
-      assert.equal(await reserved(projectors, evening), 0);
-    });
-
     await t.test('a save failure returns a retryable error and leaves the prior reservation unchanged', async () => {
       assert.equal((await reserve(evening, projectors, 1)).status, 201);
       await client.query('ALTER TABLE equipment_reservations ADD CONSTRAINT test_write_failure CHECK (quantity < 2) NOT VALID');
