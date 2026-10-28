@@ -162,12 +162,26 @@ router.get('/requests', async (req, res) => {
   } catch (error) { res.status(500).json({ error: 'Unable to load submitted requests. Please retry.' }); }
 });
 
+// US-009 (AC-009-002): the reason US-013 wrote when rejecting, e.g. "... for reason: Other Details: Venue closed"
+// becomes "Other: Venue closed". Null if no reason was recorded.
+function rejectionReason(summary) {
+  const match = /for reason: (.*)$/s.exec(summary || '');
+  return match ? match[1].replace(' Details: ', ': ') : null;
+}
+
 router.get('/requests/:id', async (req, res) => {
   try {
     const result = await db.query(`SELECT id, title, draft_data, status, submitted_at, clarification_note FROM events
       WHERE id = $1 AND organiser_id = $2 AND status <> 'draft'`, [req.params.id, req.auth.sub]);
-    if (!result.rows[0]) return res.status(404).json({ error: 'Request not found.' });
-    res.json(result.rows[0]);
+    const request = result.rows[0];
+    if (!request) return res.status(404).json({ error: 'Request not found.' });
+    // US-009 (AC-009-002): read the reason from the decision audit row, so US-013 stays unchanged.
+    const decision = request.status === 'rejected' ? await db.query(`SELECT change_summary FROM event_changes
+      WHERE event_id = $1 AND change_summary LIKE 'Decision: rejected %' ORDER BY created_at DESC LIMIT 1`, [request.id]) : null;
+    // US-009 (AC-009-004): each change request keeps its own status, separate from the event's.
+    const changes = await db.query(`SELECT id, status, proposed_changes, created_at FROM event_change_requests
+      WHERE event_id = $1 ORDER BY created_at DESC`, [request.id]);
+    res.json({ ...request, rejection_reason: rejectionReason(decision?.rows[0]?.change_summary), change_requests: changes.rows });
   } catch (error) { res.status(500).json({ error: 'Unable to load submitted request. Please retry.' }); }
 });
 

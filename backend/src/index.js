@@ -852,7 +852,9 @@ app.patch('/api/events/:id/decision', auth.authenticate, auth.requireRoles('even
       other: 'Other'
     };
     const reasonText = safeDecision === 'rejected' ? reasonMap[reason.trim()] : null;
-    const detailText = safeDecision === 'rejected' && reason === 'other' ? ` Details: ${String(reasonDetail).trim()}` : '';
+    // US-009 (AC-009-002): keep the Coordinator's comment for any reason, not only Other.
+    const comment = safeDecision === 'rejected' && reasonDetail != null ? String(reasonDetail).trim() : '';
+    const detailText = comment ? ` Details: ${comment}` : '';
     const summary = safeDecision === 'approved'
       ? `Decision: approved by coordinator ${req.auth.sub}`
       : `Decision: rejected by coordinator ${req.auth.sub} for reason: ${reasonText}${detailText}`;

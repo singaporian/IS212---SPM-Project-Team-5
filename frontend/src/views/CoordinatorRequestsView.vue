@@ -73,13 +73,15 @@
                     <option value="duplicate_request">Duplicate Request</option>
                     <option value="other">Other</option>
                   </select>
-                  <input
-                    v-if="rejectReason === 'other'"
+                  <!-- US-009 (AC-009-002): a comment for the Organiser with any reason; required for Other. -->
+                  <label :for="'reject-comment-' + ev.id" class="form-label d-block mt-2">Comment to the Organiser</label>
+                  <textarea
+                    :id="'reject-comment-' + ev.id"
                     v-model="rejectDetail"
-                    class="form-control form-control-sm mt-2"
-                    type="text"
-                    placeholder="Add detail for the Other reason"
-                  />
+                    class="form-control form-control-sm"
+                    rows="2"
+                    :placeholder="rejectReason === 'other' ? 'Add detail for the Other reason' : 'Explain the rejection to the Organiser'"
+                  ></textarea>
                 </div>
 
                 <div v-if="decisionError" class="alert alert-danger py-2 small mb-2">{{ decisionError }}</div>

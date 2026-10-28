@@ -21,6 +21,12 @@
           <strong>Returned for clarification.</strong> Update your request if needed, then choose Resubmit for review.
           <p v-if="request.clarification_note" class="mb-0 mt-2" style="white-space: pre-wrap"><strong>Note from your Coordinator:</strong> {{ request.clarification_note }}</p>
         </div>
+        <!-- US-009 (AC-009-002): a rejected request shows the Coordinator's reason. -->
+        <div v-if="request.status === 'rejected'" class="alert alert-danger">
+          <strong>Request rejected.</strong>
+          <span v-if="request.rejection_reason" style="white-space: pre-wrap">Reason from your Coordinator: {{ request.rejection_reason }}</span>
+          <span v-else>No reason was recorded.</span>
+        </div>
         <p class="text-muted">Submitted {{ formatDate(request.submitted_at) }}. Event times below are Singapore time (UTC+8).</p>
         <dl class="row">
           <template v-for="[key, label] in fields" :key="key">
@@ -28,6 +34,17 @@
             <dd class="col-sm-8" style="white-space: pre-wrap; overflow-wrap: anywhere">{{ value(key) }}</dd>
           </template>
         </dl>
+        <!-- US-009 (AC-009-004/005): each change request's own status, separate from the event's status above. -->
+        <section v-if="request.change_requests && request.change_requests.length" class="border-top pt-3 mt-3">
+          <h3 class="h6">Change requests</h3>
+          <ul class="list-group mb-2">
+            <li v-for="change in request.change_requests" :key="change.id" class="list-group-item d-flex flex-wrap gap-2 justify-content-between align-items-center">
+              <span>{{ changedFields(change.proposed_changes) }} <span class="small text-muted">(sent {{ formatDate(change.created_at) }})</span></span>
+              <span class="badge" :class="changeBadgeClass(change.status)">{{ changeStatusLabel(change.status) }}</span>
+            </li>
+          </ul>
+          <p class="small text-muted mb-0">Approved changes are already shown in the details above. A rejected change leaves your event unchanged.</p>
+        </section>
          <div v-if="canRequestChanges(request.status)" class="border-top pt-3 mt-3 d-flex flex-wrap gap-3 justify-content-between align-items-center">
           <p class="mb-0 text-muted">Your event has been approved. To change its details, send a change request to your Event Coordinator.</p>
           <router-link class="btn btn-primary" :to="{ name: 'event-change-request', params: { id: request.id } }">Request changes</router-link>
@@ -38,6 +55,8 @@
           <router-link class="btn btn-outline-primary" :to="{ name: 'edit-submitted-request', params: { id: request.id } }">Edit request</router-link>
           <button v-if="request.status === 'clarification_requested'" type="button" class="btn btn-primary" :disabled="resubmitting" @click="resubmit">{{ resubmitting ? 'Resubmitting…' : 'Resubmit for review' }}</button>
         </div>
+        <!-- US-009 (AC-009-003): Rejected and Cancelled requests have no next step. -->
+        <p v-else class="border-top pt-3 mt-3 mb-0 text-muted">No further action: this request can no longer be edited or changed.</p>
         <p v-if="actionError" class="alert alert-danger mt-3" role="alert">{{ actionError }}</p>
         <router-link to="/requests/submitted">All submitted requests</router-link>
       </template>
@@ -74,6 +93,19 @@ import { canRequestChanges } from '../services/changeRequests'
 // US-031: must match EDITABLE_STATUSES in backend/src/domain/index.js.
 const EDITABLE_STATUSES = ['submitted', 'clarification_requested']
 
+// US-009 (AC-009-001): plain-words labels for event statuses. 'planning' means the Safety Officer sent it back (US-039).
+const STATUS_LABELS = {
+  submitted: 'Submitted', clarification_requested: 'Returned for clarification', approved: 'Approved',
+  planning: 'In planning', confirmed: 'Confirmed', rejected: 'Rejected', cancelled: 'Cancelled'
+}
+// US-009 (AC-009-004): change request statuses (event_change_requests.status).
+const CHANGE_STATUS_LABELS = { pending: 'Pending Review', approved: 'Approved', rejected: 'Rejected' }
+const CHANGE_STATUS_CLASSES = { pending: 'bg-warning text-dark', approved: 'bg-success', rejected: 'bg-danger' }
+const CHANGED_FIELD_LABELS = {
+  preferredStart: 'Date and time', expectedAttendance: 'Expected attendance',
+  venueLayoutPreference: 'Venue requirements', equipmentRequirements: 'Equipment requirements'
+}
+
 export default {
   name: 'SubmittedRequestsView',
   components: { RequestNavigation },
@@ -99,8 +131,14 @@ export default {
         : `Not available for ${this.statusLabel(status).toLowerCase()} events`
     },
     statusLabel(status) {
-      if (status === 'clarification_requested') return 'Returned for clarification'
-      return String(status || 'submitted').replace(/_/g, ' ').replace(/\b\w/g, letter => letter.toUpperCase())
+      return STATUS_LABELS[status] || String(status || 'submitted').replace(/_/g, ' ').replace(/\b\w/g, letter => letter.toUpperCase())
+    },
+    changeStatusLabel(status) { return CHANGE_STATUS_LABELS[status] || status },
+    changeBadgeClass(status) { return CHANGE_STATUS_CLASSES[status] || 'bg-secondary' },
+    // Which fields a change request touches, e.g. "Changes to Expected attendance, Venue requirements".
+    changedFields(changes) {
+      const names = Object.keys(changes || {}).map(key => CHANGED_FIELD_LABELS[key]).filter(Boolean)
+      return names.length ? `Changes to ${names.join(', ')}` : 'Change request'
     },
     // US-031 (AC-031-005): send a returned request back for review.
     async resubmit() {
