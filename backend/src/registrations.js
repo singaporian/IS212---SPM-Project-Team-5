@@ -43,6 +43,13 @@ async function registrationWindowStatus(query, event, registeredCount) {
   return { open: true, reason: null };
 }
 
+function partitionRegistrations(rows) {
+  return {
+    registered: rows.filter(row => row.status === 'registered'),
+    withdrawn: rows.filter(row => row.status === 'withdrawn')
+  };
+}
+
 const router = express.Router();
 const attendeeOnly = [auth.authenticate, auth.requireRoles('attendee')];
 router.use((req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
@@ -122,6 +129,37 @@ router.get('/registered', ...attendeeOnly, async (req, res) => {
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Unable to load your registered events' });
+  }
+});
+
+// US-040: Organisers and assigned Coordinators can view registration details for their events.
+router.get('/:id/registrations', auth.authenticate, auth.requireRoles('event_organiser', 'event_coordinator'), async (req, res) => {
+  if (!uuidPattern.test(req.params.id)) return res.status(404).json({ error: 'Event not found.' });
+  try {
+    const event = (await db.query(
+      `SELECT id, title, registration_required, organiser_id, assigned_coordinator_id
+       FROM events WHERE id = $1`, [req.params.id]
+    )).rows[0];
+    if (!event) return res.status(404).json({ error: 'Event not found.' });
+    const allowed = (req.auth.role === 'event_organiser' && event.organiser_id === req.auth.sub)
+      || (req.auth.role === 'event_coordinator' && event.assigned_coordinator_id === req.auth.sub);
+    if (!allowed) return res.status(403).json({ error: 'Not authorised to view registrations for this event.' });
+    const result = await db.query(
+      `SELECT id, name, email, phone, status, created_at, updated_at
+       FROM registrations WHERE event_id = $1 ORDER BY created_at ASC`, [event.id]
+    );
+    const { registered: active, withdrawn } = partitionRegistrations(result.rows);
+    res.json({
+      event: { id: event.id, title: event.title },
+      registration_enabled: event.registration_required === true,
+      registered_count: active.length,
+      withdrawn_count: withdrawn.length,
+      registrations: active,
+      withdrawn
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Unable to load event registrations' });
   }
 });
 
@@ -222,4 +260,4 @@ router.patch('/registrations/:id/withdraw', ...attendeeOnly, async (req, res) =>
   }
 });
 
-module.exports = { router, validateRegistrationInput, registrationWindowStatus };
+module.exports = { router, validateRegistrationInput, registrationWindowStatus, partitionRegistrations };

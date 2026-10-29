@@ -15,7 +15,7 @@
         {{ error }} <button class="btn btn-sm btn-outline-danger" @click="load">Retry</button>
       </div>
       <template v-else-if="request">
-        <p><span class="badge" :class="request.status === 'submitted' ? 'bg-success' : 'bg-primary'">{{ statusLabel(request.status) }}</span></p>
+        <p><span class="badge" :class="request.status === 'submitted' ? 'bg-success' : 'bg-primary'">{{ statusLabel(request.status) }}</span><router-link v-if="request.registration_required && request.status === 'confirmed'" class="btn btn-sm btn-outline-primary ms-2" :to="{ name: 'event-registrations', params: { id: request.id } }">View Registrations</router-link></p>
         <!-- US-031 (AC-031-006): a returned request shows its status and the Coordinator's note. -->
         <div v-if="request.status === 'clarification_requested'" class="alert alert-warning">
           <strong>Returned for clarification.</strong> Update your request if needed, then choose Resubmit for review.

@@ -433,8 +433,8 @@ app.get('/api/events/assigned', auth.authenticate, auth.requireRoles('event_coor
 app.get('/api/events/coordinator-calendar', auth.authenticate, auth.requireRoles('event_coordinator'), async (req, res) => {
   try {
     const result = await db.query(
-      `SELECT e.id, e.title, e.status, e.preferred_start, e.preferred_end,
-              e.expected_attendance, e.purpose,
+            `SELECT e.id, e.title, e.status, e.preferred_start, e.preferred_end,
+              e.expected_attendance, e.purpose, e.registration_required,
               tsr.status AS technical_status, osc.status AS safety_status,
               COALESCE(jsonb_agg(DISTINCT jsonb_build_object(
                 'id', b.id, 'venue_name', v.name, 'venue_location', v.location,
