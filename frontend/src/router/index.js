@@ -8,6 +8,7 @@ import SubmittedRequestsView from '../views/SubmittedRequestsView.vue'
 import LoginView from '../views/LoginView.vue'
 import VenueSearchView from '../views/VenueSearchView.vue'
 import CoordinatorRequestsView from '../views/CoordinatorRequestsView.vue'
+import CoordinatorCalendarView from '../views/CoordinatorCalendarView.vue'
 import VenueBookingsCalendarView from '../views/VenueBookingsCalendarView.vue'
 import AddEquipmentView from '../views/AddEquipmentView.vue'
 import ReserveEquipmentView from '../views/ReserveEquipmentView.vue'
@@ -57,6 +58,7 @@ const routes = [
   { path: '/safety/checks', name: 'safety-checks', component: SafetyCheckView, meta: { requiresAuth: true, roles: ['safety_officer'] } },
   { path: '/coordinator/change-requests', name: 'coordinator-change-requests', component: ChangeRequestReviewView, meta: { requiresAuth: true, roles: ['event_coordinator'] } },
   { path: '/coordinator/requests', name: 'coordinator-requests', component: CoordinatorRequestsView, meta: { requiresAuth: true, roles: ['event_coordinator'] } },
+  { path: '/coordinator/calendar', name: 'coordinator-calendar', component: CoordinatorCalendarView, meta: { requiresAuth: true, roles: ['event_coordinator'] } },
   { path: '/venue/bookings', name: 'venue-bookings-calendar', component: VenueBookingsCalendarView, meta: { requiresAuth: true, roles: ['venue_staff'] } },
   { path: '/requests/new', name: 'new-event-request', component: NewEventRequestView, meta: { requiresAuth: true, roles: ['event_organiser'] } },
   { path: '/equipment', name: 'equipment-inventory', component: EquipmentInventoryView, meta: { requiresAuth: true, roles: ['technical_support_staff'] } },

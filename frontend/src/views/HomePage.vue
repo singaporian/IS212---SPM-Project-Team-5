@@ -9,6 +9,7 @@
             <router-link v-if="canCreateRequest" class="btn btn-accent btn-lg" to="/requests/new">Create Request</router-link>
             <router-link v-if="canCreateRequest" class="btn btn-outline-primary btn-lg" to="/requests/drafts">My event requests</router-link>
               <router-link v-if="role === 'venue_staff'" class="btn btn-outline-secondary btn-lg" to="/venue/bookings">{{ secondaryAction }}</router-link>
+              <router-link v-else-if="role === 'event_coordinator'" class="btn btn-outline-secondary btn-lg" to="/coordinator/calendar">{{ secondaryAction }}</router-link>
               <router-link v-else-if="role === 'attendee'" class="btn btn-outline-secondary btn-lg" to="/attendee/events">{{ secondaryAction }}</router-link>
               <button v-else class="btn btn-outline-secondary btn-lg">{{ secondaryAction }}</button>
         </div>
@@ -223,7 +224,7 @@ export default {
       if (this.isCoordinatorLead) return 'Use Assign Coordinator to work through the unassigned queue and rebalance active requests across coordinators.'
       return 'Operational safety review tools will appear here as the Safety Officer workflow is implemented.'
     },
-    secondaryAction() { return this.role === 'attendee' ? 'Browse Events' : 'View Calendar' },
+    secondaryAction() { return this.role === 'attendee' ? 'Browse Events' : (this.role === 'event_coordinator' ? 'My Events' : 'View Calendar') },
     workspaceTitle() {
       if (this.isCoordinatorLead) return 'Coordinator Lead workspace'
       if (this.isSafetyOfficer) return 'Safety review workspace'

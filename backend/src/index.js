@@ -429,6 +429,35 @@ app.get('/api/events/assigned', auth.authenticate, auth.requireRoles('event_coor
   }
 });
 
+// Coordinator calendar: only events currently assigned to the signed-in Coordinator.
+app.get('/api/events/coordinator-calendar', auth.authenticate, auth.requireRoles('event_coordinator'), async (req, res) => {
+  try {
+    const result = await db.query(
+      `SELECT e.id, e.title, e.status, e.preferred_start, e.preferred_end,
+              e.expected_attendance, e.purpose,
+              tsr.status AS technical_status, osc.status AS safety_status,
+              COALESCE(jsonb_agg(DISTINCT jsonb_build_object(
+                'id', b.id, 'venue_name', v.name, 'venue_location', v.location,
+                'start_time', b.start_time, 'end_time', b.end_time, 'status', b.status,
+                'venue_requirements', b.venue_requirements
+              )) FILTER (WHERE b.id IS NOT NULL), '[]'::jsonb) AS bookings
+       FROM events e
+       LEFT JOIN bookings b ON b.event_id = e.id
+       LEFT JOIN venues v ON v.id = b.venue_id
+       LEFT JOIN technical_support_requirements tsr ON tsr.event_id = e.id
+       LEFT JOIN operational_safety_checks osc ON osc.event_id = e.id
+       WHERE e.assigned_coordinator_id = $1
+       GROUP BY e.id, tsr.status, osc.status
+       ORDER BY e.preferred_start NULLS LAST, e.title`,
+      [req.auth.sub]
+    );
+    res.json(result.rows);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Unable to load your event calendar' });
+  }
+});
+
 // US-012: full read-only detail, only visible if assigned to this coordinator
 app.get('/api/events/:id', auth.authenticate, auth.requireRoles('event_coordinator'), async (req, res) => {
   try {
@@ -636,7 +665,7 @@ app.patch('/api/bookings/:id/replacement', auth.authenticate, auth.requireRoles(
   try { input = parseBookingInput(req.body); } catch (error) { return res.status(error.status || 400).json({ error: error.message }); }
   try {
     const booking = (await db.query(
-      `SELECT b.id, b.event_id FROM bookings b JOIN events e ON e.id = b.event_id
+      `SELECT b.id, b.event_id, e.title FROM bookings b JOIN events e ON e.id = b.event_id
        LEFT JOIN operational_safety_checks osc ON osc.event_id = e.id
        WHERE b.id = $1 AND e.assigned_coordinator_id = $2
          AND (
@@ -661,6 +690,11 @@ app.patch('/api/bookings/:id/replacement', auth.authenticate, auth.requireRoles(
        WHERE id = $8
        RETURNING id, event_id, venue_id, start_time, end_time, status, venue_requirements`,
       [req.body.venueId, requiredCapacity, input.startTime.toISOString(), input.endTime.toISOString(), input.setupMinutes, input.turnaroundMinutes, JSON.stringify(input.venueRequirements), req.params.id]
+    );
+    await db.query(
+      `INSERT INTO notifications (user_id, event_id, message)
+       SELECT id, $1, $2 FROM users WHERE role = 'venue_staff'`,
+      [booking.event_id, `Venue booking request updated for ${booking.title} (Booking ID: ${booking.id}) and requires review.`]
     );
     res.json(result.rows[0]);
   } catch (error) {
