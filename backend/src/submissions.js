@@ -171,7 +171,7 @@ function rejectionReason(summary) {
 
 router.get('/requests/:id', async (req, res) => {
   try {
-    const result = await db.query(`SELECT id, title, draft_data, status, submitted_at, clarification_note FROM events
+    const result = await db.query(`SELECT id, title, draft_data, status, submitted_at, clarification_note, registration_required FROM events
       WHERE id = $1 AND organiser_id = $2 AND status <> 'draft'`, [req.params.id, req.auth.sub]);
     const request = result.rows[0];
     if (!request) return res.status(404).json({ error: 'Request not found.' });

@@ -10,8 +10,11 @@
             <router-link v-if="canCreateRequest" class="btn btn-outline-primary btn-lg" to="/requests/drafts">My event requests</router-link>
               <router-link v-if="role === 'venue_staff'" class="btn btn-outline-secondary btn-lg" to="/venue/bookings">{{ secondaryAction }}</router-link>
               <router-link v-else-if="role === 'event_coordinator'" class="btn btn-outline-secondary btn-lg" to="/coordinator/calendar">{{ secondaryAction }}</router-link>
-              <router-link v-else-if="role === 'attendee'" class="btn btn-outline-secondary btn-lg" to="/attendee/events">{{ secondaryAction }}</router-link>
-              <button v-else class="btn btn-outline-secondary btn-lg">{{ secondaryAction }}</button>
+              <router-link v-else-if="role === 'attendee'" class="btn btn-outline-secondary btn-lg" to="/attendee/calendar">{{ secondaryAction }}</router-link>
+              <router-link v-else-if="role === 'event_organiser'" class="btn btn-outline-secondary btn-lg" to="/requests/submitted">{{ secondaryAction }}</router-link>
+              <router-link v-else-if="role === 'technical_support_staff'" class="btn btn-outline-secondary btn-lg" to="/technical-support/queue">{{ secondaryAction }}</router-link>
+              <router-link v-else-if="isCoordinatorLead" class="btn btn-outline-secondary btn-lg" to="/coordinator-lead/assignments">{{ secondaryAction }}</router-link>
+              <router-link v-else-if="isSafetyOfficer" class="btn btn-outline-secondary btn-lg" to="/safety/checks">{{ secondaryAction }}</router-link>
         </div>
       </div>
       <div style="width:280px">
@@ -224,7 +227,10 @@ export default {
       if (this.isCoordinatorLead) return 'Use Assign Coordinator to work through the unassigned queue and rebalance active requests across coordinators.'
       return 'Operational safety review tools will appear here as the Safety Officer workflow is implemented.'
     },
-    secondaryAction() { return this.role === 'attendee' ? 'Browse Events' : (this.role === 'event_coordinator' ? 'My Events' : 'View Calendar') },
+    secondaryAction() {
+      const actions = { attendee: 'View Calendar', event_coordinator: 'View Calendar', venue_staff: 'View Calendar', event_organiser: 'My Submitted Requests', technical_support_staff: 'Support Requirements Queue', event_coordinator_lead: 'Assignment Oversight', safety_officer: 'Operational Safety Checks' }
+      return actions[this.role] || 'Workspace'
+    },
     workspaceTitle() {
       if (this.isCoordinatorLead) return 'Coordinator Lead workspace'
       if (this.isSafetyOfficer) return 'Safety review workspace'
