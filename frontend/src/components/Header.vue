@@ -9,7 +9,7 @@
       <div class="collapse navbar-collapse" id="nav">
         <ul class="navbar-nav ms-auto">
           <li class="nav-item"><router-link class="nav-link" to="/">Dashboard</router-link></li>
-          <li class="nav-item"><router-link class="nav-link" :to="user.role === 'attendee' ? '/attendee/calendar' : '/events'">Events</router-link></li>
+          <li class="nav-item"><router-link class="nav-link" :to="user.role === 'attendee' ? '/attendee/calendar' : (user.role === 'event_coordinator' ? '/coordinator/calendar' : '/events')">{{ user.role === 'event_coordinator' ? 'My Events' : 'Events' }}</router-link></li>
           <li v-if="canViewVenues" class="nav-item"><router-link class="nav-link" to="/venues">Venues</router-link></li>
         </ul>
       </div>
