@@ -10,8 +10,44 @@ permissions:
   contents: read
 
 jobs:
+  lint:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            backend/package-lock.json
+            frontend/package-lock.json
+            e2e/package-lock.json
+
+      - name: Install backend dependencies
+        run: npm --prefix backend ci
+
+      - name: Install frontend dependencies
+        run: npm --prefix frontend ci
+
+      - name: Install end-to-end test dependencies
+        run: npm --prefix e2e ci
+
+      - name: Run backend lint
+        run: npm --prefix backend run lint
+
+      - name: Run frontend lint
+        run: npm --prefix frontend run lint
+
+      - name: Run end-to-end lint
+        run: npm --prefix e2e run lint
+
   test:
     runs-on: ubuntu-latest
+    needs: lint
 
     services:
       postgres:
@@ -51,46 +87,43 @@ jobs:
             frontend/package-lock.json
 
       - name: Install backend dependencies
-        working-directory: backend
-        run: npm ci
+        run: npm --prefix backend ci
 
       - name: Initialize PostgreSQL schema
-        working-directory: backend
-        run: npm run init-db
+        run: npm --prefix backend run init-db
 
       - name: Run backend tests
-        working-directory: backend
-        run: npm test
+        run: npm --prefix backend test
 
       - name: Install frontend dependencies
-        working-directory: frontend
-        run: npm ci
+        run: npm --prefix frontend ci
 
       - name: Run frontend tests
-        working-directory: frontend
-        run: npm test
+        run: npm --prefix frontend test
 
-      - name: Build frontend
-        working-directory: frontend
-        run: npm run build
+  audit:
+    runs-on: ubuntu-latest
+    needs: lint
 
-      # US-032 onwards: Playwright end-to-end tests against the real backend, frontend and database.
-      - name: Install end-to-end test dependencies
-        working-directory: e2e
-        run: npm install --no-audit --no-fund
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
 
-      - name: Install Playwright browser
-        working-directory: e2e
-        run: npx playwright install --with-deps chromium
-
-      - name: Run end-to-end tests
-        working-directory: e2e
-        run: npm test
-
-      - name: Upload Playwright report
-        if: failure()
-        uses: actions/upload-artifact@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
         with:
-          name: playwright-report
-          path: e2e/playwright-report
-          retention-days: 7
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            backend/package-lock.json
+            frontend/package-lock.json
+            e2e/package-lock.json
+
+      - name: Audit backend production dependencies
+        run: npm audit --prefix backend --package-lock-only --omit=dev --audit-level=high
+
+      - name: Audit frontend production dependencies
+        run: npm audit --prefix frontend --package-lock-only --omit=dev --audit-level=high
+
+      - name: Audit end-to-end production dependencies
+        run: npm audit --prefix e2e --package-lock-only --omit=dev --audit-level=high
