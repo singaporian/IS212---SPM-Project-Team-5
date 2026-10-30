@@ -105,18 +105,30 @@ test('US-020 venue staff mark a venue unavailable, list periods, and end one ear
       assert.equal((await call('/venues/unavailability', 'GET', undefined, 'event_coordinator', coordinator)).status, 403);
     });
 
+    let activePeriodId;
+
     await t.test('AC-020-007: ending an active period early marks it ended and stops it showing as active', async () => {
-      const result = await call(`/venues/unavailability/${createdId}/end`, 'PATCH');
+      // Needs a period that is already active right now (started in the past, not yet ended),
+      // unlike the far-future periods above used to test the affected-booking notification.
+      const inserted = await pool.query(
+        `INSERT INTO venue_unavailabilities (venue_id, start_time, end_time, reason, reason_code, created_by)
+         VALUES ($1, now() - interval '1 hour', now() + interval '1 hour', 'Maintenance', 'maintenance', $2)
+         RETURNING id`,
+        [venue, staff]
+      );
+      activePeriodId = inserted.rows[0].id;
+
+      const result = await call(`/venues/unavailability/${activePeriodId}/end`, 'PATCH');
       assert.equal(result.status, 200);
       assert.equal(result.body.ended_early, true);
 
-      const row = await pool.query('SELECT ended_early, end_time <= now() AS already_ended FROM venue_unavailabilities WHERE id = $1', [createdId]);
+      const row = await pool.query('SELECT ended_early, end_time <= now() AS already_ended FROM venue_unavailabilities WHERE id = $1', [activePeriodId]);
       assert.equal(row.rows[0].ended_early, true);
       assert.equal(row.rows[0].already_ended, true);
     });
 
     await t.test('ending an already-ended period again returns 404', async () => {
-      const result = await call(`/venues/unavailability/${createdId}/end`, 'PATCH');
+      const result = await call(`/venues/unavailability/${activePeriodId}/end`, 'PATCH');
       assert.equal(result.status, 404);
     });
 
