@@ -733,26 +733,34 @@ app.get('/api/bookings/mine', auth.authenticate, auth.requireRoles('event_coordi
   res.json(result.rows);
 });
 
+// US-017: Venue Staff view the upcoming bookings calendar, optionally scoped
+// to one venue and/or a date range. Only approved/confirmed bookings show up
+// (pending requests aren't yet real commitments on the calendar), and each
+// row carries both its own setup/turnaround minutes and the venue's current
+// defaults, so the frontend can flag gaps that are too tight.
+function buildBookingFilters({ venueId, from, to } = {}) {
+  const filters = ["b.status IN ('approved', 'confirmed')"];
+  const params = [];
+
+  if (venueId) {
+    params.push(venueId);
+    filters.push(`b.venue_id = $${params.length}`);
+  }
+  if (from) {
+    params.push(from);
+    filters.push(`b.start_time::date >= $${params.length}::date`);
+  }
+  if (to) {
+    params.push(to);
+    filters.push(`b.start_time::date <= $${params.length}::date`);
+  }
+
+  return { where: `WHERE ${filters.join(' AND ')}`, params };
+}
+
 app.get('/api/bookings', auth.authenticate, auth.requireRoles('venue_staff'), async (req, res) => {
   try {
-    const { venueId, from, to } = req.query;
-    const filters = ["b.status IN ('approved', 'confirmed')"];
-    const params = [];
-
-    if (venueId) {
-      params.push(venueId);
-      filters.push(`b.venue_id = $${params.length}`);
-    }
-    if (from) {
-      params.push(from);
-      filters.push(`b.start_time::date >= $${params.length}::date`);
-    }
-    if (to) {
-      params.push(to);
-      filters.push(`b.start_time::date <= $${params.length}::date`);
-    }
-
-    const where = `WHERE ${filters.join(' AND ')}`;
+    const { where, params } = buildBookingFilters(req.query);
     const result = await db.query(
       `SELECT b.id, b.venue_id, b.event_id, b.start_time, b.end_time, b.status,
               b.setup_minutes, b.turnaround_minutes,
@@ -1433,6 +1441,7 @@ app.post('/api/init', async (req, res) => {
 const port = process.env.PORT || 3000;
 if (require.main === module) app.listen(port, () => console.log(`Backend listening on port ${port}`));
 app.__test__ = {
+  buildBookingFilters,
   validateSetupTurnaroundInput,
   validateSupportRequirements,
   parseSupportDecision,
