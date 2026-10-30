@@ -109,14 +109,28 @@ test('AC-029-001: /registrable lists open events with computed registration stat
 });
 
 test('AC-029-002/003: invalid registration input is rejected with field errors', async () => {
-  const result = await request(`/${events.open}/register`, {
+  // validateRegistrationInput checks name, then email, then phone, and throws on the first
+  // problem it finds - so a request invalid in all three only ever reports the first.
+  const missingName = await request(`/${events.open}/register`, {
     method: 'POST', bearer: token(ids.attendee, 'attendee'),
     body: { name: '', email: 'bad', phone: '1' }
   });
-  assert.equal(result.status, 400);
-  assert.ok(result.body.fields.name);
-  assert.ok(result.body.fields.email);
-  assert.ok(result.body.fields.phone);
+  assert.equal(missingName.status, 400);
+  assert.ok(missingName.body.fields.name);
+
+  const badEmail = await request(`/${events.open}/register`, {
+    method: 'POST', bearer: token(ids.attendee, 'attendee'),
+    body: { name: 'Attendee', email: 'bad', phone: '1' }
+  });
+  assert.equal(badEmail.status, 400);
+  assert.ok(badEmail.body.fields.email);
+
+  const badPhone = await request(`/${events.open}/register`, {
+    method: 'POST', bearer: token(ids.attendee, 'attendee'),
+    body: { name: 'Attendee', email: 'attendee@us029.test', phone: '1' }
+  });
+  assert.equal(badPhone.status, 400);
+  assert.ok(badPhone.body.fields.phone);
 });
 
 test('registering for an unknown event returns 404', async () => {
@@ -135,7 +149,7 @@ test('AC-029-004/006: a valid registration succeeds and is notified', async () =
   assert.equal(result.status, 201);
   assert.equal(result.body.status, 'registered');
 
-  const notif = await pool.query(`SELECT message FROM notifications WHERE user_id = $1 AND event_id = $2`, [ids.attendee, events.open]);
+  const notif = await pool.query(`SELECT message FROM notifications WHERE user_id = $1 AND event_id = $2 ORDER BY created_at DESC`, [ids.attendee, events.open]);
   assert.equal(notif.rows.length, 1);
   assert.match(notif.rows[0].message, /registered/i);
 
@@ -175,7 +189,7 @@ test('an attendee with no registration sees null status', async () => {
   assert.equal(result.body, null);
 });
 
-test('AC-030-001/003: withdrawing an active registration succeeds and is notified', async () => {
+test('AC-030-002: withdrawal is refused once the event has started', async () => {
   const myReg = await request(`/${events.started}/registration`, { bearer: token(ids.attendee, 'attendee') });
   assert.equal(myReg.status, 200);
 
@@ -185,7 +199,7 @@ test('AC-030-001/003: withdrawing an active registration succeeds and is notifie
   assert.match(withdraw.body.error, /started/);
 });
 
-test('AC-030-001/003: withdrawing a not-yet-started registration succeeds and is notified', async () => {
+test('AC-030-001/003: withdrawing an active registration succeeds and is notified', async () => {
   const myReg = await request(`/${events.open}/registration`, { bearer: token(ids.attendee, 'attendee') });
   assert.equal(myReg.status, 200);
 
@@ -193,7 +207,7 @@ test('AC-030-001/003: withdrawing a not-yet-started registration succeeds and is
   assert.equal(withdraw.status, 200);
   assert.equal(withdraw.body.status, 'withdrawn');
 
-  const notif = await pool.query(`SELECT message FROM notifications WHERE user_id = $1 AND event_id = $2 ORDER BY id DESC LIMIT 1`, [ids.attendee, events.open]);
+  const notif = await pool.query(`SELECT message FROM notifications WHERE user_id = $1 AND event_id = $2 ORDER BY created_at DESC LIMIT 1`, [ids.attendee, events.open]);
   assert.match(notif.rows[0].message, /withdrawn/i);
 });
 
