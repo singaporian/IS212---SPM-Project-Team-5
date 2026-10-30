@@ -25,7 +25,7 @@ function createFixtures() {
   const users = [];
   const events = [];
   const venues = [];
-  const equipment = [];
+  const equipmentIds = [];
   let passwordHash;
 
   async function user(role, label) {
@@ -62,7 +62,7 @@ function createFixtures() {
     const venue = await pool.query(`INSERT INTO venues (name, capacity) VALUES ($1, 200) RETURNING id, name`, [`E2E Hall ${run}`]);
     venues.push(venue.rows[0].id);
     const item = await pool.query(`INSERT INTO equipment (name, total_quantity) VALUES ($1, 5) RETURNING id, name`, [`E2E Projector ${run}`]);
-    equipment.push(item.rows[0].id);
+    equipmentIds.push(item.rows[0].id);
     const booking = await pool.query(
       `INSERT INTO bookings (event_id, venue_id, requested_by, start_time, end_time, status)
        VALUES ($1, $2, $3, $4, $5, 'confirmed') RETURNING id`,
@@ -93,14 +93,36 @@ function createFixtures() {
 
   const row = async (sql, params) => (await pool.query(sql, params)).rows[0];
 
+  async function venue(label = 'Venue') {
+    const created = await pool.query(
+      `INSERT INTO venues (name, capacity) VALUES ($1, 200) RETURNING id, name`,
+      [`E2E ${label} ${run}`]
+    );
+    venues.push(created.rows[0].id);
+    return created.rows[0];
+  }
+
+  async function equipment(label = 'Equipment', totalQuantity = 20) {
+    const created = await pool.query(
+      `INSERT INTO equipment (name, total_quantity) VALUES ($1, $2) RETURNING id, name`,
+      [`E2E ${label} ${run}`, totalQuantity]
+    );
+    equipmentIds.push(created.rows[0].id);
+    return created.rows[0];
+  }
+
+  function trackEvent(id) {
+    if (id) events.push(id);
+  }
+
   async function cleanup() {
     if (events.length) await pool.query('DELETE FROM events WHERE id = ANY($1::uuid[])', [events]); // cascades to requests, bookings, reservations
     if (venues.length) await pool.query('DELETE FROM venues WHERE id = ANY($1::uuid[])', [venues]);
-    if (equipment.length) await pool.query('DELETE FROM equipment WHERE id = ANY($1::uuid[])', [equipment]);
+    if (equipmentIds.length) await pool.query('DELETE FROM equipment WHERE id = ANY($1::uuid[])', [equipmentIds]);
     if (users.length) await pool.query('DELETE FROM users WHERE id = ANY($1::uuid[])', [users]);
   }
 
-  return { run, user, event, arrangements, venueBooking, changeRequest, row, cleanup, sgt };
+  return { run, user, event, arrangements, venueBooking, changeRequest, venue, equipment, trackEvent, row, cleanup, sgt };
 }
 
 module.exports = { pool, createFixtures };

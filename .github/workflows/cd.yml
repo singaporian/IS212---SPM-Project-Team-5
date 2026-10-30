@@ -1,0 +1,183 @@
+name: CD
+
+on:
+  workflow_run:
+    workflows: ['CI']
+    types: [completed]
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    if: github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository at CI commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            backend/package-lock.json
+            frontend/package-lock.json
+            e2e/package-lock.json
+
+      - name: Install backend dependencies
+        run: npm --prefix backend ci
+
+      - name: Install frontend dependencies
+        run: npm --prefix frontend ci
+
+      - name: Install end-to-end test dependencies
+        run: npm --prefix e2e ci
+
+      - name: Build frontend
+        run: npm --prefix frontend run build
+
+      - name: Build package and SBOM
+        run: bash scripts/ci/package-artifact.sh .artifacts
+
+      - name: Upload package bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: connectsphere-package
+          path: |
+            .artifacts/connectsphere-package.zip
+            .artifacts/sbom
+          retention-days: 7
+
+  smoke:
+    if: github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    needs: package
+
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: connectsphere
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d connectsphere"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DB_HOST: 127.0.0.1
+      DB_PORT: 5432
+      DB_NAME: connectsphere
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      JWT_SECRET: ci-test-secret
+      PORT: 3000
+
+    steps:
+      - name: Check out repository at CI commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            backend/package-lock.json
+            frontend/package-lock.json
+            e2e/package-lock.json
+
+      - name: Download packaged artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: connectsphere-package
+          path: .artifacts
+
+      - name: Run package smoke checks
+        run: bash scripts/ci/smoke-check.sh .artifacts/connectsphere-package.zip .smoke-workdir
+
+  e2e:
+    if: github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    needs: package
+
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: connectsphere
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d connectsphere"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DB_HOST: 127.0.0.1
+      DB_PORT: 5432
+      DB_NAME: connectsphere
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      JWT_SECRET: ci-test-secret
+      PORT: 3000
+
+    steps:
+      - name: Download packaged artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: connectsphere-package
+          path: .artifacts
+
+      - name: Unzip package
+        run: unzip -q .artifacts/connectsphere-package.zip -d packaged-app
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            packaged-app/backend/package-lock.json
+            packaged-app/frontend/package-lock.json
+            packaged-app/e2e/package-lock.json
+
+      - name: Install backend dependencies
+        run: npm --prefix packaged-app/backend ci
+
+      - name: Install frontend dependencies
+        run: npm --prefix packaged-app/frontend ci
+
+      - name: Install end-to-end test dependencies
+        run: npm --prefix packaged-app/e2e ci
+
+      - name: Initialize PostgreSQL schema
+        run: npm --prefix packaged-app/backend run init-db
+
+      - name: Install Playwright browser
+        run: npm --prefix packaged-app/e2e exec playwright install --with-deps chromium
+
+      - name: Run Playwright smoke suite
+        run: npm --prefix packaged-app/e2e run test:smoke
+
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-smoke-report
+          path: packaged-app/e2e/playwright-report
+          retention-days: 7

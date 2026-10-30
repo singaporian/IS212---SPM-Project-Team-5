@@ -12,14 +12,16 @@ Always branch off `main`. Format your branches as: `name/role/user-story-ID/brie
 
 ## Continuous Integration
 
-The GitHub Actions workflow at `.github/workflows/ci.yml` runs on every pull request targeting `main` and every push to `main`. It:
+The repository uses two GitHub Actions workflows:
 
-1. Starts PostgreSQL 15.
-2. Installs backend dependencies and initializes the schema.
-3. Runs the complete backend test suite.
-4. Installs frontend dependencies.
-5. Runs frontend tests.
-6. Builds the frontend.
+- **CI** (`.github/workflows/ci.yml`) on every pull request to `main` and every push to `main`:
+  1. `lint` (backend/frontend/e2e lint checks)
+  2. `test` (backend unit+integration + frontend tests, with PostgreSQL)
+  3. `audit` (dependency vulnerability scan, fails on high/critical production vulnerabilities)
+- **CD** (`.github/workflows/cd.yml`) after a successful CI run on the same commit:
+  1. `package` (builds one zip artifact and SBOM outputs)
+  2. `smoke` (runs the packaged backend/frontend and probes critical HTTP endpoints)
+  3. `e2e` (runs Playwright smoke journeys against the packaged app and PostgreSQL)
 
 To require these checks before merging, configure branch protection on GitHub:
 
@@ -27,10 +29,26 @@ To require these checks before merging, configure branch protection on GitHub:
 2. Set the branch pattern to `main`.
 3. Enable **Require a pull request before merging**.
 4. Enable **Require status checks to pass before merging**.
-5. Select the CI check named `test`.
+5. Select required checks: `lint`, `test`, `audit`, `package`, `smoke`, and `e2e`.
 6. Save the rule.
 
-After that, a pull request cannot merge into `main` until the CI job passes.
+After that, a pull request cannot merge into `main` until all required CI/CD checks pass.
+
+### Local pipeline commands
+
+```bash
+# Lint
+npm --prefix backend run lint
+npm --prefix frontend run lint
+npm --prefix e2e run lint
+
+# Tests
+npm --prefix backend test
+npm --prefix frontend test
+
+# Playwright smoke journeys
+npm --prefix e2e run test:smoke
+```
 
 Tests should cover both the new functionality and regression behavior. For example, a booking change should test multiple venues, conflict handling, and independent decisions, while also confirming existing authentication, drafts, equipment, and event workflows still pass.
 
@@ -40,9 +58,11 @@ Backend tests live in `backend/test/`, grouped by what they need to run:
 
 - `unit/`: pure logic with no database, network or server. Run with `npm run test:unit`.
 - `integration/`: API and SQL tests against PostgreSQL. Run with `npm run test:integration`.
-- `e2e/`: manual end-to-end scripts that need the backend running, e.g. `node test/e2e/test-us013.js`. They are not part of `npm test`.
+- `e2e/`: legacy manual API-level scripts that need the backend running, e.g. `node test/e2e/test-us013.js`. They are not part of `npm test`.
 
 `npm test` runs `unit/` and `integration/`; this is what CI runs. Frontend tests live in `frontend/test/` and run with `npm test` in `frontend`.
+
+Browser end-to-end tests live in `e2e/tests/` and run with Playwright (`npm --prefix e2e test`). The CI/CD smoke gate uses `npm --prefix e2e run test:smoke`.
 
 
 ## Start the project (recommended)
