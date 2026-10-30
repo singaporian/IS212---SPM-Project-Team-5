@@ -963,6 +963,167 @@ app.patch('/api/events/:id/decision', auth.authenticate, auth.requireRoles('even
   }
 });
 
+// US-041: an Event Coordinator marks a Confirmed event, whose occupying time
+// has already passed, as Completed. Equipment reserved for the event is
+// freed automatically: availability queries already exclude reservations
+// belonging to events in RELEASED_EVENT_STATUSES (which includes
+// 'completed'), so no separate release step is needed here.
+//
+// AC-041-001: block with a clear reason unless the event is Confirmed AND
+// its occupying time (the latest approved/confirmed booking's end time, or
+// the event's own preferred end time if it has no booking yet) has passed.
+function eventEndTime(event, bookings = []) {
+  const occupying = bookings.filter((booking) => OCCUPYING_STATUSES.includes(booking.status) && booking.end_time);
+  if (occupying.length) {
+    return occupying.reduce((latest, booking) => {
+      const end = new Date(booking.end_time);
+      return !latest || end > latest ? end : latest;
+    }, null);
+  }
+  return event.preferred_end ? new Date(event.preferred_end) : null;
+}
+
+function assertEventCompletable(event, bookings, now = new Date()) {
+  if (event.status !== 'confirmed') {
+    throw Object.assign(new Error('Only a confirmed event can be marked completed.'), { status: 409 });
+  }
+  const endTime = eventEndTime(event, bookings);
+  if (!endTime || endTime > now) {
+    throw Object.assign(new Error('This event cannot be marked completed until its scheduled end time has passed.'), { status: 409 });
+  }
+  return true;
+}
+
+app.patch('/api/events/:id/complete', auth.authenticate, auth.requireRoles('event_coordinator'), async (req, res) => {
+  if (!uuidPattern.test(req.params.id)) return res.status(400).json({ error: 'Invalid event id' });
+  const client = await db.pool.connect();
+  try {
+    await client.query('BEGIN');
+    const eventResult = await client.query('SELECT * FROM events WHERE id = $1 FOR UPDATE', [req.params.id]);
+    const event = eventResult.rows[0];
+    if (!event) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Event not found' });
+    }
+    if (event.assigned_coordinator_id !== req.auth.sub) {
+      await client.query('ROLLBACK');
+      return res.status(403).json({ error: 'You are not authorised to complete this event.' });
+    }
+
+    const bookingsResult = await client.query('SELECT status, start_time, end_time FROM bookings WHERE event_id = $1', [event.id]);
+    try {
+      assertEventCompletable(event, bookingsResult.rows);
+    } catch (error) {
+      await client.query('ROLLBACK');
+      return res.status(error.status || 409).json({ error: error.message });
+    }
+
+    const result = await client.query(
+      `UPDATE events SET status = 'completed', updated_at = now()
+       WHERE id = $1 AND assigned_coordinator_id = $2 AND status = 'confirmed'
+       RETURNING id, title, status, organiser_id`,
+      [event.id, req.auth.sub]
+    );
+    if (!result.rows[0]) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'This event could not be marked completed. It may have just changed status.' });
+    }
+
+    const row = result.rows[0];
+    await client.query(
+      `INSERT INTO event_changes (event_id, changed_by, change_summary) VALUES ($1, $2, $3)`,
+      [row.id, req.auth.sub, `Decision: marked completed by coordinator ${req.auth.sub}`]
+    );
+    const notificationMessage = `Your event "${row.title}" has been marked completed.`;
+    await client.query(
+      `INSERT INTO notifications (user_id, event_id, message) VALUES ($1, $2, $3)`,
+      [row.organiser_id, row.id, notificationMessage]
+    );
+
+    await client.query('COMMIT');
+    res.json({ ...row, message: notificationMessage });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error(error);
+    res.status(500).json({ error: 'Failed to mark the event completed. Nothing was changed; please try again.' });
+  } finally {
+    client.release();
+  }
+});
+
+// US-042: an Event Coordinator cancels an event assigned to them. Equipment
+// reserved for the event is freed automatically for the same reason as
+// US-041 (RELEASED_EVENT_STATUSES includes 'cancelled'), and a cancelled
+// event already can't be edited or receive change requests: EDITABLE_STATUSES
+// and CHANGE_REQUEST_STATUSES in domain/index.js never include 'cancelled'
+// (AC-042-004), so no extra guard is needed for that here.
+//
+// AC-042-001: any event not already Completed or Cancelled can be cancelled.
+const EVENT_NOT_CANCELLABLE_STATUSES = Object.freeze(['completed', 'cancelled']);
+function assertEventCancellable(event) {
+  if (EVENT_NOT_CANCELLABLE_STATUSES.includes(event.status)) {
+    throw Object.assign(new Error(`An event that is already ${event.status} cannot be cancelled.`), { status: 409 });
+  }
+  return true;
+}
+
+app.patch('/api/events/:id/cancel', auth.authenticate, auth.requireRoles('event_coordinator'), async (req, res) => {
+  if (!uuidPattern.test(req.params.id)) return res.status(400).json({ error: 'Invalid event id' });
+  const client = await db.pool.connect();
+  try {
+    await client.query('BEGIN');
+    const eventResult = await client.query('SELECT * FROM events WHERE id = $1 FOR UPDATE', [req.params.id]);
+    const event = eventResult.rows[0];
+    if (!event) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Event not found' });
+    }
+    // AC-042-005: only the assigned Coordinator may cancel; everyone else, "not authorised".
+    if (event.assigned_coordinator_id !== req.auth.sub) {
+      await client.query('ROLLBACK');
+      return res.status(403).json({ error: 'You are not authorised to cancel this event.' });
+    }
+
+    try {
+      assertEventCancellable(event);
+    } catch (error) {
+      await client.query('ROLLBACK');
+      return res.status(error.status || 409).json({ error: error.message });
+    }
+
+    const result = await client.query(
+      `UPDATE events SET status = 'cancelled', updated_at = now()
+       WHERE id = $1 AND assigned_coordinator_id = $2 AND status NOT IN ('completed', 'cancelled')
+       RETURNING id, title, status, organiser_id`,
+      [event.id, req.auth.sub]
+    );
+    if (!result.rows[0]) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'This event could not be cancelled. It may have just changed status.' });
+    }
+
+    const row = result.rows[0];
+    await client.query(
+      `INSERT INTO event_changes (event_id, changed_by, change_summary) VALUES ($1, $2, $3)`,
+      [row.id, req.auth.sub, `Decision: cancelled by coordinator ${req.auth.sub}`]
+    );
+    const notificationMessage = `Your event "${row.title}" has been cancelled.`;
+    await client.query(
+      `INSERT INTO notifications (user_id, event_id, message) VALUES ($1, $2, $3)`,
+      [row.organiser_id, row.id, notificationMessage]
+    );
+
+    await client.query('COMMIT');
+    res.json({ ...row, message: notificationMessage });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error(error);
+    res.status(500).json({ error: 'Failed to cancel the event. Nothing was changed; please try again.' });
+  } finally {
+    client.release();
+  }
+});
+
 const SUPPORT_STATUS_LABELS = Object.freeze({
   pending: 'Pending Review',
   confirmed: 'Sufficient Resources Available',
@@ -1465,6 +1626,9 @@ app.post('/api/init', async (req, res) => {
 const port = process.env.PORT || 3000;
 if (require.main === module) app.listen(port, () => console.log(`Backend listening on port ${port}`));
 app.__test__ = {
+  eventEndTime,
+  assertEventCompletable,
+  assertEventCancellable,
   parseEventDecisionInput,
   describeEventDecision,
   buildBookingFilters,
