@@ -255,18 +255,41 @@ app.put('/api/venues/:id/setup-turnaround', auth.authenticate, auth.requireRoles
   } catch (error) {
     return res.status(error.status || 400).json({ error: error.message });
   }
+  const client = await db.pool.connect();
   try {
-    const result = await db.query(
+    await client.query('BEGIN');
+    const result = await client.query(
       `UPDATE venues SET default_setup_minutes = $1, default_turnaround_minutes = $2
        WHERE id = $3
        RETURNING id, name, default_setup_minutes, default_turnaround_minutes`,
       [setupMinutes, turnaroundMinutes, req.params.id]
     );
-    if (!result.rows[0]) return res.status(404).json({ error: 'Venue not found' });
-    res.json(result.rows[0]);
+    if (!result.rows[0]) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Venue not found' });
+    }
+    const venue = result.rows[0];
+
+    // Notify every Venue Staff member: these defaults feed the gap-warning calculation
+    // other Venue Staff see on the upcoming bookings calendar (US-017), so a change made
+    // by one of them needs to be visible to the rest, not just the one who made it.
+    const actor = (await client.query('SELECT name FROM users WHERE id = $1', [req.auth.sub])).rows[0];
+    await client.query(
+      `INSERT INTO notifications (user_id, message)
+       SELECT id, $1 FROM users WHERE role = 'venue_staff'`,
+      [`Venue "${venue.name}"'s setup/turnaround defaults were updated by ${actor ? actor.name : 'a venue staff member'} ` +
+        `to ${venue.default_setup_minutes} minute${venue.default_setup_minutes === 1 ? '' : 's'} setup / ` +
+        `${venue.default_turnaround_minutes} minute${venue.default_turnaround_minutes === 1 ? '' : 's'} turnaround.`]
+    );
+
+    await client.query('COMMIT');
+    res.json(venue);
   } catch (error) {
+    await client.query('ROLLBACK');
     console.error(error);
     res.status(500).json({ error: 'Unable to update the venue setup and turnaround times' });
+  } finally {
+    client.release();
   }
 });
 
