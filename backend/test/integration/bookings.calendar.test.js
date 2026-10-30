@@ -20,7 +20,7 @@ test('US-017 Venue Staff view the upcoming bookings calendar', async t => {
       await originalPool.query(`CREATE TABLE ${schema}.${table} (LIKE public.${table} INCLUDING ALL)`);
     }
 
-    pool = new originalPool.constructor({ ...originalPool.options, options: `-c search_path=${schema},public` });
+    pool = new (require('pg').Pool)({ ...originalPool.options, password: originalPool.options.password, options: `-c search_path=${schema},public` });
     db.pool = pool;
     db.query = (...args) => pool.query(...args);
 
