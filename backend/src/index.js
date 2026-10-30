@@ -861,25 +861,65 @@ app.get('/api/bookings/reviewed', auth.authenticate, auth.requireRoles('venue_st
 });
 
 // US-013: approve or reject a submitted request assigned to this coordinator
-app.patch('/api/events/:id/decision', auth.authenticate, auth.requireRoles('event_coordinator'), async (req, res) => {
-  const { decision, reason, reasonDetail } = req.body || {};
+// US-013: an Event Coordinator approves or rejects an event request assigned
+// to them, with an audit trail (event_changes) and a notification to the
+// Organiser. A rejection must give one of a fixed set of reasons, and "Other"
+// needs a free-text detail.
+const EVENT_DECISION_REASON_LABELS = Object.freeze({
+  insufficient_information: 'Insufficient Information',
+  infeasible_requirements: 'Infeasible Requirements',
+  duplicate_request: 'Duplicate Request',
+  other: 'Other'
+});
+
+function parseEventDecisionInput(body) {
+  const { decision, reason, reasonDetail } = body || {};
   const safeDecision = typeof decision === 'string' ? decision.trim() : '';
-  const allowedDecisions = new Set(['approved', 'rejected']);
-  const allowedReasons = new Set(['insufficient_information', 'infeasible_requirements', 'duplicate_request', 'other']);
-
-  if (!allowedDecisions.has(safeDecision)) {
-    return res.status(400).json({ error: 'Decision must be either approved or rejected' });
+  if (!['approved', 'rejected'].includes(safeDecision)) {
+    throw Object.assign(new Error('Decision must be either approved or rejected'), { status: 400 });
   }
 
-  if (safeDecision === 'rejected') {
-    const safeReason = typeof reason === 'string' ? reason.trim() : '';
-    if (!allowedReasons.has(safeReason)) {
-      return res.status(400).json({ error: 'A valid rejection reason is required' });
-    }
-    if (safeReason === 'other' && (!reasonDetail || !String(reasonDetail).trim())) {
-      return res.status(400).json({ error: 'A free-text detail is required when the reason is Other' });
-    }
+  if (safeDecision !== 'rejected') {
+    return { decision: safeDecision, reason: null, reasonDetail: null };
   }
+
+  const safeReason = typeof reason === 'string' ? reason.trim() : '';
+  if (!Object.keys(EVENT_DECISION_REASON_LABELS).includes(safeReason)) {
+    throw Object.assign(new Error('A valid rejection reason is required'), { status: 400 });
+  }
+  const comment = reasonDetail != null ? String(reasonDetail).trim() : '';
+  if (safeReason === 'other' && !comment) {
+    throw Object.assign(new Error('A free-text detail is required when the reason is Other'), { status: 400 });
+  }
+  // US-009 (AC-009-002): keep the Coordinator's comment for any reason, not only Other.
+  return { decision: safeDecision, reason: safeReason, reasonDetail: comment };
+}
+
+// Builds the audit-trail summary and the Organiser-facing notification text
+// for a decision already validated by parseEventDecisionInput.
+function describeEventDecision({ decision, reason, reasonDetail }, { title, coordinatorId }) {
+  if (decision === 'approved') {
+    return {
+      summary: `Decision: approved by coordinator ${coordinatorId}`,
+      notificationMessage: `Your event request "${title}" was approved and can proceed to venue search and booking.`
+    };
+  }
+  const reasonText = EVENT_DECISION_REASON_LABELS[reason];
+  const detailText = reasonDetail ? ` Details: ${reasonDetail}` : '';
+  return {
+    summary: `Decision: rejected by coordinator ${coordinatorId} for reason: ${reasonText}${detailText}`,
+    notificationMessage: `Your event request "${title}" was rejected. Reason: ${reasonText}${detailText}`
+  };
+}
+
+app.patch('/api/events/:id/decision', auth.authenticate, auth.requireRoles('event_coordinator'), async (req, res) => {
+  let decisionInput;
+  try {
+    decisionInput = parseEventDecisionInput(req.body);
+  } catch (error) {
+    return res.status(error.status || 400).json({ error: error.message });
+  }
+  const { decision: safeDecision } = decisionInput;
 
   const client = await db.pool.connect();
   try {
@@ -898,29 +938,13 @@ app.patch('/api/events/:id/decision', auth.authenticate, auth.requireRoles('even
     }
 
     const row = result.rows[0];
-    const reasonMap = {
-      insufficient_information: 'Insufficient Information',
-      infeasible_requirements: 'Infeasible Requirements',
-      duplicate_request: 'Duplicate Request',
-      other: 'Other'
-    };
-    const reasonText = safeDecision === 'rejected' ? reasonMap[reason.trim()] : null;
-    // US-009 (AC-009-002): keep the Coordinator's comment for any reason, not only Other.
-    const comment = safeDecision === 'rejected' && reasonDetail != null ? String(reasonDetail).trim() : '';
-    const detailText = comment ? ` Details: ${comment}` : '';
-    const summary = safeDecision === 'approved'
-      ? `Decision: approved by coordinator ${req.auth.sub}`
-      : `Decision: rejected by coordinator ${req.auth.sub} for reason: ${reasonText}${detailText}`;
+    const { summary, notificationMessage } = describeEventDecision(decisionInput, { title: row.title, coordinatorId: req.auth.sub });
 
     await client.query(
       `INSERT INTO event_changes (event_id, changed_by, change_summary)
        VALUES ($1, $2, $3)`,
       [row.id, req.auth.sub, summary]
     );
-
-    const notificationMessage = safeDecision === 'approved'
-      ? `Your event request "${row.title}" was approved and can proceed to venue search and booking.`
-      : `Your event request "${row.title}" was rejected. Reason: ${reasonText}${detailText ? ` ${detailText.replace(/^\s*Details:\s*/, 'Details: ')}` : ''}`;
 
     await client.query(
       `INSERT INTO notifications (user_id, event_id, message)
@@ -1441,6 +1465,8 @@ app.post('/api/init', async (req, res) => {
 const port = process.env.PORT || 3000;
 if (require.main === module) app.listen(port, () => console.log(`Backend listening on port ${port}`));
 app.__test__ = {
+  parseEventDecisionInput,
+  describeEventDecision,
   buildBookingFilters,
   validateSetupTurnaroundInput,
   validateUnavailabilityReason,
