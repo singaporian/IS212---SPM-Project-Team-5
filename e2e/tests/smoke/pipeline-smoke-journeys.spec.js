@@ -39,7 +39,8 @@ async function submitOrganiserRequest(page, title) {
   await page.getByLabel('Equipment Requirements').fill('Projector');
   await page.getByLabel('Registration Needs').selectOption('yes');
   await page.getByRole('button', { name: 'Submit for Review' }).click();
-  await expect(page.getByText('Request submitted successfully.')).toBeVisible();
+  await expect(page).toHaveURL(/submitted=1/);
+  await expect(page.getByText('Your request has been submitted successfully')).toBeVisible();
 }
 
 test('@smoke [SMOKE-01] complete happy path across all roles', async ({ page }) => {
@@ -85,8 +86,8 @@ test('@smoke [SMOKE-01] complete happy path across all roles', async ({ page }) 
   await expect(requestCard.getByText('Request approved.')).toBeVisible();
 
   await page.goto('/bookings/new');
-  await page.getByLabel('Event').selectOption(event.id);
-  await page.getByLabel('Venue').selectOption(venue.id);
+  await page.locator('#booking-event').selectOption(event.id);
+  await page.locator('#booking-venue').selectOption(venue.id);
   await page.getByLabel('Start date').fill('2099-04-10');
   await page.getByLabel('End date').fill('2099-04-10');
   await page.getByLabel('Start time').fill('09:00');
@@ -116,7 +117,7 @@ test('@smoke [SMOKE-01] complete happy path across all roles', async ({ page }) 
   await switchUser(page, coordinator);
   await page.goto('/technical-support/requirements');
   await page.getByLabel('Event').selectOption(event.id);
-  await page.getByLabel(equipment.name).check();
+  await page.getByRole('checkbox', { name: equipment.name }).check();
   await page.getByLabel(`${equipment.name} quantity`).fill('2');
   await page.getByLabel('Number of staff required').fill('2');
   await page.getByRole('button', { name: 'Save requirements' }).click();
@@ -134,7 +135,7 @@ test('@smoke [SMOKE-01] complete happy path across all roles', async ({ page }) 
 
   await switchUser(page, safetyOfficer);
   await page.goto('/safety/checks');
-  const safetyCard = page.locator('article', { hasText: title });
+  const safetyCard = page.locator('article', { hasText: title }).first();
   await safetyCard.getByRole('button', { name: 'Approve' }).click();
   await expect.poll(async () => {
     const row = await fx.row('SELECT status FROM operational_safety_checks WHERE event_id = $1', [event.id]);
@@ -180,13 +181,14 @@ test('@smoke [SMOKE-02] venue conflict is refused and existing booking remains i
 
   await signIn(page, coordinator);
   await page.goto('/bookings/new');
-  await page.getByLabel('Event').selectOption(eventB.id);
-  await page.getByLabel('Venue').selectOption(venue.id);
+  await page.locator('#booking-event').selectOption(eventB.id);
+  await page.locator('#booking-venue').selectOption(venue.id);
   await page.getByLabel('Start date').fill('2099-06-10');
   await page.getByLabel('End date').fill('2099-06-10');
   await page.getByLabel('Start time').fill('11:30');
   await page.getByLabel('End time').fill('13:00');
   await page.getByRole('button', { name: 'Review request' }).click();
+  await page.getByRole('button', { name: 'Confirm and submit' }).click();
   await page.getByRole('button', { name: 'Acknowledge conflict and submit' }).click();
   await expect(page.getByText('submitted. Venue Staff can now review this venue arrangement.')).toBeVisible();
 
