@@ -1,6 +1,7 @@
 const express = require('express');
 const db = require('./db');
 const auth = require('./auth');
+const { occupiesVenue } = require('./venueOccupancy');
 
 const fail = (status, message) => Object.assign(new Error(message), { status });
 const uuid = value => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value || '');
@@ -22,7 +23,8 @@ async function eligibleBooking(query, id, lock = false) {
     WHERE b.id=$1${lock ? ' FOR SHARE OF b, v' : ''}`, [id]);
   const booking = result.rows[0];
   if (!booking) throw fail(404, 'Booking not found.');
-  if (booking.status !== 'confirmed') throw fail(409, 'Internal notes are available only for confirmed bookings.');
+  // Venue approval already reserves the booking; no separate confirmation action exists.
+  if (!occupiesVenue(booking.status)) throw fail(409, 'Internal notes are available only for approved or confirmed bookings.');
 }
 
 const router = express.Router();

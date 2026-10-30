@@ -20,7 +20,7 @@ Inspected booking schema/statuses, domain `Booking.isConfirmed()`, calendar, aut
 
 **Venue scope:** current venue calendar/configuration/review APIs authorise all Venue Staff by role. There is no staff-to-venue ownership/assignment table or service. US-018 reuses that scope rather than inventing a second permissions model. A booking must join an existing venue. Missing/orphaned venue references are inaccessible. A separate test for a staff account assigned to another venue is not representable in the current model. If a future requirement introduces per-venue assignments, the note routes must adopt that shared check before claiming assignment-level isolation.
 
-**Confirmed means `bookings.status = 'confirmed'`.** Approved/reserved, pending, rejected, alternative_suggested and cancelled records cannot list/add/edit/delete notes. Overall event status is not substituted for booking status. Main's calendar includes both approved and confirmed rows; the notes component mounts only in expanded confirmed rows. US-018 does not alter the booking/event lifecycle to create confirmed rows. Manual testers must use an actual confirmed booking.
+**Booking eligibility follows the existing venue-reservation policy:** `approved` and `confirmed` bookings support notes. Venue Staff approval already reserves the arrangement, and the normal workflow has no separate booking-confirmation action. Pending, rejected, alternative_suggested and cancelled bookings cannot list/add/edit/delete notes. Overall event status is not substituted for booking status. The calendar labels approved rows "Approved — venue reserved" and confirmed rows "Confirmed"; notes mount only in expanded eligible rows. Approval and event lifecycle transitions are unchanged.
 
 No note notifications are added. Notes live in a separate table, never a booking/event JSON property. Organiser, Coordinator, Attendee, Safety Officer, Lead and Technical Support roles are denied at the note API. Normal booking responses remain unchanged.
 
@@ -67,7 +67,7 @@ IDs grouped in a single test prove related behaviour without creating duplicate 
 | IT-06/07/08 | IT | AC4 | Other roles request every operation | 403; missing authentication 401; Coordinator booking response contains no note data. | PASS |
 | IT-09/10 | IT | AC5 | Creator edits; another staff tries | Creator succeeds, other denied; created_by/created_at unchanged; chronology stable. | PASS |
 | IT-11/12 | IT | AC5 | Creator deletes; another staff tries | Creator succeeds, other denied; other notes remain unchanged. | PASS |
-| IT-13/14 | IT | AC1 | Non-confirmed booking operations | 409 for pending/approved/rejected/alternative_suggested/cancelled; no note changed. | PASS |
+| IT-13/14 | IT | AC1 | Unreserved booking operations | 409 for pending/rejected/alternative_suggested/cancelled; no note changed. | PASS |
 | IT-15 | IT | AC1, AC4; technical IDs | Missing venue/booking and invalid note IDs | Missing/inaccessible resources 404; malformed IDs 400. Per-venue assignment test unavailable under existing model. | PASS for current scope |
 | IT-16 | IT | AC1, AC5; failure safety | Invalid input and forced DB insert/update failure | No partial record or changed note; retry succeeds. | PASS |
 | Cascade regression | IT | Relationship integrity | Delete booking | Its notes are removed by real foreign key cascade. | PASS |
@@ -78,7 +78,7 @@ IDs grouped in a single test prove related behaviour without creating duplicate 
 | FE-06 | FE | Failure safety | Add/edit/delete failure and retry | No false success; text/confirmation/data retained. | PASS |
 | FE-07 | FE | AC4 | Non-Venue-Staff component access | No note rendering or request. | PASS |
 | FE-08 | FE | AC1; duplicate-click safeguard | Empty input/in-flight action | No empty POST or duplicate action. | PASS |
-| FE-09 | FE | AC1 | Calendar status integration | Notes only mount on expanded confirmed entries. | PASS |
+| FE-09 | FE | AC1 | Calendar status integration | Notes mount on expanded approved/confirmed entries with distinct status labels; collapsed entries hide notes. | PASS |
 | FE-10 | FE | AC4; transport | Service URL/auth/error/204 | Encoded IDs, auth headers, errors surfaced, empty delete handled. | PASS |
 | Manual-01 to Manual-10 | Manual | AC1-AC5 | Browser acceptance steps below | Actual end-user workflow. | Not Executed |
 
@@ -86,7 +86,7 @@ Unit tests use `node:test`, `node:assert/strict`, CommonJS and direct helper cal
 
 ## Manual browser cases
 
-Use two existing/provisioned Venue Staff test accounts and a booking whose stored status is confirmed. Do not use a pending/approved row as a confirmed-booking substitute.
+Use two existing/provisioned Venue Staff test accounts and a booking whose stored status is approved or confirmed. The overall event need not be confirmed.
 
 | ID | Steps | Expected | Actual | Status |
 |---|---|---|---|---|
@@ -99,7 +99,7 @@ Use two existing/provisioned Venue Staff test accounts and a booking whose store
 | Manual-07 | Coordinator opens their booking request; attempt direct note API with their session. | No note section/data; API denies access. | | Not Executed |
 | Manual-08 | Organiser opens event details; attempt note API. | No internal notes; API denies access. | | Not Executed |
 | Manual-09 | Attendee opens event/calendar; attempt note API. | No internal notes; API denies access. | | Not Executed |
-| Manual-10 | Open approved/pending booking or attempt its note API; interrupt backend during a separate confirmed-booking save. | Non-confirmed notes denied; failed save retains input and supports retry without false success. | | Not Executed |
+| Manual-10 | Open a pending/rejected booking or attempt its note API; interrupt backend during a separate confirmed-booking save. | Unreserved booking notes denied; failed save retains input and supports retry without false success. | | Not Executed |
 
 Also check keyboard/narrow-screen use and multiline/long-text wrapping. There is no browser screen for individual venue assignments because that model does not exist.
 
@@ -137,4 +137,10 @@ Root: `git diff --check`; `git diff --cached --check`.
 
 Existing US-019/US-020/US-035/US-038 and main booking/authentication suites remain intact. US-033 was pushed separately as c06849c6b109ebb8f0babc96f015e5ae7c1e0d2d and has not been merged; its full combined-branch workflow is not falsely claimed as tested in this main-based US-018 branch. The notes router is scoped to note URLs and cannot impose Venue Staff-only access on other booking endpoints.
 
-US-018 implementation is local, uncommitted and unpushed. No stashes applied/deleted. Manual verification remains pending.
+Original implementation was committed as 798008a. The subsequent eligibility correction follows the existing approved-as-reserved policy; no new status transition is introduced. Stashes remain untouched. Recheck the normal approval-to-notes browser flow after this correction.
+
+## Approval-to-notes integration correction
+
+IT-17 verifies approved bookings can create/read/edit/delete notes, other staff cannot edit/delete them, and booking/event statuses stay unchanged. FE-09 verifies approved/confirmed labels, eligible note rendering and collapsed/ineligible exclusion. Previous results above describe the original verification; rerun results for this correction are reported separately.
+
+Correction verification — 30 October 2026: focused backend 17 passed; full backend 365 passed; full frontend 108 passed (including all 9 notes tests); production build PASS; git diff --check PASS. Manual recheck: open an approved booking such as AI Fair, confirm the Approved — venue reserved label, add/reload/edit/delete a note; open a confirmed demo booking and confirm its Confirmed label and notes remain available.
