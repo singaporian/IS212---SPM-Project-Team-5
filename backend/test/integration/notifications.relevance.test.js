@@ -7,6 +7,14 @@ const { randomUUID } = require('node:crypto');
 const jwt = require('jsonwebtoken');
 const db = require('../../src/db');
 
+// preferredStart/preferredEnd must land on a clean 5-minute UTC boundary
+// (parseChangeRequestInput rejects anything else), so round instead of
+// using the arbitrary minute/second/ms that Date.now() happens to produce.
+function roundToFiveMinutes(date) {
+  const ms = 5 * 60 * 1000;
+  return new Date(Math.ceil(date.getTime() / ms) * ms);
+}
+
 test('US-027 Technical Support Staff with equipment reserved are notified of relevant changes', async t => {
   const originalPool = db.pool, originalQuery = db.query;
   const schema = 'us027_test_' + randomUUID().replace(/-/g, '');
@@ -67,9 +75,10 @@ test('US-027 Technical Support Staff with equipment reserved are notified of rel
     let dateChangeNotificationId;
 
     await t.test('AC-027: a date/time change notifies the equipment reserver but not an uninvolved staff member', async () => {
-      const newStart = new Date(Date.now() + 11 * 24 * 60 * 60 * 1000).toISOString();
-      const newEnd = new Date(Date.now() + 11 * 24 * 60 * 60 * 1000 + 2 * 60 * 60 * 1000).toISOString();
-      const result = await call(`/events/${event}/change-requests`, 'POST', { preferredStart: newStart, preferredEnd: newEnd });
+      const newStart = roundToFiveMinutes(new Date(Date.now() + 11 * 24 * 60 * 60 * 1000));
+      const newEnd = new Date(newStart.getTime() + 2 * 60 * 60 * 1000).toISOString();
+      const newStartIso = newStart.toISOString();
+      const result = await call(`/events/${event}/change-requests`, 'POST', { preferredStart: newStartIso, preferredEnd: newEnd });
       assert.equal(result.status, 201);
 
       const techNotifs = await call('/notifications', 'GET', undefined, 'technical_support_staff', tech);
@@ -82,9 +91,10 @@ test('US-027 Technical Support Staff with equipment reserved are notified of rel
     });
 
     await t.test('AC-027: a cancellation notifies the equipment reserver but not an uninvolved staff member', async () => {
-      const newStart = new Date(Date.now() + 12 * 24 * 60 * 60 * 1000).toISOString();
-      const newEnd = new Date(Date.now() + 12 * 24 * 60 * 60 * 1000 + 2 * 60 * 60 * 1000).toISOString();
-      const result = await call(`/events/${event}/cancel-and-resubmit`, 'POST', { preferredStart: newStart, preferredEnd: newEnd, expectedAttendance: 999 });
+      const newStart = roundToFiveMinutes(new Date(Date.now() + 12 * 24 * 60 * 60 * 1000));
+      const newEnd = new Date(newStart.getTime() + 2 * 60 * 60 * 1000).toISOString();
+      const newStartIso = newStart.toISOString();
+      const result = await call(`/events/${event}/cancel-and-resubmit`, 'POST', { preferredStart: newStartIso, preferredEnd: newEnd, expectedAttendance: 999 });
       assert.equal(result.status, 201);
 
       const techNotifs = await call('/notifications', 'GET', undefined, 'technical_support_staff', tech);
