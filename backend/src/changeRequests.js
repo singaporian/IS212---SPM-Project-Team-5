@@ -63,6 +63,14 @@ function parseChangeRequestInput(body) {
   return changes;
 }
 
+// US-027: a proposed change is relevant to Technical Support Staff with equipment reserved
+// for this event only when it touches the event's date, time, or equipment requirements.
+function touchesEquipmentRelevantFields(changes) {
+  return Object.keys(changes).some((key) =>
+    ['preferredStart', 'preferredEnd', 'equipmentRequirements'].includes(key)
+  );
+}
+
 // US-010 (AC-010-003): explanation shown when a request contains a major change.
 function majorChangeResponse(major) {
   const names = major.map((key) => MAJOR_CHANGE_LABELS[key]).join(' and ');
@@ -136,10 +144,7 @@ router.post('/:id/change-requests', ...organiserOnly, async (req, res) => {
     }
 
     // US-027: if the proposed change touches date/time/equipment, notify Tech Support Staff with equipment reserved for this event.
-    const touchesRelevantFields = Object.keys(changes).some((key) =>
-      ['preferredStart', 'preferredEnd', 'equipmentRequirements'].includes(key)
-    );
-    if (touchesRelevantFields) {
+    if (touchesEquipmentRelevantFields(changes)) {
       const reservedStaff = await db.query(
         `SELECT DISTINCT reserved_by FROM equipment_reservations WHERE event_id = $1 AND reserved_by IS NOT NULL`,
         [event.id]
@@ -376,4 +381,4 @@ router.patch('/change-requests/:id/decision', ...coordinatorOnly, async (req, re
   }
 });
 
-module.exports = { router, parseChangeRequestInput, applyChangesToDraft, parseChangeRequestDecision };
+module.exports = { router, parseChangeRequestInput, applyChangesToDraft, parseChangeRequestDecision, touchesEquipmentRelevantFields };
