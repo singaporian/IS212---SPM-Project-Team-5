@@ -78,8 +78,22 @@ test('US-018 internal booking notes with real PostgreSQL and authorization', asy
       assert.equal(after.note_text,'Updated handling note.');assert.notDeepEqual(after.updated_at,before.updated_at);
       assert.deepEqual((await call(path)).body.map(n=>n.id),[first.id,second.id]);
     });
-    await t.test('[IT-13/14] non-confirmed bookings reject all note operations without changing data',async()=>{
-      for(const status of ['pending','approved','rejected','alternative_suggested','cancelled']) {
+    await t.test('[IT-17] approved reserved booking supports notes without changing booking or event status',async()=>{
+      await pool.query("UPDATE bookings SET status='approved' WHERE id=$1",[booking]);
+      await pool.query("UPDATE events SET status='submitted' WHERE id=$1",[event]);
+      const added=await call(path,'POST',{noteText:'Approved arrangement setup note.'});
+      assert.equal(added.status,201);
+      assert.ok((await call(path)).body.some(note=>note.id===added.body.id));
+      assert.equal((await call(path+'/'+added.body.id,'PATCH',{noteText:'Not mine'},'venue_staff',other)).status,403);
+      assert.equal((await call(path+'/'+added.body.id,'DELETE',undefined,'venue_staff',other)).status,403);
+      assert.equal((await call(path+'/'+added.body.id,'PATCH',{noteText:'Updated approved arrangement.'})).status,200);
+      assert.equal((await noteRow(added.body.id)).created_by,staff);
+      assert.equal((await call(path+'/'+added.body.id,'DELETE')).status,204);
+      assert.equal((await pool.query('SELECT status FROM bookings WHERE id=$1',[booking])).rows[0].status,'approved');
+      assert.equal((await pool.query('SELECT status FROM events WHERE id=$1',[event])).rows[0].status,'submitted');
+    });
+    await t.test('[IT-13/14] unreserved bookings reject all note operations without changing data',async()=>{
+      for(const status of ['pending','rejected','alternative_suggested','cancelled']) {
         await pool.query('UPDATE bookings SET status=$1 WHERE id=$2',[status,booking]);
         for(const [suffix,method,body] of [['','GET'],['','POST',{noteText:'No'}],['/'+first.id,'PATCH',{noteText:'No'}],['/'+first.id,'DELETE']]) {
           assert.equal((await call(path+suffix,method,body)).status,409,status+' '+method);

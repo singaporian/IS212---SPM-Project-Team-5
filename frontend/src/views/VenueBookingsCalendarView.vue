@@ -48,7 +48,7 @@
               <div class="small text-muted">{{ booking.venue_name }}</div>
               <div class="small">{{ formatRange(booking.start_time, booking.end_time) }}</div>
               <div class="small text-muted">Expected attendance: {{ booking.expected_attendance ?? '—' }}</div>
-              <span class="badge bg-success-subtle text-success border border-success-subtle">Booking status: Reserved</span>
+              <span class="badge bg-success-subtle text-success border border-success-subtle">Booking status: {{ bookingStatusLabel(booking.status) }}</span>
             </div>
             <div class="text-end">
               <span v-if="isInsufficientTurnaround(booking)" class="badge bg-danger-subtle text-danger border border-danger-subtle">Insufficient gap under current venue requirements</span>
@@ -65,9 +65,9 @@
             <div><strong>Turnaround minutes (at time of booking):</strong> {{ booking.turnaround_minutes ?? 0 }}</div>
             <div><strong>Venue's current setup requirement:</strong> {{ booking.default_setup_minutes ?? 0 }}</div>
             <div><strong>Venue's current turnaround requirement:</strong> {{ booking.default_turnaround_minutes ?? 0 }}</div>
-            <div><strong>Booking status:</strong> Reserved</div>
+            <div><strong>Booking status:</strong> {{ bookingStatusLabel(booking.status) }}</div>
             <div><strong>Event status:</strong> {{ booking.event_status }}</div>
-            <BookingNotes v-if="booking.status === 'confirmed'" :key="booking.id" :booking-id="booking.id" />
+            <BookingNotes v-if="['approved', 'confirmed'].includes(booking.status)" :key="booking.id" :booking-id="booking.id" />
           </div>
         </div>
       </div>
@@ -112,6 +112,9 @@ export default {
     }
   },
   methods: {
+    bookingStatusLabel(status) {
+      return { approved: 'Approved — venue reserved', confirmed: 'Confirmed', pending: 'Pending Review', rejected: 'Rejected', alternative_suggested: 'Alternative suggested', cancelled: 'Cancelled' }[status] || 'Unknown'
+    },
     formatDateTime(value) {
       if (!value) return '—'
       return new Date(value).toLocaleString()

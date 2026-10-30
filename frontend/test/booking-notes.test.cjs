@@ -67,14 +67,18 @@ test('[FE-08] empty input prevents requests and in-flight save prevents duplicat
   state.newText='Real note';const pending=state.add();assert.equal(state.saving,true);await state.add();assert.equal(calls,1);finish(first);await pending;assert.equal(state.notes.length,1);assert.equal(state.saving,false);
 });
 
-test('[FE-09] calendar mounts notes only in expanded confirmed-booking details',async()=>{
+test('[FE-09] calendar distinguishes approved and confirmed bookings and exposes notes only for reserved arrangements',async()=>{
   const page=parse(fs.readFileSync(path.join(__dirname,'../src/views/VenueBookingsCalendarView.vue'),'utf8')).descriptor;
   const script=page.script.content.replace(/import .*\r?\n/g,'').replace('export default','return');
   const options=new Function('authHeaders','clearSession','BookingNotes',script)(()=>({}),()=>{},{});
-  for(const status of ['confirmed','approved','pending']) {
+  for(const status of ['confirmed','approved','pending','rejected','alternative_suggested','cancelled']) {
     const booking={id:'booking',event_title:'Calendar event',venue_id:'venue',venue_name:'Hall',status,start_time:'2099-03-01T02:00:00Z',end_time:'2099-03-01T03:00:00Z'};
-    const app=createSSRApp({...options,mounted:undefined,render:compile(page.template.content),data:()=>({...options.data(),bookings:[booking],selectedBookingId:'booking'}),components:{RouterLink:{template:'<a><slot /></a>'},BookingNotes:{template:'<section>Notes mounted</section>'}}});
-    assert.equal((await renderToString(app)).includes('Notes mounted'),status==='confirmed',status);
+    const calendar=selectedBookingId=>createSSRApp({...options,mounted:undefined,render:compile(page.template.content),data:()=>({...options.data(),bookings:[booking],selectedBookingId}),components:{RouterLink:{template:'<a><slot /></a>'},BookingNotes:{template:'<section>Notes mounted</section>'}}});
+    const html=await renderToString(calendar('booking'));
+    assert.equal(html.includes('Notes mounted'),['approved','confirmed'].includes(status),status);
+    if(status==='approved') assert.ok(html.includes('Approved — venue reserved'));
+    if(status==='confirmed') { assert.ok(html.includes('Booking status: Confirmed')); assert.ok(!html.includes('Approved — venue reserved')); }
+    assert.ok(!(await renderToString(calendar(null))).includes('Notes mounted'),'collapsed '+status);
   }
 });
 
