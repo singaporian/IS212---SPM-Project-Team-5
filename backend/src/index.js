@@ -1443,6 +1443,7 @@ if (require.main === module) app.listen(port, () => console.log(`Backend listeni
 app.__test__ = {
   buildBookingFilters,
   validateSetupTurnaroundInput,
+  validateUnavailabilityReason,
   validateSupportRequirements,
   parseSupportDecision,
   normalizeSupportEquipmentRequirements,
