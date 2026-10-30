@@ -1434,6 +1434,7 @@ const port = process.env.PORT || 3000;
 if (require.main === module) app.listen(port, () => console.log(`Backend listening on port ${port}`));
 app.__test__ = {
   validateSetupTurnaroundInput,
+  validateUnavailabilityReason,
   validateSupportRequirements,
   parseSupportDecision,
   normalizeSupportEquipmentRequirements,
