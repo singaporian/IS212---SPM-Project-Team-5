@@ -237,12 +237,23 @@ app.get('/api/venues/count', auth.authenticate, async (req, res) => {
 
 // US-035: Venue Staff configure a venue's setup/turnaround defaults, used whenever the
 // venue's availability is determined (searching, and reviewing booking requests).
+// AC-035-001/002: both values must be whole, non-negative minutes.
+function validateSetupTurnaroundInput(body) {
+  const setupMinutes = Number(body.setupMinutes);
+  const turnaroundMinutes = Number(body.turnaroundMinutes);
+  if (!Number.isInteger(setupMinutes) || setupMinutes < 0 || !Number.isInteger(turnaroundMinutes) || turnaroundMinutes < 0) {
+    throw Object.assign(new Error('Setup and turnaround times must be non-negative whole minutes'), { status: 400 });
+  }
+  return { setupMinutes, turnaroundMinutes };
+}
+
 app.put('/api/venues/:id/setup-turnaround', auth.authenticate, auth.requireRoles('venue_staff'), async (req, res) => {
   if (!uuidPattern.test(req.params.id)) return res.status(400).json({ error: 'Invalid venue id' });
-  const setupMinutes = Number(req.body.setupMinutes);
-  const turnaroundMinutes = Number(req.body.turnaroundMinutes);
-  if (!Number.isInteger(setupMinutes) || setupMinutes < 0 || !Number.isInteger(turnaroundMinutes) || turnaroundMinutes < 0) {
-    return res.status(400).json({ error: 'Setup and turnaround times must be non-negative whole minutes' });
+  let setupMinutes, turnaroundMinutes;
+  try {
+    ({ setupMinutes, turnaroundMinutes } = validateSetupTurnaroundInput(req.body));
+  } catch (error) {
+    return res.status(error.status || 400).json({ error: error.message });
   }
   try {
     const result = await db.query(
@@ -1422,6 +1433,7 @@ app.post('/api/init', async (req, res) => {
 const port = process.env.PORT || 3000;
 if (require.main === module) app.listen(port, () => console.log(`Backend listening on port ${port}`));
 app.__test__ = {
+  validateSetupTurnaroundInput,
   validateSupportRequirements,
   parseSupportDecision,
   normalizeSupportEquipmentRequirements,
