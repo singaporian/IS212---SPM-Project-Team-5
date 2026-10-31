@@ -23,7 +23,7 @@ test('US-031 edit before approval', async (t) => {
   let server;
   try {
     await client.query('BEGIN');
-    for (const table of ['events', 'event_change_requests']) {
+    for (const table of ['events', 'event_change_requests', 'notifications']) {
       await client.query(`CREATE TEMP TABLE ${table} (LIKE public.${table} INCLUDING ALL) ON COMMIT DROP`);
     }
     db.query = (sql, params) => client.query(sql, params);
@@ -57,15 +57,17 @@ test('US-031 edit before approval', async (t) => {
       });
       return { status: res.status, body: await res.json() };
     }
-    async function makeRequest(status) {
+    async function makeRequest(status, assigned = coordinator) {
       const id = randomUUID();
       await client.query(
         `INSERT INTO events (id, title, status, organiser_id, assigned_coordinator_id, expected_attendance, draft_data, submitted_at)
          VALUES ($1, 'Orientation', $2, $3, $4, 100, $5::jsonb, now())`,
-        [id, status, organiser, coordinator, JSON.stringify(FORM)]);
+        [id, status, organiser, assigned, JSON.stringify(FORM)]);
       return id;
     }
     const eventRow = async (id) => (await client.query('SELECT * FROM events WHERE id = $1', [id])).rows[0];
+    const inbox = async (userId, eventId) => (await client.query(
+      'SELECT message FROM notifications WHERE user_id = $1 AND event_id = $2', [userId, eventId])).rows.map((row) => row.message);
 
     await t.test('[IT-01] PUT /requests/:id saves a valid edit straight away and creates no change request', async () => {
       const id = await makeRequest('submitted');
@@ -119,6 +121,34 @@ test('US-031 edit before approval', async (t) => {
       const result = await call('PUT', `/requests/${id}`, { ...FORM, expectedAttendance: '150' }, token(otherOrganiser));
       assert.equal(result.status, 404);
       assert.equal((await eventRow(id)).expected_attendance, 100);
+    });
+    // US-002 notifications triggered by these routes (Week 4 Notification System).
+    await t.test('[IT-US031-N01] returning a request notifies the Organiser, naming the event and including the note', async () => {
+      const id = await makeRequest('submitted');
+      const returned = await call('PATCH', `/events/${id}/return`, { note: 'Please confirm the date.' },
+        token(coordinator, 'event_coordinator'));
+      assert.equal(returned.status, 200);
+      assert.deepEqual(await inbox(organiser, id),
+        ['Your event request "Orientation" was returned for clarification: Please confirm the date.']);
+    });
+
+    await t.test('[IT-US031-N02] editing a request notifies the assigned Coordinator, and nobody when none is assigned', async () => {
+      const id = await makeRequest('submitted');
+      assert.equal((await call('PUT', `/requests/${id}`, { ...FORM, expectedAttendance: '150' })).status, 200);
+      assert.deepEqual(await inbox(coordinator, id),
+        ['"Orientation" was edited by the organiser before approval. Please review the latest details.']);
+
+      const unassigned = await makeRequest('submitted', null);
+      assert.equal((await call('PUT', `/requests/${unassigned}`, { ...FORM, expectedAttendance: '150' })).status, 200);
+      const count = await client.query('SELECT count(*)::int AS n FROM notifications WHERE event_id = $1', [unassigned]);
+      assert.equal(count.rows[0].n, 0);
+    });
+
+    await t.test('[IT-US031-N03] resubmitting a returned request notifies the assigned Coordinator', async () => {
+      const id = await makeRequest('clarification_requested');
+      assert.equal((await call('POST', `/requests/${id}/resubmit`)).status, 200);
+      assert.deepEqual(await inbox(coordinator, id),
+        ['"Orientation" was resubmitted by the organiser and is ready for your review.']);
     });
   } finally {
     if (server) await new Promise((resolve) => server.close(resolve));
