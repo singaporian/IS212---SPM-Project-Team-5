@@ -100,6 +100,26 @@ function applyChangesToDraft(draftData, changes) {
   return next;
 }
 
+// US-002: the Venue Staff an event's bookings are relevant to. A decided booking goes to the
+// staff member who decided it; a pending one is still in the shared review queue, so all Venue Staff.
+async function venueStaffForEvent(query, eventId) {
+  const result = await query(
+    `SELECT decided_by AS user_id FROM bookings
+     WHERE event_id = $1 AND status IN ('approved', 'confirmed') AND decided_by IS NOT NULL
+     UNION
+     SELECT id FROM users
+     WHERE role = 'venue_staff' AND EXISTS (SELECT 1 FROM bookings WHERE event_id = $1 AND status = 'pending')`,
+    [eventId]
+  );
+  return result.rows.map((row) => row.user_id);
+}
+
+async function notifyAll(query, userIds, eventId, message) {
+  for (const userId of userIds) {
+    await query('INSERT INTO notifications (user_id, event_id, message) VALUES ($1, $2, $3)', [userId, eventId, message]);
+  }
+}
+
 const router = express.Router();
 const organiserOnly = [auth.authenticate, auth.requireRoles('event_organiser')];
 router.use((req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
@@ -218,6 +238,9 @@ router.post('/:id/cancel-and-resubmit', ...organiserOnly, async (req, res) => {
         [staffRow.reserved_by, event.id, `"${event.title}" has been cancelled. Please clear or reassign your equipment reservations for this event.`]
       );
     }
+    // US-002: the Venue Staff linked to this event's bookings are told it was cancelled.
+    await notifyAll(client.query.bind(client), await venueStaffForEvent(client.query.bind(client), event.id), event.id,
+      `"${event.title}" has been cancelled by the organiser. Please review its venue bookings.`);
     await client.query('COMMIT');
     res.status(201).json({ cancelledEventId: event.id, draftId, majorChanges: major });
   } catch (error) {
@@ -361,7 +384,20 @@ router.patch('/change-requests/:id/decision', ...coordinatorOnly, async (req, re
       );
       reconsider.bookings = bookings.rows;
       reconsider.equipment = equipment.rows;
+
+      // US-002: tell the staff linked to those arrangements that they need reconsidering.
+      const query = client.query.bind(client);
+      await notifyAll(query, await venueStaffForEvent(query, event.id), event.id,
+        `"${event.title}" has moved to a new date or time. Please reconsider its venue bookings.`);
+      const reservers = await client.query(
+        'SELECT DISTINCT reserved_by FROM equipment_reservations WHERE event_id = $1 AND reserved_by IS NOT NULL', [event.id]);
+      await notifyAll(query, reservers.rows.map((row) => row.reserved_by), event.id,
+        `"${event.title}" has moved to a new date or time. Please reconsider its equipment reservations.`);
     }
+
+    // US-002: tell the Organiser the outcome.
+    await client.query('INSERT INTO notifications (user_id, event_id, message) VALUES ($1, $2, $3)',
+      [changeRequest.organiserId, event.id, `Your change request for "${event.title}" was ${decision}.`]);
 
     await client.query(
       `INSERT INTO event_changes (event_id, changed_by, change_summary) VALUES ($1, $2, $3)`,
