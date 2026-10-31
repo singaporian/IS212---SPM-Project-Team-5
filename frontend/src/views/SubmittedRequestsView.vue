@@ -34,6 +34,17 @@
             <dd class="col-sm-8" style="white-space: pre-wrap; overflow-wrap: anywhere">{{ value(key) }}</dd>
           </template>
         </dl>
+        <!-- US-007 (AC-007-001 to 005): confirmed venues, read-only. -->
+        <section data-test="venue-details" class="border-top pt-3 mt-3">
+          <h3 class="h6">Venue Details</h3>
+          <p v-if="!request.venues || !request.venues.length" class="text-muted mb-0">Venue is still being arranged</p>
+          <ul v-else class="list-group">
+            <li v-for="(venue, index) in request.venues" :key="index" class="list-group-item">
+              <strong>{{ venue.venue_name }}</strong><span v-if="venue.being_rearranged" class="badge bg-warning text-dark ms-2">Venue being re-arranged</span>
+              <div class="small text-muted">{{ venue.location || 'Location not recorded' }} · {{ formatDate(venue.start_time) }} to {{ formatDate(venue.end_time) }}</div>
+            </li>
+          </ul>
+        </section>
         <!-- US-009 (AC-009-004/005): each change request's own status, separate from the event's status above. -->
         <section v-if="request.change_requests && request.change_requests.length" class="border-top pt-3 mt-3">
           <h3 class="h6">Change requests</h3>

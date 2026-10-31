@@ -181,7 +181,15 @@ router.get('/requests/:id', async (req, res) => {
     // US-009 (AC-009-004): each change request keeps its own status, separate from the event's.
     const changes = await db.query(`SELECT id, status, proposed_changes, created_at FROM event_change_requests
       WHERE event_id = $1 ORDER BY created_at DESC`, [request.id]);
-    res.json({ ...request, rejection_reason: rejectionReason(decision?.rows[0]?.change_summary), change_requests: changes.rows });
+    // US-007 (AC-007-002/005): the event's confirmed venues (approved by Venue Staff), each flagged when a recorded
+    // unavailability overlaps its booking incl. setup/turnaround (same rule as GET /api/bookings/affected).
+    const venues = await db.query(`SELECT v.name AS venue_name, v.location, b.start_time, b.end_time,
+        EXISTS (SELECT 1 FROM venue_unavailabilities vu WHERE vu.venue_id = b.venue_id
+          AND b.start_time - (b.setup_minutes * interval '1 minute') < vu.end_time
+          AND b.end_time + (b.turnaround_minutes * interval '1 minute') > vu.start_time) AS being_rearranged
+      FROM bookings b JOIN venues v ON v.id = b.venue_id
+      WHERE b.event_id = $1 AND b.status IN ('approved', 'confirmed') ORDER BY b.start_time, v.name`, [request.id]);
+    res.json({ ...request, rejection_reason: rejectionReason(decision?.rows[0]?.change_summary), change_requests: changes.rows, venues: venues.rows });
   } catch (error) { res.status(500).json({ error: 'Unable to load submitted request. Please retry.' }); }
 });
 
