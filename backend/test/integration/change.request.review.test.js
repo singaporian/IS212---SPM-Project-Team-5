@@ -94,6 +94,8 @@ test('change request review endpoints', async (t) => {
     const crRow = (id) => one('SELECT * FROM event_change_requests WHERE id = $1', [id]);
     const bookingRow = (id) => one('SELECT * FROM bookings WHERE id = $1', [id]);
     const reservationRow = (id) => one('SELECT * FROM equipment_reservations WHERE id = $1', [id]);
+    const inbox = async (eventId) => (await client.query(
+      'SELECT user_id, message FROM notifications WHERE event_id = $1 ORDER BY message, user_id', [eventId])).rows;
 
     await t.test('[IT-01] GET pending: returns only pending requests for my events, with current and proposed values', async () => {
       const mine = await makeEvent({ title: 'Mine' });
@@ -226,6 +228,42 @@ test('change request review endpoints', async (t) => {
       assert.equal(retry.status, 200);
       assert.equal((await crRow(id)).status, 'approved');
       assert.equal((await eventRow(eventId)).preferred_start.toISOString(), MOVED.preferredStart);
+    });
+    // US-002 notifications triggered by the decision route (Week 4 Notification System).
+    await t.test('[IT-US032-N01] PATCH decision: the Organiser is told whether the change request was approved or rejected', async () => {
+      for (const decision of ['approved', 'rejected']) {
+        const eventId = await makeEvent();
+        assert.equal((await decide(await makeChangeRequest(eventId, { venueLayoutPreference: 'Classroom' }), decision)).status, 200);
+        assert.deepEqual(await inbox(eventId),
+          [{ user_id: organiser, message: `Your change request for "Orientation" was ${decision}.` }]);
+      }
+    });
+
+    await t.test('[IT-US032-N02] PATCH decision: a time move notifies the Venue Staff and Tech Support linked to the arrangements', async () => {
+      const eventId = await makeEvent();
+      const decider = randomUUID(), queueStaff = randomUUID(), reserver = randomUUID();
+      await client.query(`INSERT INTO users (id, name, email, role) VALUES ($1, 'Queue Staff', 'queue@test.local', 'venue_staff')`, [queueStaff]);
+      // A decided booking goes to the staff member who decided it; a pending one to the Venue Staff review queue.
+      await client.query(
+        `INSERT INTO bookings (event_id, venue_id, start_time, end_time, status, decided_by)
+         VALUES ($1, $2, $3, $4, 'approved', $5), ($1, $2, $3, $4, 'pending', NULL)`, [eventId, venueId, START, END, decider]);
+      await client.query(
+        `INSERT INTO equipment_reservations (equipment_id, event_id, quantity, reserved_by) VALUES ($1, $2, 1, $3)`,
+        [equipmentId, eventId, reserver]);
+      const venueMessage = '"Orientation" has moved to a new date or time. Please reconsider its venue bookings.';
+      const equipmentMessage = '"Orientation" has moved to a new date or time. Please reconsider its equipment reservations.';
+
+      await decide(await makeChangeRequest(eventId, MOVED), 'approved');
+      const staffNotes = (await inbox(eventId)).filter((note) => note.user_id !== organiser);
+      assert.deepEqual(staffNotes, [
+        { user_id: reserver, message: equipmentMessage },
+        ...[decider, queueStaff].sort().map((user_id) => ({ user_id, message: venueMessage }))
+      ]);
+
+      // A change that does not move the event tells the staff nothing.
+      const before = staffNotes.length;
+      await decide(await makeChangeRequest(eventId, { venueLayoutPreference: 'Banquet' }), 'approved');
+      assert.equal((await inbox(eventId)).filter((note) => note.user_id !== organiser).length, before);
     });
   } finally {
     if (server) await new Promise((resolve) => server.close(resolve));

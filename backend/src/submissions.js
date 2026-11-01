@@ -217,6 +217,12 @@ router.put('/requests/:id', async (req, res) => {
       registration_required = $10, draft_data = $13::jsonb, updated_at = now()
       WHERE id = $11 AND organiser_id = $12
       RETURNING id, status, draft_data`, [...eventColumnValues(data), req.params.id, req.auth.sub, JSON.stringify(data)]);
+    // US-002: tell the assigned Coordinator the details changed (none is told while the request is unassigned).
+    const coordinatorId = result.rows[0].assigned_coordinator_id;
+    if (coordinatorId) {
+      await client.query('INSERT INTO notifications (user_id, event_id, message) VALUES ($1, $2, $3)',
+        [coordinatorId, req.params.id, `"${data.eventName}" was edited by the organiser before approval. Please review the latest details.`]);
+    }
     await client.query('COMMIT');
     res.json(updated.rows[0]);
   } catch (error) {
@@ -234,9 +240,17 @@ router.put('/requests/:id', async (req, res) => {
 // US-031 (AC-031-005): resubmitting a returned request sets it back to Submitted. No limit on returns.
 router.post('/requests/:id/resubmit', async (req, res) => {
   try {
-    const result = await db.query(`UPDATE events SET status = 'submitted', updated_at = now()
-      WHERE id = $1 AND organiser_id = $2 AND status = 'clarification_requested'
-      RETURNING id, status`, [req.params.id, req.auth.sub]);
+    // US-002: the assigned Coordinator is notified in the same statement, so both happen or neither does.
+    const result = await db.query(`WITH resubmitted AS (
+        UPDATE events SET status = 'submitted', updated_at = now()
+        WHERE id = $1 AND organiser_id = $2 AND status = 'clarification_requested'
+        RETURNING id, status, title, assigned_coordinator_id
+      ), notified AS (
+        INSERT INTO notifications (user_id, event_id, message)
+        SELECT assigned_coordinator_id, id, '"' || COALESCE(title, 'Untitled event') || '" was resubmitted by the organiser and is ready for your review.'
+        FROM resubmitted WHERE assigned_coordinator_id IS NOT NULL
+      )
+      SELECT id, status FROM resubmitted`, [req.params.id, req.auth.sub]);
     if (!result.rows[0]) return res.status(409).json({ error: 'Only a request returned for clarification can be resubmitted.' });
     res.json(result.rows[0]);
   } catch (error) { res.status(500).json({ error: 'Unable to resubmit the request. Please retry.' }); }
@@ -246,9 +260,18 @@ router.post('/requests/:id/resubmit', async (req, res) => {
 router.patch('/events/:id/return', auth.authenticate, auth.requireRoles('event_coordinator'), async (req, res) => {
   const note = typeof req.body?.note === 'string' ? req.body.note.trim() : '';
   try {
-    const result = await db.query(`UPDATE events SET status = 'clarification_requested', clarification_note = $3, updated_at = now()
-      WHERE id = $1 AND assigned_coordinator_id = $2 AND status = 'submitted'
-      RETURNING id, status, clarification_note`, [req.params.id, req.auth.sub, note || null]);
+    // US-002: the Organiser is notified in the same statement, with the note when there is one.
+    const result = await db.query(`WITH returned AS (
+        UPDATE events SET status = 'clarification_requested', clarification_note = $3, updated_at = now()
+        WHERE id = $1 AND assigned_coordinator_id = $2 AND status = 'submitted'
+        RETURNING id, status, clarification_note, title, organiser_id
+      ), notified AS (
+        INSERT INTO notifications (user_id, event_id, message)
+        SELECT organiser_id, id, 'Your event request "' || COALESCE(title, 'Untitled event') || '" was returned for clarification'
+          || COALESCE(': ' || clarification_note, '.')
+        FROM returned WHERE organiser_id IS NOT NULL
+      )
+      SELECT id, status, clarification_note FROM returned`, [req.params.id, req.auth.sub, note || null]);
     if (!result.rows[0]) return res.status(404).json({ error: 'Request not found, not assigned to you, or no longer Submitted.' });
     res.json(result.rows[0]);
   } catch (error) { res.status(500).json({ error: 'Unable to return the request. Please retry.' }); }

@@ -65,7 +65,7 @@ test('major-change API blocks change requests and runs cancel-and-resubmit atomi
   let server;
   try {
     await client.query('BEGIN');
-    for (const table of ['events', 'event_change_requests', 'notifications', 'event_changes', 'equipment_reservations']) {
+    for (const table of ['events', 'event_change_requests', 'notifications', 'event_changes', 'equipment_reservations', 'bookings', 'users']) {
       await client.query(`CREATE TEMP TABLE ${table} (LIKE public.${table} INCLUDING ALL) ON COMMIT DROP`);
     }
     db.query = (sql, params) => client.query(sql, params);
@@ -233,6 +233,18 @@ test('major-change API blocks change requests and runs cancel-and-resubmit atomi
       assert.equal((await eventRow(id)).status, 'planning', 'event not cancelled');
       assert.equal(await eventCount(), before, 'no orphan draft');
       assert.equal(await count('notifications', id), 0);
+    });
+    // US-002 notification triggered by cancel-and-resubmit (Week 4 Notification System: cancellation).
+    await t.test('[IT-US010-N01] cancel-and-resubmit tells the Venue Staff who decided the event\'s bookings', async () => {
+      const id = await makeEvent();
+      const venueStaff = randomUUID();
+      await client.query(
+        `INSERT INTO bookings (event_id, venue_id, start_time, end_time, status, decided_by)
+         VALUES ($1, $2, $3, $4, 'approved', $5)`, [id, randomUUID(), at('2099-03-01', '09:00'), at('2099-03-01', '12:00'), venueStaff]);
+      assert.equal((await post(`/${id}/cancel-and-resubmit`, attendance)).status, 201);
+      const notes = (await client.query('SELECT message FROM notifications WHERE event_id = $1 AND user_id = $2', [id, venueStaff])).rows;
+      assert.deepEqual(notes.map((note) => note.message),
+        ['"Orientation" has been cancelled by the organiser. Please review its venue bookings.']);
     });
   } finally {
     db.query = originalQuery;
