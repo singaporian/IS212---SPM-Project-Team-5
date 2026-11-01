@@ -21,8 +21,10 @@ workspace "ConnectSphere Event Planning and Venue Booking System" "C4 model (C1 
 
         # Internal users (ConnectSphere staff)
         coordinator = person "Event Coordinator" "Main internal point of contact who reviews requests and coordinates the venue, equipment and confirmation of an event." "Internal user (ConnectSphere staff)"
+        coordinatorLead = person "Event Coordinator Lead" "Oversees incoming event requests and assigns or reassigns them to Event Coordinators." "Internal user (ConnectSphere staff)"
         venueStaff = person "Venue Staff" "Maintain venue information and availability, and decide on venue booking requests." "Internal user (ConnectSphere staff)"
         techStaff = person "Technical Support Staff" "Maintain equipment records and reservations, and review equipment requests." "Internal user (ConnectSphere staff)"
+        safetyOfficer = person "Safety Officer" "Reviews confirmed venue and technical arrangements before an event can proceed to preparation." "Internal user (ConnectSphere staff)"
 
         # ------------------------------------------------------------
         # Software systems
@@ -44,8 +46,10 @@ workspace "ConnectSphere Event Planning and Venue Booking System" "C4 model (C1 
         organiser -> eventSystem "Submits event requests, tracks status, requests changes and views confirmed arrangements using"
         attendee -> eventSystem "Views events, registers, and withdraws registration using"
         coordinator -> eventSystem "Reviews requests, books venues, records equipment needs, processes changes and confirms events using"
+        coordinatorLead -> eventSystem "Reviews incoming requests and assigns or reassigns Event Coordinators using"
         venueStaff -> eventSystem "Maintains venues and availability, and approves or rejects bookings using"
         techStaff -> eventSystem "Reviews equipment requests, checks availability and reserves equipment using"
+        safetyOfficer -> eventSystem "Reviews operational feasibility and approves, rejects or requests changes to confirmed arrangements using"
 
         # ------------------------------------------------------------
         # Relationships - C2 (container level)
@@ -54,8 +58,10 @@ workspace "ConnectSphere Event Planning and Venue Booking System" "C4 model (C1 
         organiser -> spa "Uses" "HTTPS"
         attendee -> spa "Uses" "HTTPS"
         coordinator -> spa "Uses" "HTTPS"
+        coordinatorLead -> spa "Uses" "HTTPS"
         venueStaff -> spa "Uses" "HTTPS"
         techStaff -> spa "Uses" "HTTPS"
+        safetyOfficer -> spa "Uses" "HTTPS"
 
         spa -> app "Makes API calls to" "JSON/HTTPS"
         app -> db "Reads from and writes to" "SQL/TCP"
