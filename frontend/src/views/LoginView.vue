@@ -26,11 +26,6 @@
         {{ registering ? 'Already have an account? Sign in' : 'New here? Create an event organiser or attendee account' }}
       </button>
 
-      <details class="demo-login mt-4">
-        <summary>Development demo accounts</summary>
-        <p class="small text-muted mt-2 mb-0">Use any demo email with password <strong>Password123!</strong>.</p>
-        <p class="small text-muted mb-0">organiser@connectsphere.local, coordinator@connectsphere.local, coordinator2@connectsphere.local, coordinator3@connectsphere.local, coordinatorlead@connectsphere.local, venue@connectsphere.local, tech@connectsphere.local, tech2@connectsphere.local, safety@connectsphere.local, attendee@connectsphere.local</p>
-      </details>
     </div>
   </section>
 </template>
