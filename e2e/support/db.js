@@ -116,6 +116,11 @@ function createFixtures() {
   }
 
   async function cleanup() {
+    // Include events submitted through the browser even if an assertion failed before trackEvent().
+    // Delete their role-broadcast notifications before event deletion can set event_id to NULL.
+    const submitted = users.length ? await pool.query('SELECT id FROM events WHERE organiser_id = ANY($1::uuid[])', [users]) : { rows: [] };
+    events.push(...submitted.rows.map(event => event.id));
+    if (events.length) await pool.query('DELETE FROM notifications WHERE event_id = ANY($1::uuid[])', [events]);
     if (events.length) await pool.query('DELETE FROM events WHERE id = ANY($1::uuid[])', [events]); // cascades to requests, bookings, reservations
     if (venues.length) await pool.query('DELETE FROM venues WHERE id = ANY($1::uuid[])', [venues]);
     if (equipmentIds.length) await pool.query('DELETE FROM equipment WHERE id = ANY($1::uuid[])', [equipmentIds]);

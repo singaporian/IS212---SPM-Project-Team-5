@@ -106,6 +106,14 @@ test('US-018 internal booking notes with real PostgreSQL and authorization', asy
       assert.equal((await call('/bookings/'+randomUUID()+'/notes')).status,404);
       assert.equal((await call(path+'/bad','PATCH',{noteText:'No'})).status,400);
       assert.equal((await call(path+'/'+randomUUID(),'DELETE')).status,404);
+      // A real note on another booking cannot be accessed through this parent URL.
+      const foreignBooking=randomUUID();
+      await pool.query("INSERT INTO bookings(id,event_id,venue_id,requested_by,status,start_time,end_time) VALUES($1,$2,$3,$4,'approved','2099-03-02T10:00:00+08:00','2099-03-02T11:00:00+08:00')",[foreignBooking,event,venue,coordinator]);
+      const foreignNote=(await pool.query("INSERT INTO booking_notes(booking_id,note_text,created_by) VALUES($1,'Other booking note',$2) RETURNING *",[foreignBooking,staff])).rows[0];
+      assert.equal((await call(path+'/'+foreignNote.id,'PATCH',{noteText:'Wrong booking'})).status,404);
+      assert.equal((await call(path+'/'+foreignNote.id,'DELETE')).status,404);
+      assert.deepEqual(await noteRow(foreignNote.id),foreignNote);
+      await pool.query('DELETE FROM bookings WHERE id=$1',[foreignBooking]);
       await pool.query('UPDATE bookings SET venue_id=NULL WHERE id=$1',[booking]);
       assert.equal((await call(path)).status,404);assert.equal((await call(path,'POST',{noteText:'No'})).status,404);
       await pool.query('UPDATE bookings SET venue_id=$1 WHERE id=$2',[venue,booking]);
