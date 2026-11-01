@@ -125,6 +125,15 @@ class EventRequest {
     return previousCoordinatorId;
   }
 
+  unassignFrom(coordinatorId) {
+    if (!coordinatorId || this.assignedCoordinatorId !== coordinatorId) {
+      throw new Error(`"${this.title}" is not assigned to this coordinator`);
+    }
+    if (!this.isActive()) throw new Error(`"${this.title}" is ${this.status}, so its coordinator cannot be changed`);
+    this.assignedCoordinatorId = null;
+    return coordinatorId;
+  }
+
   toJSON() {
     return {
       id: this.id,
