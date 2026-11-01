@@ -11,10 +11,17 @@
         <div v-for="ev in events" :key="ev.id" class="border rounded p-3">
           <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
             <div>
-              <div class="fw-semibold">{{ ev.title }}</div>
-              <div class="small text-muted">{{ formatWhen(ev) }}<span v-if="ev.venue_name"> · {{ ev.venue_name }}<span v-if="ev.venue_location">, {{ ev.venue_location }}</span></span></div>
-              <p class="small mt-2 mb-1">{{ ev.description || ev.purpose || 'No event description provided.' }}</p>
-              <div class="small text-muted" v-if="ev.registration_capacity != null">{{ ev.registered_count }} / {{ ev.registration_capacity }} registered</div>
+              <div class="d-flex align-items-center gap-2 flex-wrap"><div class="fw-semibold">{{ ev.title }}</div><span v-if="ev.event_type" class="badge bg-light text-dark border">{{ ev.event_type }}</span></div>
+              <div class="small text-muted mt-1">{{ formatWhen(ev) }}</div>
+              <div class="small mt-2" v-if="ev.venue_name"><strong>Venue:</strong> {{ ev.venue_name }}<span v-if="ev.venue_location">, {{ ev.venue_location }}</span></div>
+              <p v-if="ev.purpose" class="small mt-2 mb-1"><strong>Purpose:</strong> {{ ev.purpose }}</p>
+              <p class="small mt-2 mb-1">{{ ev.description || 'No event description provided.' }}</p>
+              <dl class="row small mb-0 mt-3 event-details">
+                <template v-if="ev.expected_attendance != null"><dt class="col-sm-4">Expected attendance</dt><dd class="col-sm-8">{{ ev.expected_attendance }}</dd></template>
+                <template v-if="accessibilityText(ev.accessibility_requirements)"><dt class="col-sm-4">Accessibility</dt><dd class="col-sm-8">{{ accessibilityText(ev.accessibility_requirements) }}</dd></template>
+                <template v-if="ev.special_arrangements"><dt class="col-sm-4">Special arrangements</dt><dd class="col-sm-8">{{ ev.special_arrangements }}</dd></template>
+              </dl>
+              <div class="small text-muted mt-3" v-if="ev.registration_capacity != null">{{ ev.registered_count }} / {{ ev.registration_capacity }} registration places filled</div>
             </div>
             <div class="text-end">
               <div v-if="ev.my_registration_id" class="d-flex flex-column align-items-end gap-1">
@@ -68,6 +75,13 @@ export default {
       const opts = { dateStyle: 'medium', timeStyle: 'short' }
       return end ? `${start.toLocaleString(undefined, opts)} – ${end.toLocaleTimeString()}` : start.toLocaleString(undefined, opts)
     },
+    accessibilityText(value) {
+      if (!value) return ''
+      if (typeof value === 'string') return value
+      if (Array.isArray(value)) return value.join(', ')
+      if (typeof value === 'object') return Object.entries(value).map(([key, item]) => `${key}: ${item}`).join(', ')
+      return String(value)
+    },
     async load() {
       this.loading = true; this.error = ''
       const response = await fetch('/api/events/registrable', { headers: authHeaders() })
@@ -117,3 +131,7 @@ export default {
   mounted() { this.load() }
 }
 </script>
+<style scoped>
+.event-details { max-width: 46rem; }
+.event-details dt, .event-details dd { margin-bottom: .35rem; }
+</style>

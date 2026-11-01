@@ -50,6 +50,17 @@ function partitionRegistrations(rows) {
   };
 }
 
+async function notifyEventManagers(query, event, message, attendeeId) {
+  const recipients = [...new Set([event.organiser_id, event.assigned_coordinator_id])]
+    .filter(userId => userId && userId !== attendeeId);
+  if (!recipients.length) return;
+  await query(
+    `INSERT INTO notifications (user_id, event_id, message)
+     SELECT id, $1, $2 FROM users WHERE id = ANY($3::uuid[])`,
+    [event.id, message, recipients]
+  );
+}
+
 const router = express.Router();
 const attendeeOnly = [auth.authenticate, auth.requireRoles('attendee')];
 router.use((req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
@@ -59,7 +70,9 @@ router.use((req, res, next) => { res.set('Cache-Control', 'no-store'); next(); }
 router.get('/registrable', ...attendeeOnly, async (req, res) => {
   try {
     const result = await db.query(
-      `SELECT e.id, e.title, e.description, e.purpose, e.event_type, e.preferred_start, e.preferred_end,
+            `SELECT e.id, e.title, e.description, e.purpose, e.event_type, e.expected_attendance,
+              e.accessibility_requirements, e.special_arrangements, e.programme,
+              e.preferred_start, e.preferred_end,
               e.registration_required, e.registration_capacity, e.registration_opens_at, e.registration_closes_at,
               e.status,
               venue.venue_name, venue.venue_location,
@@ -86,6 +99,10 @@ router.get('/registrable', ...attendeeOnly, async (req, res) => {
         description: row.description,
         purpose: row.purpose,
         event_type: row.event_type,
+        expected_attendance: row.expected_attendance,
+        accessibility_requirements: row.accessibility_requirements,
+        special_arrangements: row.special_arrangements,
+        programme: row.programme,
         preferred_start: row.preferred_start,
         preferred_end: row.preferred_end,
         venue_name: row.venue_name,
@@ -199,6 +216,8 @@ router.post('/:id/register', ...attendeeOnly, async (req, res) => {
       `INSERT INTO notifications (user_id, event_id, message) VALUES ($1, $2, $3)`,
       [req.auth.sub, req.params.id, `You're registered for "${event.title}".`]
     );
+    await notifyEventManagers(db.query, event,
+      `An attendee registered for "${event.title}".`, req.auth.sub);
     res.status(201).json(result.rows[0]);
   } catch (error) {
     if (error.code === '23505') return res.status(409).json({ error: 'You are already registered for this event.' });
@@ -230,7 +249,8 @@ router.patch('/registrations/:id/withdraw', ...attendeeOnly, async (req, res) =>
   if (!uuidPattern.test(req.params.id)) return res.status(404).json({ error: 'Registration not found.' });
   try {
     const registrationResult = await db.query(
-      `SELECT r.*, e.title AS event_title, e.preferred_start
+      `SELECT r.*, e.title AS event_title, e.preferred_start,
+              e.id AS event_id, e.organiser_id, e.assigned_coordinator_id
        FROM registrations r JOIN events e ON e.id = r.event_id
        WHERE r.id = $1 AND r.attendee_id = $2`,
       [req.params.id, req.auth.sub]
@@ -253,6 +273,8 @@ router.patch('/registrations/:id/withdraw', ...attendeeOnly, async (req, res) =>
       `INSERT INTO notifications (user_id, event_id, message) VALUES ($1, $2, $3)`,
       [req.auth.sub, registration.event_id, `You've withdrawn your registration for "${registration.event_title}".`]
     );
+    await notifyEventManagers(db.query, registration,
+      `An attendee withdrew their registration for "${registration.event_title}".`, req.auth.sub);
     res.json(result.rows[0]);
   } catch (error) {
     console.error(error);

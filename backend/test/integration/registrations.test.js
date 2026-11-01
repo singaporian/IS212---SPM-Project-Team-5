@@ -152,6 +152,13 @@ test('AC-029-004/006: a valid registration succeeds and is notified', async () =
   const notif = await pool.query(`SELECT message FROM notifications WHERE user_id = $1 AND event_id = $2 ORDER BY created_at DESC`, [ids.attendee, events.open]);
   assert.equal(notif.rows.length, 1);
   assert.match(notif.rows[0].message, /registered/i);
+  const managerNotifications = await pool.query(
+    `SELECT user_id, message FROM notifications WHERE event_id = $1 ORDER BY created_at ASC`, [events.open]
+  );
+  assert.equal(managerNotifications.rows.length, 3);
+  assert.deepEqual(managerNotifications.rows.map(row => row.user_id), [ids.attendee, ids.organiser, ids.coordinator]);
+  assert.match(managerNotifications.rows.find(row => row.user_id === ids.organiser).message, /attendee registered/i);
+  assert.match(managerNotifications.rows.find(row => row.user_id === ids.coordinator).message, /attendee registered/i);
 
   const status = await request(`/${events.open}/registration`, { bearer: token(ids.attendee, 'attendee') });
   assert.equal(status.status, 200);
