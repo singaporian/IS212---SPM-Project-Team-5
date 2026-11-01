@@ -507,7 +507,15 @@ app.get('/api/events/:id', auth.authenticate, auth.requireRoles('event_coordinat
     if (!result.rows[0]) {
       return res.status(403).json({ error: 'Not authorised to view this request' });
     }
-    res.json(result.rows[0]);
+    const event = result.rows[0];
+    // US-012: amendments the Organiser made after submission, so the Coordinator sees an "Updated"
+    // indicator and can view the change history, without it reflecting the Coordinator's own decisions.
+    const changeHistory = await db.query(
+      `SELECT change_summary, created_at FROM event_changes
+       WHERE event_id = $1 AND changed_by = $2 ORDER BY created_at DESC`,
+      [req.params.id, event.organiser_id]
+    );
+    res.json({ ...event, updated: changeHistory.rows.length > 0, change_history: changeHistory.rows });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Failed to fetch request details' });

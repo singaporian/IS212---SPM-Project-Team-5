@@ -217,6 +217,9 @@ router.put('/requests/:id', async (req, res) => {
       registration_required = $10, draft_data = $13::jsonb, updated_at = now()
       WHERE id = $11 AND organiser_id = $12
       RETURNING id, status, draft_data`, [...eventColumnValues(data), req.params.id, req.auth.sub, JSON.stringify(data)]);
+    // US-012: record this organiser edit so the assigned Coordinator sees an "Updated" indicator and change history.
+    await client.query('INSERT INTO event_changes (event_id, changed_by, change_summary) VALUES ($1, $2, $3)',
+      [req.params.id, req.auth.sub, `Organiser updated the request: "${data.eventName}".`]);
     // US-002: tell the assigned Coordinator the details changed (none is told while the request is unassigned).
     const coordinatorId = result.rows[0].assigned_coordinator_id;
     if (coordinatorId) {

@@ -23,7 +23,7 @@ test('US-031 edit before approval', async (t) => {
   let server;
   try {
     await client.query('BEGIN');
-    for (const table of ['events', 'event_change_requests', 'notifications']) {
+    for (const table of ['events', 'event_change_requests', 'event_changes', 'notifications']) {
       await client.query(`CREATE TEMP TABLE ${table} (LIKE public.${table} INCLUDING ALL) ON COMMIT DROP`);
     }
     db.query = (sql, params) => client.query(sql, params);
