@@ -378,14 +378,16 @@ app.get('/api/venues', auth.authenticate, auth.requireRoles('event_coordinator',
       filters.push(`EXISTS (
         SELECT 1 FROM venue_operating_hours voh
         WHERE voh.venue_id = v.id
-          AND voh.day_of_week = EXTRACT(DOW FROM ($${startParam}::timestamptz AT TIME ZONE 'Asia/Singapore'))
-          AND voh.opens_at <= (($${startParam}::timestamptz AT TIME ZONE 'Asia/Singapore')::time)
-          AND voh.closes_at >= (($${endParam}::timestamptz AT TIME ZONE 'Asia/Singapore')::time)
+          AND voh.day_of_week = EXTRACT(DOW FROM (($${startParam}::timestamptz - (${setupExpr} * interval '1 minute')) AT TIME ZONE 'Asia/Singapore'))
+          AND ((($${startParam}::timestamptz - (${setupExpr} * interval '1 minute')) AT TIME ZONE 'Asia/Singapore')::date + voh.opens_at)
+            AT TIME ZONE 'Asia/Singapore' <= $${startParam}::timestamptz - (${setupExpr} * interval '1 minute')
+          AND ((($${startParam}::timestamptz - (${setupExpr} * interval '1 minute')) AT TIME ZONE 'Asia/Singapore')::date + voh.closes_at)
+            AT TIME ZONE 'Asia/Singapore' >= $${endParam}::timestamptz + (${turnaroundExpr} * interval '1 minute')
       )`);
       filters.push(`NOT EXISTS (
         SELECT 1 FROM bookings b
         WHERE b.venue_id = v.id
-          AND b.status = 'confirmed'
+          AND b.status IN ('approved', 'confirmed')
           AND b.start_time - (b.setup_minutes * interval '1 minute') < ($${endParam}::timestamptz + (${turnaroundExpr} * interval '1 minute'))
           AND b.end_time + (b.turnaround_minutes * interval '1 minute') > ($${startParam}::timestamptz - (${setupExpr} * interval '1 minute'))
       )`);
@@ -1134,6 +1136,32 @@ app.patch('/api/events/:id/cancel', auth.authenticate, auth.requireRoles('event_
     await client.query(
       `INSERT INTO notifications (user_id, event_id, message) VALUES ($1, $2, $3)`,
       [row.organiser_id, row.id, notificationMessage]
+    );
+    await client.query(
+      `INSERT INTO notifications (user_id, event_id, message)
+       SELECT DISTINCT decided_by, $1::uuid, $2
+       FROM bookings
+       WHERE event_id = $1 AND status IN ('approved', 'confirmed') AND decided_by IS NOT NULL
+       UNION
+       SELECT id, $1::uuid, $2
+       FROM users
+       WHERE role = 'venue_staff'
+         AND EXISTS (SELECT 1 FROM bookings WHERE event_id = $1 AND status = 'pending')`,
+      [row.id, `Event "${row.title}" has been cancelled. Please review its venue booking.`]
+    );
+    await client.query(
+      `INSERT INTO notifications (user_id, event_id, message)
+      SELECT DISTINCT reserved_by, $1::uuid, $2
+       FROM equipment_reservations
+       WHERE event_id = $1 AND reserved_by IS NOT NULL`,
+      [row.id, `Event "${row.title}" has been cancelled. Please clear or reassign your equipment reservation.`]
+    );
+    await client.query(
+      `INSERT INTO notifications (user_id, event_id, message)
+      SELECT attendee_id, $1::uuid, $2
+       FROM registrations
+       WHERE event_id = $1 AND status = 'registered'`,
+      [row.id, `Event "${row.title}" has been cancelled. Your registration is no longer active.`]
     );
 
     await client.query('COMMIT');

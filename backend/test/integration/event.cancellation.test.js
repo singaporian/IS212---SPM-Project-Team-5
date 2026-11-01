@@ -11,11 +11,12 @@ test('US-042 Event Coordinator cancels an event assigned to them', async t => {
   const schema = 'us042_test_' + randomUUID().replace(/-/g, '');
   let pool, server;
   const organiser = randomUUID(), coordinator = randomUUID(), otherCoordinator = randomUUID();
+  const venueStaff = randomUUID(), technicalStaff = randomUUID(), attendee = randomUUID();
   const equipment = randomUUID();
 
   try {
     await originalPool.query(`CREATE SCHEMA ${schema}`);
-    for (const table of ['users', 'events', 'equipment', 'equipment_reservations', 'event_changes', 'notifications', 'event_change_requests']) {
+    for (const table of ['users', 'events', 'bookings', 'equipment', 'equipment_reservations', 'registrations', 'event_changes', 'notifications', 'event_change_requests']) {
       await originalPool.query(`CREATE TABLE ${schema}.${table} (LIKE public.${table} INCLUDING ALL)`);
     }
 
@@ -27,8 +28,11 @@ test('US-042 Event Coordinator cancels an event assigned to them', async t => {
       `INSERT INTO users (id, name, email, password_hash, role) VALUES
         ($1, 'Organiser', 'organiser-us042@test.local', 'x', 'event_organiser'),
         ($2, 'Coordinator', 'coordinator-us042@test.local', 'x', 'event_coordinator'),
-        ($3, 'Other Coordinator', 'other-coordinator-us042@test.local', 'x', 'event_coordinator')`,
-      [organiser, coordinator, otherCoordinator]
+        ($3, 'Other Coordinator', 'other-coordinator-us042@test.local', 'x', 'event_coordinator'),
+        ($4, 'Venue Staff', 'venue-us042@test.local', 'x', 'venue_staff'),
+        ($5, 'Technical Staff', 'technical-us042@test.local', 'x', 'technical_support_staff'),
+        ($6, 'Attendee', 'attendee-us042@test.local', 'x', 'attendee')`,
+      [organiser, coordinator, otherCoordinator, venueStaff, technicalStaff, attendee]
     );
     await pool.query(`INSERT INTO equipment (id, name, equipment_type, status, total_quantity) VALUES ($1, 'Projector', 'AV', 'available', 3)`, [equipment]);
 
@@ -128,17 +132,37 @@ test('US-042 Event Coordinator cancels an event assigned to them', async t => {
       assert.equal(rowStillExists.rows[0].quantity, 2, 'the reservation row itself is left untouched, not deleted');
     });
 
-    await t.test('cancelling records an audit entry and notifies the organiser', async () => {
+    await t.test('cancelling records an audit entry and notifies affected users', async () => {
       const event = await seedEvent('confirmed');
+      const venue = randomUUID();
+      await pool.query(`INSERT INTO venues (id, name, capacity) VALUES ($1, $2, 100)`, [venue, `Cancellation Venue ${event}`]);
+      await pool.query(
+        `INSERT INTO bookings (event_id, venue_id, requested_by, start_time, end_time, status, decided_by)
+         VALUES ($1, $2, $3, now() + interval '5 days', now() + interval '5 days 2 hours', 'confirmed', $4)`,
+        [event, venue, coordinator, venueStaff]
+      );
+      await pool.query(
+        `INSERT INTO equipment_reservations (equipment_id, event_id, quantity, status, reserved_by)
+         VALUES ($1, $2, 1, 'reserved', $3)`,
+        [equipment, event, technicalStaff]
+      );
+      await pool.query(
+        `INSERT INTO registrations (event_id, attendee_id, name, phone, email, status)
+         VALUES ($1, $2, 'Attendee', '+6512345678', 'attendee-us042@test.local', 'registered')`,
+        [event, attendee]
+      );
       const result = await call(`/events/${event}/cancel`, 'PATCH', undefined, token(coordinator, 'event_coordinator'));
       assert.equal(result.status, 200);
 
       const change = await pool.query('SELECT change_summary FROM event_changes WHERE event_id = $1 ORDER BY created_at DESC LIMIT 1', [event]);
       assert.match(change.rows[0].change_summary, /cancelled/i);
 
-      const notification = await pool.query('SELECT user_id, message FROM notifications WHERE event_id = $1 ORDER BY created_at DESC LIMIT 1', [event]);
-      assert.equal(notification.rows[0].user_id, organiser);
-      assert.match(notification.rows[0].message, /cancelled/i);
+      const notifications = await pool.query('SELECT user_id, message FROM notifications WHERE event_id = $1', [event]);
+      assert.equal(notifications.rows.length, 4);
+      assert.match(notifications.rows.find(row => row.user_id === organiser).message, /cancelled/i);
+      assert.match(notifications.rows.find(row => row.user_id === venueStaff).message, /venue booking/i);
+      assert.match(notifications.rows.find(row => row.user_id === technicalStaff).message, /equipment reservation/i);
+      assert.match(notifications.rows.find(row => row.user_id === attendee).message, /registration/i);
     });
 
     await t.test('AC-042-004: a cancelled event cannot receive a new change request', async () => {

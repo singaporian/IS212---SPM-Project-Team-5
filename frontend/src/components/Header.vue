@@ -9,7 +9,7 @@
       <div class="collapse navbar-collapse" id="nav">
         <ul class="navbar-nav ms-auto">
           <li class="nav-item"><router-link class="nav-link" to="/">Dashboard</router-link></li>
-          <li class="nav-item"><router-link class="nav-link" :to="user.role === 'attendee' ? '/attendee/calendar' : (user.role === 'event_coordinator' ? '/coordinator/calendar' : (user.role === 'venue_staff' ? '/venue/bookings' : '/events'))">{{ ['attendee', 'event_coordinator', 'venue_staff'].includes(user.role) ? 'View Calendar' : 'Events' }}</router-link></li>
+          <li class="nav-item"><router-link class="nav-link" :to="primaryNavigation.to">{{ primaryNavigation.label }}</router-link></li>
           <li v-if="canViewVenues" class="nav-item"><router-link class="nav-link" to="/venues">Venues</router-link></li>
         </ul>
       </div>
@@ -74,6 +74,18 @@ export default {
   computed: {
     canViewVenues() {
       return ['event_coordinator', 'venue_staff'].includes(this.user.role)
+    },
+    primaryNavigation() {
+      const navigation = {
+        attendee: { to: '/attendee/calendar', label: 'View Calendar' },
+        event_coordinator: { to: '/coordinator/calendar', label: 'View Calendar' },
+        venue_staff: { to: '/venue/bookings', label: 'View Calendar' },
+        technical_support_staff: { to: '/technical-support/queue', label: 'Support Queue' },
+        safety_officer: { to: '/safety/checks', label: 'Safety Checks' },
+        event_coordinator_lead: { to: '/coordinator-lead/assignments', label: 'Assignments' },
+        event_organiser: { to: '/requests/submitted', label: 'My Requests' }
+      }
+      return navigation[this.user.role] || { to: '/events', label: 'Events' }
     },
     initials() {
       if (!this.user.name) return 'U'

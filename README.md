@@ -1,5 +1,44 @@
 # IS212---SPM-Project-Team-5
 
+## Start the project (recommended)
+
+Follow these steps to get a working local development environment. This uses Docker only for PostgreSQL; backend and frontend run locally for fast iteration.
+
+1. From the repository root, start the Postgres container:
+
+```bash
+docker-compose up -d db
+```
+
+2. Create the backend env file (one-time):
+
+```bash
+cp .env.example backend/.env
+```
+
+3. Initialize the database schema and run the backend:
+
+```bash
+cd backend
+npm install
+# run the SQL schema against the running Postgres container
+npm run init-db
+# create local demo accounts for all roles, insert sample data such as venues, events etc
+npm run seed-demo
+# start the backend dev server
+npm run dev
+```
+
+4. Start the frontend dev server (new terminal):
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+5. Open the app in your browser: http://localhost:5173
+
 ## Branch Naming Convention
 Always branch off `main`. Format your branches as: `name/role/user-story-ID/brief-description`
 
@@ -65,44 +104,7 @@ Backend tests live in `backend/test/`, grouped by what they need to run:
 Browser end-to-end tests live in `e2e/tests/` and run with Playwright (`npm --prefix e2e test`). The CI/CD smoke gate uses `npm --prefix e2e run test:smoke`.
 
 
-## Start the project (recommended)
 
-Follow these steps to get a working local development environment. This uses Docker only for PostgreSQL; backend and frontend run locally for fast iteration.
-
-1. From the repository root, start the Postgres container:
-
-```bash
-docker-compose up -d db
-```
-
-2. Create the backend env file (one-time):
-
-```bash
-cp .env.example backend/.env
-```
-
-3. Initialize the database schema and run the backend:
-
-```bash
-cd backend
-npm install
-# run the SQL schema against the running Postgres container
-npm run init-db
-# optional: create local demo accounts for all five roles
-npm run seed-demo
-# start the backend dev server
-npm run dev
-```
-
-4. Start the frontend dev server (new terminal):
-
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
-5. Open the app in your browser: http://localhost:5173
 
 ### Authentication
 

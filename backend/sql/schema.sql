@@ -167,6 +167,8 @@ ALTER TABLE bookings ADD COLUMN IF NOT EXISTS replacement_for_booking_id uuid RE
 
 ALTER TABLE bookings ADD COLUMN IF NOT EXISTS requested_by uuid REFERENCES users(id) ON DELETE SET NULL;
 ALTER TABLE bookings ADD COLUMN IF NOT EXISTS required_capacity integer;
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS setup_minutes integer NOT NULL DEFAULT 30;
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS turnaround_minutes integer NOT NULL DEFAULT 30;
 ALTER TABLE bookings ADD COLUMN IF NOT EXISTS venue_requirements jsonb NOT NULL DEFAULT '{}'::jsonb;
 ALTER TABLE bookings ADD COLUMN IF NOT EXISTS conflict_warning boolean NOT NULL DEFAULT false;
 ALTER TABLE bookings ADD COLUMN IF NOT EXISTS conflict_details jsonb NOT NULL DEFAULT '[]'::jsonb;

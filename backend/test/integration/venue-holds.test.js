@@ -111,6 +111,15 @@ test('US-038 isolated PostgreSQL API integration',async t=>{
    await fixture();const outcomes=await Promise.all([place(),call('/bookings/'+booking+'/decision','PATCH',{decision:'approved'})]);
    assert.ok((outcomes[0].status===201 && outcomes[1].status===409)||(outcomes[0].status===404 && outcomes[1].status===200),JSON.stringify(outcomes));
   });
+    await t.test('venue search excludes approved bookings and applies configured buffers to operating hours',async()=>{
+     await fixture();
+     await pool.query("INSERT INTO bookings (event_id,venue_id,status,start_time,end_time,setup_minutes,turnaround_minutes) VALUES ($1,$2,'approved',$3,$4,30,30)",[event,venue,slot.start_time,slot.end_time]);
+     assert.equal((await call('/venues?date=2099-03-01&startTime=10:00&endTime=11:00')).body.length,0);
+
+     await fixture();
+     await pool.query("UPDATE venue_operating_hours SET opens_at='10:00' WHERE venue_id=$1",[venue]);
+     assert.equal((await call('/venues?date=2099-03-01&startTime=10:00&endTime=11:00')).body.length,0);
+    });
   await t.test('Technical placement rejects existing reservation and recorded unavailability',async()=>{
    for(const status of ['confirmed','approved']) {
     await fixture();await pool.query("INSERT INTO bookings (event_id,venue_id,status,start_time,end_time,setup_minutes,turnaround_minutes) VALUES ($1,$2,$3,$4,$5,0,0)",[event,venue,status,slot.start_time,slot.end_time]);assert.equal((await place()).status,409);
