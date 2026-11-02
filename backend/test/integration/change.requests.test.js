@@ -5,7 +5,6 @@ const express = require('express');
 const jwt = require('jsonwebtoken');
 const db = require('../../src/db');
 const { router, parseChangeRequestInput } = require('../../src/changeRequests');
-const { EventRequest } = require('../../src/domain');
 
 // ---------- Unit: input validation (AC-008-002) ----------
 test('parseChangeRequestInput accepts valid fields', () => {
@@ -40,14 +39,8 @@ test('parseChangeRequestInput rejects invalid or empty input', () => {
 });
 
 // ---------- Unit: status rule (AC-008-001, revised) ----------
-test('EventRequest only accepts change requests after approval', () => {
-  for (const status of ['planning', 'confirmed']) {
-    assert.equal(new EventRequest({ status }).canRequestChanges(), true, status);
-  }
-  for (const status of ['draft', 'submitted', 'rejected', 'cancelled', 'completed']) {
-    assert.equal(new EventRequest({ status }).canRequestChanges(), false, status);
-  }
-});
+// Covered by backend/test/unit/domain.test.js [UT-OOP-02], which checks every status this
+// test did plus approved and clarification_requested (dedupe #2).
 
 // ---------- Integration: POST /:id/change-requests ----------
 test('change request API enforces status, ownership and leaves the event unchanged', async t => {

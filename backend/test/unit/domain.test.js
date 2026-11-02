@@ -25,7 +25,7 @@ test('[UT-OOP-01] User maps rows, exposes role decisions, and omits password dat
   assert.equal(new User({ role: 'attendee' }).canSelfRegister(), true);
 });
 
-test('[UT-OOP-02] EventRequest canEdit and canRequestChanges follow the status lifecycle (AC-031-001)', () => {
+test('[UT-OOP-02] EventRequest canEdit and canRequestChanges follow the status lifecycle (AC-008-001, AC-031-001)', () => {
   for (const status of ['approved', 'planning', 'confirmed']) assert.equal(new EventRequest({ title: 'Event', status }).canRequestChanges(), true, status);
   for (const status of ['draft', 'submitted', 'clarification_requested', 'rejected', 'completed', 'cancelled']) {
     assert.equal(new EventRequest({ title: 'Event', status }).canRequestChanges(), false, status);
