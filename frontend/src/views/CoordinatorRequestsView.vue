@@ -56,6 +56,27 @@
                 <strong>Request approved.</strong> It can now proceed to venue and resource planning.
               </div>
 
+              <!-- US-041/US-042: the assigned Coordinator marks a confirmed, ended event completed, or cancels an event. -->
+              <div v-if="ev.status === 'confirmed' || !['completed', 'cancelled'].includes(ev.status)" class="mt-3 d-flex gap-2">
+                <button v-if="ev.status === 'confirmed'" class="btn btn-sm btn-primary" @click="openAction(ev.id, 'complete')">Mark Completed</button>
+                <button v-if="!['completed', 'cancelled'].includes(ev.status)" class="btn btn-sm btn-outline-danger" @click="openAction(ev.id, 'cancel')">Cancel Event</button>
+              </div>
+
+              <div v-if="actionEventId === ev.id" class="mt-3 p-3 border rounded bg-white">
+                <div class="fw-semibold mb-2">
+                  {{ actionType === 'complete'
+                    ? `Mark "${ev.title}" as completed?`
+                    : `Cancel "${ev.title}"? This cannot be undone, and the Organiser, Venue Staff and attendees will be notified.` }}
+                </div>
+                <div v-if="actionError" class="alert alert-danger py-2 small mb-2">{{ actionError }}</div>
+                <div class="d-flex gap-2">
+                  <button class="btn btn-sm" :class="actionType === 'complete' ? 'btn-primary' : 'btn-danger'" @click="confirmAction(ev.id)">
+                    {{ actionType === 'complete' ? 'Confirm Mark Completed' : 'Confirm Cancel Event' }}
+                  </button>
+                  <button class="btn btn-sm btn-outline-secondary" @click="cancelAction">Go Back</button>
+                </div>
+              </div>
+
               <div v-if="decisionEventId === ev.id" class="mt-3 p-3 border rounded bg-white">
                 <div class="fw-semibold mb-2">{{ decisionType === 'approved' ? 'Confirm you want to approve this request?' : decisionType === 'returned' ? 'Return this request to the Organiser for clarification?' : 'Confirm you want to reject this request?' }}</div>
 
@@ -112,7 +133,10 @@ export default {
       rejectReason: '',
       rejectDetail: '',
       returnNote: '',
-      decisionError: ''
+      decisionError: '',
+      actionEventId: null,
+      actionType: '',
+      actionError: ''
     }
   },
   methods: {
@@ -134,6 +158,34 @@ export default {
       this.rejectReason = ''
       this.rejectDetail = ''
       this.decisionError = ''
+    },
+    openAction(id, type) {
+      this.actionEventId = id
+      this.actionType = type
+      this.actionError = ''
+    },
+    cancelAction() {
+      this.actionEventId = null
+      this.actionType = ''
+      this.actionError = ''
+    },
+    async confirmAction(id) {
+      this.actionError = ''
+      const path = this.actionType === 'complete' ? 'complete' : 'cancel'
+      const res = await fetch(`/api/events/${id}/${path}`, {
+        method: 'PATCH',
+        headers: authHeaders()
+      })
+      const data = await res.json().catch(() => ({}))
+
+      if (!res.ok) {
+        this.actionError = data.error || `Could not ${this.actionType === 'complete' ? 'mark the event completed' : 'cancel the event'}. Please try again.`
+        return
+      }
+
+      this.cancelAction()
+      this.selected = null
+      await this.loadAssigned()
     },
     async confirmDecision(id) {
       this.decisionError = ''
