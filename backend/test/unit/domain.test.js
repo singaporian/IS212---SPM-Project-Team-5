@@ -1,8 +1,11 @@
+// Unit tests for the domain classes in backend/src/domain/index.js.
+// Team rule: tests of a domain class method live here, once. [UT-OOP-xx] ids are
+// referenced from the story test plans, with the ACs each test covers in its name.
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { User, EventRequest, Venue, Booking, ChangeRequest } = require('../../src/domain');
 
-test('User maps rows, exposes role decisions, and omits password data publicly', () => {
+test('[UT-OOP-01] User maps rows, exposes role decisions, and omits password data publicly', () => {
   const user = User.fromRow({ id: 'user-1', name: 'Alex', email: 'alex@test.local', role: 'event_organiser', password_hash: 'secret-hash' });
   assert.equal(user.passwordHash, 'secret-hash');
   assert.equal(user.canCreateEventRequest(), true);
@@ -22,7 +25,7 @@ test('User maps rows, exposes role decisions, and omits password data publicly',
   assert.equal(new User({ role: 'attendee' }).canSelfRegister(), true);
 });
 
-test('EventRequest enforces lifecycle edit and change-request rules', () => {
+test('[UT-OOP-02] EventRequest canEdit and canRequestChanges follow the status lifecycle (AC-031-001)', () => {
   for (const status of ['approved', 'planning', 'confirmed']) assert.equal(new EventRequest({ title: 'Event', status }).canRequestChanges(), true, status);
   for (const status of ['draft', 'submitted', 'clarification_requested', 'rejected', 'completed', 'cancelled']) {
     assert.equal(new EventRequest({ title: 'Event', status }).canRequestChanges(), false, status);
@@ -31,7 +34,7 @@ test('EventRequest enforces lifecycle edit and change-request rules', () => {
   for (const status of ['draft', 'approved', 'planning', 'confirmed', 'rejected', 'completed', 'cancelled']) assert.equal(new EventRequest({ title: 'Event', status }).canEdit(), false, status);
 });
 
-test('EventRequest assigns, reassigns, and unassigns active requests safely', () => {
+test('[UT-OOP-03] EventRequest assigns, reassigns, and unassigns active requests safely', () => {
   const request = new EventRequest({ title: 'Demo', status: 'submitted' });
   assert.equal(request.assignCoordinator('coordinator-1'), null);
   assert.equal(request.assignCoordinator('coordinator-2'), 'coordinator-1');
@@ -48,7 +51,7 @@ test('EventRequest assigns, reassigns, and unassigns active requests safely', ()
   }
 });
 
-test('EventRequest tracks active statuses, major changes, and stored column names', () => {
+test('[UT-OOP-04] EventRequest tracks active statuses, major changes, and stored column names', () => {
   for (const status of ['submitted', 'clarification_requested', 'approved', 'planning', 'confirmed']) assert.equal(new EventRequest({ title: 'Active', status }).isActive(), true, status);
   for (const status of ['draft', 'rejected', 'completed', 'cancelled']) assert.equal(new EventRequest({ title: 'Closed', status }).isActive(), false, status);
 
@@ -66,7 +69,7 @@ test('EventRequest tracks active statuses, major changes, and stored column name
   assert.ok(!('assignedCoordinatorId' in fromRow.toJSON()) && !('organiserId' in fromRow.toJSON()));
 });
 
-test('Venue evaluates capacity, facilities, layouts, accessibility, and serialisation', () => {
+test('[UT-OOP-05] Venue evaluates capacity, facilities, layouts, accessibility, and serialisation (AC-036-003, AC-037-005)', () => {
   const venue = new Venue({ id: 'venue-1', name: 'Hall', location: 'Campus', capacity: 100, facilities: ['projector'], accessibility: ['ramp'], supportedLayouts: ['theatre'], default_setup_minutes: 45, default_turnaround_minutes: 20 });
   assert.equal(venue.supportsFacility('projector'), true);
   assert.equal(venue.supportsFacility('microphone'), false);
@@ -80,7 +83,7 @@ test('Venue evaluates capacity, facilities, layouts, accessibility, and serialis
   assert.deepEqual(venue.toJSON(), { id: 'venue-1', name: 'Hall', location: 'Campus', capacity: 100, facilities: ['projector'], accessibility: ['ramp'], supported_layouts: ['theatre'], unavailable_periods: [], images: [], default_setup_minutes: 45, default_turnaround_minutes: 20 });
 });
 
-test('Booking reports confirmation and detects buffered conflicts correctly', () => {
+test('[UT-OOP-06] Booking reports confirmation and detects buffered conflicts correctly', () => {
   const first = new Booking({ venueId: 'venue-1', startTime: '2026-10-01T10:00:00Z', endTime: '2026-10-01T11:00:00Z', setupMinutes: 30, turnaroundMinutes: 45 });
   const second = new Booking({ venueId: 'venue-1', startTime: '2026-10-01T11:15:00Z', endTime: '2026-10-01T12:00:00Z', status: 'confirmed' });
   const touching = new Booking({ venueId: 'venue-1', startTime: '2026-10-01T11:45:00Z', endTime: '2026-10-01T12:30:00Z', setupMinutes: 0, turnaroundMinutes: 0 });
@@ -93,18 +96,40 @@ test('Booking reports confirmation and detects buffered conflicts correctly', ()
   assert.equal(first.overlaps(otherVenue), false);
 });
 
-test('ChangeRequest maps rows, identifies pending state, maps supported fields, and detects moves', () => {
+test('[UT-OOP-07] ChangeRequest maps rows, identifies pending state, maps supported fields, and detects moves', () => {
   const row = { id: 'change-1', event_id: 'event-1', organiser_id: 'organiser-1', proposed_changes: { preferredStart: '2026-10-02T10:00:00Z', venueLayoutPreference: 'Theatre', equipmentRequirements: ['projector'] }, status: 'pending', created_at: '2026-09-01T00:00:00Z' };
   const request = ChangeRequest.fromRow(row);
   assert.equal(request.isPending(), true);
   assert.equal(request.canBeDecided(), true);
   assert.deepEqual(request.toEventColumns(), { preferred_start: '2026-10-02T10:00:00Z', venue_layout_preference: 'Theatre', equipment_requirements: ['projector'] });
-  assert.equal(request.movesEvent({ preferred_start: '2026-10-01T10:00:00Z', preferred_end: '2026-10-01T12:00:00Z' }), true);
   assert.deepEqual(request.toJSON(), { id: 'change-1', event_id: 'event-1', proposed_changes: row.proposed_changes, status: 'pending', created_at: row.created_at });
 
   const unchanged = new ChangeRequest({ status: 'approved', proposedChanges: { venueLayoutPreference: 'Theatre' } });
   assert.equal(unchanged.isPending(), false);
   assert.equal(unchanged.canBeDecided(), false);
-  assert.equal(unchanged.movesEvent({ preferred_start: '2026-10-01T10:00:00Z', preferred_end: '2026-10-01T12:00:00Z' }), false);
+  // Only a start time proposed, same moment in a different text format: not a move. Kept because
+  // [UT-OOP-08] always proposes both times, so this is the only check of the one-sided path.
   assert.equal(new ChangeRequest({ proposedChanges: { preferredStart: '2026-10-01T10:00:00.000Z' } }).movesEvent({ preferred_start: '2026-10-01T10:00:00Z', preferred_end: '2026-10-01T12:00:00Z' }), false);
+});
+
+// Singapore time helper for the story tests moved in below.
+const at = (date, time) => new Date(`${date}T${time}:00+08:00`).toISOString();
+
+// Moved from change.request.review.test.js [UT-04] (US-032). It replaces two movesEvent asserts
+// that were in the ChangeRequest test above (dedupe #3).
+const START = at('2099-03-01', '09:00');
+const END = at('2099-03-01', '12:00');
+
+test('[UT-OOP-08] ChangeRequest.movesEvent is true only when the start or end time is a different moment (AC-032-005)', () => {
+  const event = new EventRequest({ status: 'planning', preferred_start: START, preferred_end: END });
+  const moves = (proposedChanges) => new ChangeRequest({ proposedChanges }).movesEvent(event);
+
+  assert.equal(moves({ preferredStart: at('2099-03-05', '14:00'), preferredEnd: at('2099-03-05', '17:00') }), true, 'new date');
+  assert.equal(moves({ preferredStart: at('2099-03-01', '10:00'), preferredEnd: at('2099-03-01', '13:00') }), true, 'same day, later');
+  assert.equal(moves({ venueLayoutPreference: 'Classroom' }), false, 'no times in the request');
+  assert.equal(moves({ preferredStart: START, preferredEnd: END }), false, 'same times');
+
+  // PostgreSQL returns Date objects, the request holds strings: same moment must not count as a move.
+  const fromDb = new EventRequest({ status: 'planning', preferred_start: new Date(START), preferred_end: new Date(END) });
+  assert.equal(new ChangeRequest({ proposedChanges: { preferredStart: START, preferredEnd: END } }).movesEvent(fromDb), false);
 });

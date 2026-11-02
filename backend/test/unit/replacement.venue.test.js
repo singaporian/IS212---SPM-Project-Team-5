@@ -4,59 +4,18 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { occupiedInterval, overlaps } = require('../../src/venueOccupancy');
-const { Venue, Booking } = require('../../src/domain');
+const { Booking } = require('../../src/domain');
 
 // AC-037-002/007: setup and turnaround determine the original booking's affected interval.
-test('calculates the original booking occupied interval with setup and turnaround', () => {
-  const booking = {
-    start_time: '2027-02-10T10:00:00+08:00',
-    end_time: '2027-02-10T12:00:00+08:00',
-    setup_minutes: 30,
-    turnaround_minutes: 45
-  };
-
-  assert.deepEqual(occupiedInterval(booking), {
-    start: '2027-02-10T01:30:00.000Z',
-    end: '2027-02-10T04:45:00.000Z'
-  });
-});
+// Covered by backend/test/unit/venue-holds.test.js [UT-05] (setup) and [UT-06] (turnaround) (dedupe #4).
 
 // AC-037-001/002/007: a booking is affected only when unavailability overlaps its occupied
 // interval. A period that starts exactly when the booking ends is not an overlap.
-test('detects an affected booking only when unavailability overlaps occupancy', () => {
-  const booking = {
-    start_time: '2027-02-10T10:00:00+08:00',
-    end_time: '2027-02-10T12:00:00+08:00',
-    setup_minutes: 30,
-    turnaround_minutes: 45
-  };
-  const occupied = occupiedInterval(booking);
-
-  assert.equal(overlaps(occupied, { start: '2027-02-10T01:00:00.000Z', end: '2027-02-10T02:00:00.000Z' }), true);
-  assert.equal(overlaps(occupied, { start: occupied.end, end: '2027-02-10T06:00:00.000Z' }), false);
-});
+// Covered by backend/test/unit/venue-holds.test.js [UT-09] (overlap) and [UT-11] (exact touch) (dedupe #4).
 
 // AC-037-005: a replacement venue must meet the event's capacity, facility, layout, and
 // accessibility needs.
-test('checks replacement venue suitability independently', () => {
-  const replacementVenue = new Venue({
-    id: 'replacement-venue',
-    name: 'Breakout Room',
-    capacity: 80,
-    facilities: ['projector'],
-    supportedLayouts: ['Classroom'],
-    accessibility: ['wheelchair ramps']
-  });
-
-  assert.equal(replacementVenue.isSuitableFor({
-    expectedAttendance: 60,
-    requiredFacilities: ['projector'],
-    requiredLayouts: ['Classroom'],
-    accessibilityNeeds: ['wheelchair ramps']
-  }), true);
-  assert.equal(replacementVenue.isSuitableFor({ expectedAttendance: 100 }), false);
-});
+// Covered by backend/test/unit/domain.test.js [UT-OOP-05] (Venue.isSuitableFor) (dedupe #14).
 
 // AC-037-006/007/008: a replacement is a separate booking for the same event, so its status can
 // change without changing the preserved original booking.

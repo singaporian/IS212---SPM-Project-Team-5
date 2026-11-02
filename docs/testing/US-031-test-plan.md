@@ -50,8 +50,10 @@ Pure domain methods; no database or server.
 
 | ID | Function | Inputs | Expected | AC |
 | --- | --- | --- | --- | --- |
-| UT-01 | `canEdit()` | every event status | true only for `submitted` and `clarification_requested` | AC-031-001 |
+| UT-01 → UT-OOP-02 | `canEdit()` | every event status | true only for `submitted` and `clarification_requested` | AC-031-001 |
 | UT-02 | `canEdit()` and `canRequestChanges()` | each active status | exactly one of the two is true (no gap, no overlap with US-008) | AC-031-001, AC-031-003 |
+
+> UT-01 was removed as a duplicate (dedupe #1). The same cases are checked by `[UT-OOP-02]` in `backend/test/unit/domain.test.js`, where domain class tests live.
 
 ### Unit (frontend) — `frontend/test/request-edits.test.cjs`
 The page is rendered on its own; the API call is replaced by a stub returning one request.
@@ -84,7 +86,7 @@ Fixtures seed an Organiser, a Coordinator and one Submitted request assigned to 
 
 | AC | Unit | Integration | Frontend | E2E / Manual |
 | --- | --- | --- | --- | --- |
-| AC-031-001 | UT-01, UT-02 | IT-01, IT-02 | UT-03 | E2E-01 |
+| AC-031-001 | UT-OOP-02 (was UT-01), UT-02 | IT-01, IT-02 | UT-03 | E2E-01 |
 | AC-031-002 | — | IT-03 | — | — |
 | AC-031-003 | UT-02 | IT-01 | — | E2E-01 |
 | AC-031-004 | — | — | — | Parked (US-002) |

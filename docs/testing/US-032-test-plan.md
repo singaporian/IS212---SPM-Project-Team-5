@@ -48,7 +48,9 @@ No database, server or test doubles.
 | Test case | Function | Cases | Expected | AC |
 | --- | --- | --- | --- | --- |
 | UT-02 | `parseChangeRequestDecision(body)` | `approved`, ` rejected ` (padded), `cancelled`, empty, missing body, `null`, array, number | approved/rejected accepted and trimmed; everything else throws a 400 error | 002 |
-| UT-04 | `ChangeRequest.movesEvent(event)` | new date; same day later; no times; same times; same times where the event holds Date objects (as PostgreSQL returns) | true only when the start or end is a different moment | 005 |
+| UT-04 → UT-OOP-08 | `ChangeRequest.movesEvent(event)` | new date; same day later; no times; same times; same times where the event holds Date objects (as PostgreSQL returns) | true only when the start or end is a different moment | 005 |
+
+> UT-04 moved unchanged to `[UT-OOP-08]` in `backend/test/unit/domain.test.js`, where domain class tests live. It replaced two `movesEvent` asserts there; a one-sided case (start time only) stays in that test (dedupe #3).
 
 ### Integration — `backend/test/integration/change.request.review.test.js`
 Real router, auth middleware and SQL against temporary copies of the tables inside a transaction that is rolled back (same harness as US-010). IT-10 makes one SQL statement fail on purpose.
@@ -86,7 +88,7 @@ Real browser, frontend, backend and PostgreSQL. Fixtures seed an organiser, a co
 | AC-032-002 | UT-02 | IT-03, IT-04 | — | E2E-01 |
 | AC-032-003 | — | IT-04 | — | — |
 | AC-032-004 | — | IT-03 | — | E2E-01 |
-| AC-032-005 | UT-04 | IT-05 | — | E2E-01 |
+| AC-032-005 | UT-OOP-08 (was UT-04) | IT-05 | — | E2E-01 |
 | AC-032-006 | — | IT-07 | — | — |
 | AC-032-007 | — | IT-10 | — | — |
 

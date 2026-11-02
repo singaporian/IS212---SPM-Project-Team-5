@@ -4,7 +4,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { Booking, Venue } = require('../../src/domain');
+const { Booking } = require('../../src/domain');
 const { occupiedInterval, overlaps } = require('../../src/venueOccupancy');
 
 // AC-036-001/002/006: each venue booking keeps its own ID, venue, time, and event link.
@@ -34,33 +34,12 @@ test('creates separate booking objects for multiple venues of one event', () => 
 });
 
 // AC-036-003: each venue is checked separately against attendance and facilities.
-test('checks each venue independently against its required capacity and facilities', () => {
-  const auditorium = new Venue({ id: 'venue-a', name: 'Auditorium', capacity: 300, facilities: ['projector'] });
-  const breakoutRoom = new Venue({ id: 'venue-b', name: 'Breakout Room', capacity: 50, facilities: [] });
-
-  assert.equal(auditorium.isSuitableFor({ expectedAttendance: 250, requiredFacilities: ['projector'] }), true);
-  assert.equal(breakoutRoom.isSuitableFor({ expectedAttendance: 80, requiredFacilities: ['projector'] }), false);
-});
+// Covered by backend/test/unit/domain.test.js [UT-OOP-05] (Venue.isSuitableFor), which checks
+// capacity, facilities, layouts and accessibility separately (dedupe #14).
 
 // AC-036-004: setup and turnaround time are included in venue conflict detection.
-test('detects a conflict for one venue using setup and turnaround buffers', () => {
-  const auditoriumBooking = {
-    venue_id: 'venue-a',
-    start_time: '2027-02-15T10:00:00+08:00',
-    end_time: '2027-02-15T12:00:00+08:00',
-    setup_minutes: 30,
-    turnaround_minutes: 45
-  };
-  const followingBooking = {
-    venue_id: 'venue-a',
-    start_time: '2027-02-15T12:30:00+08:00',
-    end_time: '2027-02-15T14:00:00+08:00',
-    setup_minutes: 30,
-    turnaround_minutes: 30
-  };
-
-  assert.equal(overlaps(occupiedInterval(auditoriumBooking), occupiedInterval(followingBooking)), true);
-});
+// Covered by backend/test/unit/venue-holds.test.js [UT-12] (buffers turn touching slots
+// into a clash) and [UT-05]-[UT-07], which test the same functions (dedupe #4).
 
 // AC-036-003/004: simultaneous bookings at different venues do not conflict.
 test('does not treat simultaneous bookings in different venues as a conflict', () => {
