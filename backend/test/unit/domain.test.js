@@ -70,7 +70,8 @@ test('[UT-OOP-04] EventRequest tracks active statuses, major changes, and stored
 });
 
 test('[UT-OOP-05] Venue evaluates capacity, facilities, layouts, accessibility, and serialisation (AC-036-003, AC-037-005)', () => {
-  const venue = new Venue({ id: 'venue-1', name: 'Hall', location: 'Campus', capacity: 100, facilities: ['projector'], accessibility: ['ramp'], supportedLayouts: ['theatre'], default_setup_minutes: 45, default_turnaround_minutes: 20 });
+  const operatingHours = [{ day_of_week: 1, opens_at: '08:00:00', closes_at: '22:00:00' }];
+  const venue = new Venue({ id: 'venue-1', name: 'Hall', location: 'Campus', capacity: 100, facilities: ['projector'], accessibility: ['ramp'], supportedLayouts: ['theatre'], operating_hours: operatingHours, default_setup_minutes: 45, default_turnaround_minutes: 20 });
   assert.equal(venue.supportsFacility('projector'), true);
   assert.equal(venue.supportsFacility('microphone'), false);
   assert.equal(venue.supportsLayout('theatre'), true);
@@ -80,7 +81,7 @@ test('[UT-OOP-05] Venue evaluates capacity, facilities, layouts, accessibility, 
   assert.equal(venue.isSuitableFor({ expectedAttendance: 101 }), false);
   assert.equal(venue.isSuitableFor({ requiredFacilities: ['microphone'] }), false);
   assert.equal(venue.isSuitableFor({ requiredLayouts: ['classroom'] }), false);
-  assert.deepEqual(venue.toJSON(), { id: 'venue-1', name: 'Hall', location: 'Campus', capacity: 100, facilities: ['projector'], accessibility: ['ramp'], supported_layouts: ['theatre'], unavailable_periods: [], images: [], default_setup_minutes: 45, default_turnaround_minutes: 20 });
+  assert.deepEqual(venue.toJSON(), { id: 'venue-1', name: 'Hall', location: 'Campus', capacity: 100, facilities: ['projector'], accessibility: ['ramp'], supported_layouts: ['theatre'], operating_hours: operatingHours, unavailable_periods: [], images: [], default_setup_minutes: 45, default_turnaround_minutes: 20 });
 });
 
 test('[UT-OOP-06] Booking reports confirmation and detects buffered conflicts correctly', () => {

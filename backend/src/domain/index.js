@@ -148,7 +148,7 @@ class EventRequest {
 }
 
 class Venue {
-  constructor({ id, name, location, capacity = 0, facilities = [], accessibility = {}, supportedLayouts = [], unavailablePeriods = [], images = [], default_setup_minutes = 30, default_turnaround_minutes = 30 }) {
+  constructor({ id, name, location, capacity = 0, facilities = [], accessibility = {}, supportedLayouts = [], operating_hours = [], unavailablePeriods = [], images = [], default_setup_minutes = 30, default_turnaround_minutes = 30 }) {
     this.id = id;
     this.name = name;
     this.location = location;
@@ -156,6 +156,7 @@ class Venue {
     this.facilities = Array.isArray(facilities) ? facilities : [];
     this.accessibility = accessibility || {};
     this.supportedLayouts = Array.isArray(supportedLayouts) ? supportedLayouts : [];
+    this.operatingHours = Array.isArray(operating_hours) ? operating_hours : [];
     this.unavailablePeriods = unavailablePeriods;
     this.images = images;
     // US-035: the venue's own configured setup/turnaround defaults.
@@ -191,6 +192,7 @@ class Venue {
       facilities: this.facilities,
       accessibility: this.accessibility,
       supported_layouts: this.supportedLayouts,
+      operating_hours: this.operatingHours,
       unavailable_periods: this.unavailablePeriods,
       images: this.images,
       default_setup_minutes: this.defaultSetupMinutes,

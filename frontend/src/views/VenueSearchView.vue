@@ -148,6 +148,19 @@
                 <span class="detail-label">Facilities</span>
                 <span>{{ listValue(venue.facilities) }}</span>
               </div>
+              <div>
+                <span class="detail-label">Operating hours</span>
+                <div v-if="venue.operating_hours && venue.operating_hours.length">
+                  <div v-for="hours in venue.operating_hours" :key="hours.day_of_week">
+                    {{ formatOperatingHours(hours) }}
+                  </div>
+                </div>
+                <span v-else>Not listed</span>
+              </div>
+              <div>
+                <span class="detail-label">Setup / turnaround</span>
+                <span>{{ venue.default_setup_minutes }} min setup / {{ venue.default_turnaround_minutes }} min turnaround</span>
+              </div>
             </div>
           </div>
         </article>
@@ -291,6 +304,15 @@ export default {
     listValue(value) {
       if (Array.isArray(value)) return value.length ? value.join(', ') : 'Not listed'
       return value || 'Not listed'
+    },
+    formatOperatingHours(hours) {
+      const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+      const formatTime = value => {
+        const [hour, minute] = value.split(':').map(Number)
+        const period = hour < 12 ? 'AM' : 'PM'
+        return `${hour % 12 || 12}:${String(minute).padStart(2, '0')} ${period}`
+      }
+      return `${days[hours.day_of_week]}: ${formatTime(hours.opens_at)} - ${formatTime(hours.closes_at)}`
     },
     formatUnavailablePeriod(period) {
       const dateFormatter = new Intl.DateTimeFormat('en-SG', {

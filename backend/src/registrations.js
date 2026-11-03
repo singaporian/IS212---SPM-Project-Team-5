@@ -245,6 +245,19 @@ router.get('/:id/registration', ...attendeeOnly, async (req, res) => {
 
 // US-030: withdraw an active registration. A confirmation prompt is a frontend concern;
 // this endpoint performs the withdrawal once the Attendee has confirmed.
+//
+// AC-030-004: an already-withdrawn registration cannot be withdrawn again.
+// AC-030-002: withdrawal is refused once the event has started.
+function assertRegistrationWithdrawable(registration, now = new Date()) {
+  if (registration.status !== 'registered') {
+    throw Object.assign(new Error('This registration has already been withdrawn.'), { status: 409 });
+  }
+  if (registration.preferred_start && new Date(registration.preferred_start) <= now) {
+    throw Object.assign(new Error('Withdrawal is not permitted once the event has started.'), { status: 409 });
+  }
+  return true;
+}
+
 router.patch('/registrations/:id/withdraw', ...attendeeOnly, async (req, res) => {
   if (!uuidPattern.test(req.params.id)) return res.status(404).json({ error: 'Registration not found.' });
   try {
@@ -257,11 +270,10 @@ router.patch('/registrations/:id/withdraw', ...attendeeOnly, async (req, res) =>
     );
     const registration = registrationResult.rows[0];
     if (!registration) return res.status(404).json({ error: 'Registration not found.' });
-    if (registration.status !== 'registered') {
-      return res.status(409).json({ error: 'This registration has already been withdrawn.' });
-    }
-    if (registration.preferred_start && new Date(registration.preferred_start) <= new Date()) {
-      return res.status(409).json({ error: 'Withdrawal is not permitted once the event has started.' });
+    try {
+      assertRegistrationWithdrawable(registration);
+    } catch (error) {
+      return res.status(error.status || 409).json({ error: error.message });
     }
     const result = await db.query(
       `UPDATE registrations SET status = 'withdrawn', updated_at = now()
@@ -282,4 +294,4 @@ router.patch('/registrations/:id/withdraw', ...attendeeOnly, async (req, res) =>
   }
 });
 
-module.exports = { router, validateRegistrationInput, registrationWindowStatus, partitionRegistrations };
+module.exports = { router, validateRegistrationInput, registrationWindowStatus, partitionRegistrations, assertRegistrationWithdrawable };

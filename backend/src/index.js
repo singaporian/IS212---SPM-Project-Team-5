@@ -327,7 +327,7 @@ app.get('/api/venues', auth.authenticate, auth.requireRoles('event_coordinator',
     const facilities = (Array.isArray(facility) ? facility : facility ? [facility] : []).filter(Boolean);
     if (facilities.length) {
       params.push(facilities);
-      filters.push(`v.facilities ?| $${params.length}::text[]`);
+      filters.push(`v.facilities ?& $${params.length}::text[]`);
     }
     const accessibilityNeeds = (Array.isArray(accessibility) ? accessibility : accessibility ? [accessibility] : []).filter(Boolean);
     if (accessibilityNeeds.length) {
@@ -419,6 +419,12 @@ app.get('/api/venues', auth.authenticate, auth.requireRoles('event_coordinator',
     const result = await db.query(
       `SELECT id, name, location, capacity, facilities, accessibility, supported_layouts,
         default_setup_minutes, default_turnaround_minutes,
+        (SELECT COALESCE(jsonb_agg(jsonb_build_object(
+          'day_of_week', voh.day_of_week,
+          'opens_at', voh.opens_at,
+          'closes_at', voh.closes_at
+        ) ORDER BY voh.day_of_week), '[]'::jsonb)
+         FROM venue_operating_hours voh WHERE voh.venue_id = v.id) AS operating_hours,
         ${unavailablePeriods}
         (SELECT COALESCE(jsonb_agg(jsonb_build_object(
           'id', vi.id,
@@ -433,6 +439,7 @@ app.get('/api/venues', auth.authenticate, auth.requireRoles('event_coordinator',
     res.json(result.rows.map((row) => new Venue({
       ...row,
       supportedLayouts: row.supported_layouts,
+      operating_hours: row.operating_hours,
       unavailablePeriods: row.unavailable_periods
     }).toJSON()));
   } catch (err) {
@@ -791,6 +798,29 @@ function buildBookingFilters({ venueId, from, to } = {}) {
   return { where: `WHERE ${filters.join(' AND ')}`, params };
 }
 
+// US-017/BUG-02: alongside approved/confirmed bookings, the calendar also needs to
+// surface recorded venue-unavailability periods (e.g. maintenance blocks, US-020) -
+// otherwise Venue Staff see a calendar that silently omits times the venue is blocked.
+function buildUnavailabilityFilters({ venueId, from, to } = {}) {
+  const filters = [];
+  const params = [];
+
+  if (venueId) {
+    params.push(venueId);
+    filters.push(`vu.venue_id = $${params.length}`);
+  }
+  if (from) {
+    params.push(from);
+    filters.push(`vu.end_time::date >= $${params.length}::date`);
+  }
+  if (to) {
+    params.push(to);
+    filters.push(`vu.start_time::date <= $${params.length}::date`);
+  }
+
+  return { where: filters.length ? `WHERE ${filters.join(' AND ')}` : '', params };
+}
+
 app.get('/api/bookings', auth.authenticate, auth.requireRoles('venue_staff'), async (req, res) => {
   try {
     const { where, params } = buildBookingFilters(req.query);
@@ -810,7 +840,19 @@ app.get('/api/bookings', auth.authenticate, auth.requireRoles('venue_staff'), as
        ORDER BY b.venue_id ASC, b.start_time ASC`,
       params
     );
-    res.json(result.rows);
+    const { where: unavailWhere, params: unavailParams } = buildUnavailabilityFilters(req.query);
+    const unavailResult = await db.query(
+      `SELECT vu.id, vu.venue_id, vu.start_time, vu.end_time, vu.reason, vu.reason_code,
+              v.name AS venue_name
+       FROM venue_unavailabilities vu
+       JOIN venues v ON v.id = vu.venue_id
+       ${unavailWhere}
+       ORDER BY vu.venue_id ASC, vu.start_time ASC`,
+      unavailParams
+    );
+    const bookings = result.rows.map((row) => ({ ...row, type: 'booking' }));
+    const unavailabilities = unavailResult.rows.map((row) => ({ ...row, type: 'unavailable' }));
+    res.json([...bookings, ...unavailabilities]);
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Failed to fetch bookings' });
