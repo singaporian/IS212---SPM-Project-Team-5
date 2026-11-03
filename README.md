@@ -1,5 +1,15 @@
 # IS212---SPM-Project-Team-5
 
+## Technology Stack
+
+- Frontend: Vue 3, Vite, Vue Router
+- Backend: Node.js and Express
+- Database: PostgreSQL 15 running through Docker Compose
+- Authentication: bcrypt password hashing and JWT
+- Testing: Node.js unit/integration tests, frontend tests, and Playwright
+- CI/CD: GitHub Actions
+- Architecture: Modular monolith with an OOP domain model
+
 ## Start the project (recommended)
 
 Follow these steps to get a working local development environment. This uses Docker only for PostgreSQL; backend and frontend run locally for fast iteration.
@@ -23,7 +33,7 @@ cd backend
 npm install
 # run the SQL schema against the running Postgres container
 npm run init-db
-# create local demo accounts for all roles, insert sample data such as venues, events etc
+# create local demo accounts for all user roles, insert sample data such as venues, events etc
 npm run seed-demo
 # start the backend dev server
 npm run dev
@@ -39,15 +49,28 @@ npm run dev
 
 5. Open the app in your browser: http://localhost:5173
 
-## Branch Naming Convention
-Always branch off `main`. Format your branches as: `name/role/user-story-ID/brief-description`
+### Authentication and demo accounts
 
-## Pull Request Workflow
-1. Push your branch to the remote repository.
-2. Open a Pull Request against `main`.
-3. Fill out the generated PR template.
-4. Request at least one peer review. - should ownself check instead?
-5. Once approved and all checks pass, squash and merge into `main`.
+The application uses email/password authentication. Passwords are hashed with bcrypt and the backend returns an expiring JWT. Protected API requests require an `Authorization: Bearer <token>` header. The frontend stores the session locally and redirects unauthenticated users to `/login`.
+
+Public registration creates either an `attendee` or `event_organiser` account. This matches the customer briefing: Event Organisers are external client representatives who need to submit their own event requests. Internal roles must be provisioned by an administrator or by the local demo seed command. For local testing, after `npm run init-db`, run `npm run seed-demo` in `backend`, which creates the following user accounts:
+
+| Role | Demo email |
+| --- | --- |
+| Event Organiser | organiser@connectsphere.local |
+| Event Coordinator | coordinator@connectsphere.local |
+| Event Coordinator | coordinator2@connectsphere.local |
+| Event Coordinator | coordinator3@connectsphere.local |
+| Event Coordinator Lead | coordinatorlead@connectsphere.local |
+| Venue Staff | venue@connectsphere.local |
+| Technical Support Staff | tech@connectsphere.local |
+| Technical Support Staff | tech2@connectsphere.local |
+| Safety Officer | safety@connectsphere.local |
+| Attendee | attendee@connectsphere.local |
+
+All demo accounts use the password `Password123!`. These accounts are for local development only and must not be used in a deployed environment. Public registration still creates only Attendee or Event Organiser accounts; internal roles are provisioned by `seed-demo.js`.
+
+
 
 ## Continuous Integration
 
@@ -105,36 +128,6 @@ Browser end-to-end tests live in `e2e/tests/` and run with Playwright (`npm --pr
 
 
 
-
-### Authentication
-
-The application uses email/password authentication. Passwords are hashed with bcrypt and the backend returns an expiring JWT. Protected API requests require an `Authorization: Bearer <token>` header. The frontend stores the session locally and redirects unauthenticated users to `/login`.
-
-Public registration creates either an `attendee` or `event_organiser` account. This matches the customer briefing: Event Organisers are external client representatives who need to submit their own event requests. Internal roles must be provisioned by an administrator or by the local demo seed command. For local testing, after `npm run init-db`, run `npm run seed-demo` in `backend`:
-
-| Role | Demo email |
-| --- | --- |
-| Event Organiser | organiser@connectsphere.local |
-| Event Coordinator | coordinator@connectsphere.local |
-| Event Coordinator | coordinator2@connectsphere.local |
-| Event Coordinator | coordinator3@connectsphere.local |
-| Event Coordinator Lead | coordinatorlead@connectsphere.local |
-| Venue Staff | venue@connectsphere.local |
-| Technical Support Staff | tech@connectsphere.local |
-| Technical Support Staff | tech2@connectsphere.local |
-| Safety Officer | safety@connectsphere.local |
-| Attendee | attendee@connectsphere.local |
-
-All demo accounts use the password `Password123!`. These accounts are for local development only and must not be used in a deployed environment. Public registration still creates only Attendee or Event Organiser accounts; internal roles are provisioned by `seed-demo.js`.
-
-The seed assigns its demo events to the Coordinator who requested their venue bookings. It also creates `US-034 Demo:` event requests for the Event Coordinator Lead. Some of these requests are unassigned and the rest are assigned to Coordinators Two and Three. Re-running `npm run seed-demo` resets these demo requests to their original assignments.
-
-The current venue endpoint is restricted to Event Coordinators and Venue Staff as an example of role-based authorization. Other feature endpoints will apply the same middleware as they are implemented.
-
-The `/requests/new` frontend route is restricted to Event Organisers. The dashboard also hides its request-creation actions for every other role. A user who manually enters `/requests/new` while logged in as another role is redirected to the dashboard.
-
-The home dashboard uses one shared layout with role-aware copy and actions for now. Separate role-specific pages should be added when the corresponding workflows are implemented; duplicating five mostly empty homepages at this stage would create unnecessary maintenance overhead.
-
 ### Object-oriented domain model
 
 The backend contains four domain classes in `backend/src/domain/index.js`:
@@ -187,9 +180,8 @@ Event Organisers can select **Save Draft** on the request form, then reopen it
 from **Dashboard > My Drafts**. Incomplete fields are allowed; populated fields
 are validated. Successful saves keep the request in Draft status.
 
-After pulling this change, run `npm run init-db` from `backend` once to add the
-`events.draft_data` column to an existing database, then restart the backend.
-The migration preserves existing records.
+Run `npm run init-db` from `backend` to create or update the draft schema. The
+migration is idempotent and preserves existing records.
 
 The draft API requires an Event Organiser JWT:
 - `GET /api/drafts`: list the signed-in organiser's drafts.
@@ -225,9 +217,8 @@ outside this agreed draft scope.
 
 ## Submit a draft for review (US-006)
 
-Run `npm run init-db` in `backend` after updating to this branch to add the
-submission timestamp and description columns. Start the database, backend
-and frontend as above.
+Run `npm run init-db` in `backend` to create or update the submission schema.
+Start the database, backend and frontend as above.
 
 As an Event Organiser, fill in Event Name, both start and end date/time, and
 a positive whole-number Expected Attendance, then select Submit for Review.
@@ -235,7 +226,7 @@ The current form values are saved and submitted together; a separate Save Draft
 action is not required. Save Draft remains available for incomplete information,
 including blank or Not decided attendance. Dates/times use Singapore time (UTC+8), with end after start;
 there is no past-date restriction. Other fields remain optional, including
-None / Not Required choices. Organiser start/end times use five-minute selections (00:00–23:55). CHG-001 was withdrawn; venue-booking time precision is unchanged.
+None / Not Required choices. Organiser start/end times use five-minute selections (00:00–23:55); venue-booking time precision is unchanged.
 
 Invalid submissions stay in Draft and show corrective messages. Successful
 submission preserves the current form values and same request ID, changes status
@@ -306,14 +297,20 @@ The integration test in `backend/test/integration/replacement.venue.test.js` cov
 
 Authenticated users can click the bell icon in the header to view their notification list. Unread notifications show a count badge and a highlighted row; clicking a notification marks it as read. The list is loaded from `/api/notifications` for the signed-in user only, and read state is updated through `/api/notifications/:id/read` with ownership checks.
 
-The implemented booking and technical-support triggers are targeted by role and event relationship:
+Notifications are targeted to the users relevant to each workflow. Current triggers include:
 
-- A submitted venue booking request notifies Venue Staff.
-- A Venue Staff booking decision notifies the event's currently assigned Coordinator. If the event has no Coordinator, it notifies the Coordinator who submitted the request.
-- Assigning or reassigning an event request notifies the newly assigned Coordinator. A reassignment also notifies the previous Coordinator (US-034).
-- Updated technical-support requirements notify Technical Support Staff.
+- Event submission notifies the Event Coordinator Lead.
+- Event approval, rejection, clarification requests, and change-request outcomes notify the relevant Organiser or assigned Coordinator.
+- Coordinator assignment and reassignment notify the new and previous Coordinators as appropriate.
+- Venue booking submissions notify Venue Staff; booking decisions notify the current assigned Coordinator.
+- Updated technical-support requirements and technical decisions notify Technical Support Staff or the assigned Coordinator as appropriate.
+- Safety Officer decisions notify the assigned Coordinator; readiness for an Operational Safety Check notifies Safety Officers.
+- Tentative hold expiry notifies the assigned Coordinator when expiry is detected.
+- Attendee registration and withdrawal notify the Attendee, Organiser, and assigned Coordinator.
+- Event cancellation notifies the Organiser and affected Venue Staff, Technical Support Staff, and registered Attendees.
+- Equipment inventory changes notify Technical Support Staff, and relevant event changes notify affected arrangement owners.
 
-Notification responses include only the notification message and event identifier, not protected event details. Users must still pass the relevant authorization checks to view event information.
+Notification responses include the notification ID, event ID, message, read state, and creation time, but not protected event details. Users must still pass the relevant authorization checks to view event information. Notifications are in-app and are loaded when the user opens the notification menu.
 
 ## Assign and Reassign Event Coordinators (US-034)
 
@@ -341,6 +338,8 @@ No schema migration is needed. Run `npm run seed-demo` to load the demo requests
 After all venue arrangements and technical arrangements are confirmed, a Safety Officer can review an event at `/safety/checks`. The Coordinator must either submit technical requirements for Technical Support Staff to confirm, or explicitly declare that no technical support is required. The Safety Officer can approve the event, reject it, or request changes, with comments recorded for audit.
 
 The event becomes `confirmed` only after every venue booking is approved/confirmed and the technical arrangement has status `confirmed`. This transition notifies Safety Officers. The technical decision is recorded on `technical_support_requirements`; requesting changes returns the technical arrangement to `pending`. The Safety decision is stored in `operational_safety_checks`, creates an `event_changes` audit entry, and notifies the assigned Event Coordinator. Event preparation status cannot be listed or updated until the safety check is approved. Requesting changes returns the event to `planning`; rejected checks remain blocked from preparation.
+
+The current confirmation-readiness notification is sent to Safety Officers. The Organiser is notified by the later Coordinator/Safety workflow notifications, but does not currently receive a separate event-confirmed notification. Attendees receive registration confirmation notifications after they register.
 
 The Safety Officer demo account is `safety@connectsphere.local`. Technical Support Staff confirm arrangements through `PATCH /api/events/:id/technical-support/decision` with `{ "decision": "confirmed" | "changes_requested", "comments": "..." }`. The Safety API is `GET /api/safety/checks` and `PATCH /api/safety/checks/:eventId` with `{ "decision": "approved" | "rejected" | "changes_requested", "comments": "..." }`.
 
