@@ -4,11 +4,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { parseChangeRequestDecision } = require('../../src/changeRequests');
-const { ChangeRequest, EventRequest } = require('../../src/domain');
-
-const at = (date, time) => new Date(`${date}T${time}:00+08:00`).toISOString();
-const START = at('2099-03-01', '09:00');
-const END = at('2099-03-01', '12:00');
 
 test('[UT-02] parseChangeRequestDecision accepts approved or rejected and refuses anything else', () => {
   assert.deepEqual(parseChangeRequestDecision({ decision: 'approved' }), { decision: 'approved' });
@@ -20,16 +15,5 @@ test('[UT-02] parseChangeRequestDecision accepts approved or rejected and refuse
   }
 });
 
-test('[UT-04] ChangeRequest.movesEvent is true only when the start or end time is a different moment', () => {
-  const event = new EventRequest({ status: 'planning', preferred_start: START, preferred_end: END });
-  const moves = (proposedChanges) => new ChangeRequest({ proposedChanges }).movesEvent(event);
-
-  assert.equal(moves({ preferredStart: at('2099-03-05', '14:00'), preferredEnd: at('2099-03-05', '17:00') }), true, 'new date');
-  assert.equal(moves({ preferredStart: at('2099-03-01', '10:00'), preferredEnd: at('2099-03-01', '13:00') }), true, 'same day, later');
-  assert.equal(moves({ venueLayoutPreference: 'Classroom' }), false, 'no times in the request');
-  assert.equal(moves({ preferredStart: START, preferredEnd: END }), false, 'same times');
-
-  // PostgreSQL returns Date objects, the request holds strings: same moment must not count as a move.
-  const fromDb = new EventRequest({ status: 'planning', preferred_start: new Date(START), preferred_end: new Date(END) });
-  assert.equal(new ChangeRequest({ proposedChanges: { preferredStart: START, preferredEnd: END } }).movesEvent(fromDb), false);
-});
+// [UT-04] ChangeRequest.movesEvent (AC-032-005): moved unchanged to
+// backend/test/unit/domain.test.js [UT-OOP-08], where domain class tests live (dedupe #3).

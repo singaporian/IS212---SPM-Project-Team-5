@@ -2,7 +2,7 @@
 // Pure unit tests for input validation and registration-window eligibility logic.
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { validateRegistrationInput, registrationWindowStatus, partitionRegistrations } = require('../../src/registrations');
+const { validateRegistrationInput, registrationWindowStatus } = require('../../src/registrations');
 
 // --- validateRegistrationInput ---
 
@@ -85,12 +85,6 @@ test('open when there is no capacity or window restriction at all', async () => 
 });
 
 // --- partitionRegistrations ---
-
-test('partitions registered and withdrawn attendees separately', () => {
-  const result = partitionRegistrations([
-    { id: 'one', status: 'registered' },
-    { id: 'two', status: 'withdrawn' }
-  ]);
-  assert.deepEqual(result.registered.map(r => r.id), ['one']);
-  assert.deepEqual(result.withdrawn.map(r => r.id), ['two']);
-});
+// Covered by backend/test/unit/view.registrations.test.js (US-040, AC-040-002/003), which has
+// the same mixed-list test plus the empty-list case. The function is used by the US-040
+// registrations view (dedupe #5).
