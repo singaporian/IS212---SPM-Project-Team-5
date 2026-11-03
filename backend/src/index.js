@@ -791,6 +791,29 @@ function buildBookingFilters({ venueId, from, to } = {}) {
   return { where: `WHERE ${filters.join(' AND ')}`, params };
 }
 
+// US-017/BUG-02: alongside approved/confirmed bookings, the calendar also needs to
+// surface recorded venue-unavailability periods (e.g. maintenance blocks, US-020) -
+// otherwise Venue Staff see a calendar that silently omits times the venue is blocked.
+function buildUnavailabilityFilters({ venueId, from, to } = {}) {
+  const filters = [];
+  const params = [];
+
+  if (venueId) {
+    params.push(venueId);
+    filters.push(`vu.venue_id = $${params.length}`);
+  }
+  if (from) {
+    params.push(from);
+    filters.push(`vu.end_time::date >= $${params.length}::date`);
+  }
+  if (to) {
+    params.push(to);
+    filters.push(`vu.start_time::date <= $${params.length}::date`);
+  }
+
+  return { where: filters.length ? `WHERE ${filters.join(' AND ')}` : '', params };
+}
+
 app.get('/api/bookings', auth.authenticate, auth.requireRoles('venue_staff'), async (req, res) => {
   try {
     const { where, params } = buildBookingFilters(req.query);
@@ -810,7 +833,19 @@ app.get('/api/bookings', auth.authenticate, auth.requireRoles('venue_staff'), as
        ORDER BY b.venue_id ASC, b.start_time ASC`,
       params
     );
-    res.json(result.rows);
+    const { where: unavailWhere, params: unavailParams } = buildUnavailabilityFilters(req.query);
+    const unavailResult = await db.query(
+      `SELECT vu.id, vu.venue_id, vu.start_time, vu.end_time, vu.reason, vu.reason_code,
+              v.name AS venue_name
+       FROM venue_unavailabilities vu
+       JOIN venues v ON v.id = vu.venue_id
+       ${unavailWhere}
+       ORDER BY vu.venue_id ASC, vu.start_time ASC`,
+      unavailParams
+    );
+    const bookings = result.rows.map((row) => ({ ...row, type: 'booking' }));
+    const unavailabilities = unavailResult.rows.map((row) => ({ ...row, type: 'unavailable' }));
+    res.json([...bookings, ...unavailabilities]);
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Failed to fetch bookings' });

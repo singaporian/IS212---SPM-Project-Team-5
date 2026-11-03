@@ -16,7 +16,7 @@ test('US-017 Venue Staff view the upcoming bookings calendar', async t => {
 
   try {
     await originalPool.query(`CREATE SCHEMA ${schema}`);
-    for (const table of ['users', 'venues', 'events', 'bookings']) {
+    for (const table of ['users', 'venues', 'events', 'bookings', 'venue_unavailabilities']) {
       await originalPool.query(`CREATE TABLE ${schema}.${table} (LIKE public.${table} INCLUDING ALL)`);
     }
 
@@ -78,6 +78,15 @@ test('US-017 Venue Staff view the upcoming bookings calendar', async t => {
       [closeGapEvent, venueOne, gapStart.toISOString(), gapEnd.toISOString()]
     );
 
+    // BUG-02: a recorded maintenance/unavailability block at venueOne, far enough from
+    // the other fixtures above that it can't be mistaken for one of the bookings.
+    const maintenance = await pool.query(
+      `INSERT INTO venue_unavailabilities (venue_id, start_time, end_time, reason, reason_code)
+       VALUES ($1, now() + interval '30 days', now() + interval '30 days 2 hours', 'Air-conditioning maintenance', 'maintenance')
+       RETURNING id, start_time, end_time`,
+      [venueOne]
+    );
+
     server = require('../../src/index').listen(0, '127.0.0.1');
     await new Promise((resolve) => server.once('listening', resolve));
     const { port } = server.address();
@@ -128,6 +137,25 @@ test('US-017 Venue Staff view the upcoming bookings calendar', async t => {
       assert.ok(result.body.every((b) => b.venue_id === venueOne));
       assert.ok(result.body.some((b) => b.id === confirmedOne.rows[0].id));
       assert.ok(!result.body.some((b) => b.id === pendingOne.rows[0].id));
+    });
+
+    await t.test('BUG-02: a recorded venue-unavailability period appears on the calendar alongside bookings', async () => {
+      const result = await call(`/bookings?venueId=${venueOne}`, token(venueStaff, 'venue_staff'));
+      assert.equal(result.status, 200);
+      const block = result.body.find((b) => b.id === maintenance.rows[0].id);
+      assert.ok(block, 'maintenance block should appear in the calendar response');
+      assert.equal(block.type, 'unavailable');
+      assert.equal(block.reason, 'Air-conditioning maintenance');
+      assert.equal(new Date(block.start_time).getTime(), new Date(maintenance.rows[0].start_time).getTime());
+      // Bookings are still tagged distinctly from unavailability blocks.
+      const booking = result.body.find((b) => b.id === confirmedOne.rows[0].id);
+      assert.equal(booking.type, 'booking');
+    });
+
+    await t.test('BUG-02: unavailability periods are also scoped by venueId like bookings are', async () => {
+      const result = await call(`/bookings?venueId=${venueTwo}`, token(venueStaff, 'venue_staff'));
+      assert.equal(result.status, 200);
+      assert.ok(!result.body.some((b) => b.id === maintenance.rows[0].id), 'venueOne maintenance block should not leak into venueTwo calendar');
     });
 
     await t.test('AC-017: a 20-minute gap is flagged insufficient against a 30-minute venue requirement (15+15)', async () => {
