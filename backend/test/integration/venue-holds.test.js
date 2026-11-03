@@ -67,6 +67,20 @@ test('US-038 isolated PostgreSQL API integration',async t=>{
    assert.equal((await holdConflicts(db,{venue_id:venue,start_time:'2099-03-01T11:29:00+08:00',end_time:'2099-03-01T12:00:00+08:00'})).length,1);
    assert.equal((await holdConflicts(db,{venue_id:venue,start_time:'2099-03-01T11:30:00+08:00',end_time:'2099-03-01T12:00:00+08:00'})).length,0);
   });
+  await t.test('venue search requires every selected facility and returns operating and setup information',async()=>{
+   await fixture();
+   await pool.query("UPDATE venues SET facilities='[\"projectors\"]'::jsonb, default_setup_minutes=45, default_turnaround_minutes=20 WHERE id=$1",[venue]);
+   assert.equal((await call('/venues?facility=projectors')).body.length,1);
+   assert.equal((await call('/venues?facility=projectors&facility=Wi-Fi')).body.length,0);
+
+   await pool.query("UPDATE venues SET facilities='[\"projectors\",\"Wi-Fi\"]'::jsonb WHERE id=$1",[venue]);
+   const results=(await call('/venues?facility=projectors&facility=Wi-Fi')).body;
+   assert.equal(results.length,1);
+   assert.equal(results[0].default_setup_minutes,45);
+   assert.equal(results[0].default_turnaround_minutes,20);
+   assert.equal(results[0].operating_hours.length,7);
+   assert.equal(results[0].operating_hours[0].opens_at,'00:00:00');
+  });
   await t.test('TC-US038-04/05/07 expiry stops blocking, never confirms and frees venue for another request',async()=>{
    await fixture();await place();await pool.query('UPDATE venue_holds SET expiry_at=clock_timestamp()');
    assert.equal((await call('/venue-holds')).body[0].status,'expired');
