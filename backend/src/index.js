@@ -327,7 +327,7 @@ app.get('/api/venues', auth.authenticate, auth.requireRoles('event_coordinator',
     const facilities = (Array.isArray(facility) ? facility : facility ? [facility] : []).filter(Boolean);
     if (facilities.length) {
       params.push(facilities);
-      filters.push(`v.facilities ?| $${params.length}::text[]`);
+      filters.push(`v.facilities ?& $${params.length}::text[]`);
     }
     const accessibilityNeeds = (Array.isArray(accessibility) ? accessibility : accessibility ? [accessibility] : []).filter(Boolean);
     if (accessibilityNeeds.length) {
@@ -419,6 +419,12 @@ app.get('/api/venues', auth.authenticate, auth.requireRoles('event_coordinator',
     const result = await db.query(
       `SELECT id, name, location, capacity, facilities, accessibility, supported_layouts,
         default_setup_minutes, default_turnaround_minutes,
+        (SELECT COALESCE(jsonb_agg(jsonb_build_object(
+          'day_of_week', voh.day_of_week,
+          'opens_at', voh.opens_at,
+          'closes_at', voh.closes_at
+        ) ORDER BY voh.day_of_week), '[]'::jsonb)
+         FROM venue_operating_hours voh WHERE voh.venue_id = v.id) AS operating_hours,
         ${unavailablePeriods}
         (SELECT COALESCE(jsonb_agg(jsonb_build_object(
           'id', vi.id,
@@ -433,6 +439,7 @@ app.get('/api/venues', auth.authenticate, auth.requireRoles('event_coordinator',
     res.json(result.rows.map((row) => new Venue({
       ...row,
       supportedLayouts: row.supported_layouts,
+      operating_hours: row.operating_hours,
       unavailablePeriods: row.unavailable_periods
     }).toJSON()));
   } catch (err) {
