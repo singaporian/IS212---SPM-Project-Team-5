@@ -127,7 +127,7 @@ test('AC-039-002: non-Safety Officers cannot access the review queue', async () 
   assert.equal(result.status, 403);
 });
 
-test('AC-039-003/005/006: approval records the decision, audit row, and Coordinator notification', async () => {
+test('AC-039-003/005/006: approval records the decision and notifies the Organiser and Coordinator', async () => {
   // AC-039-003: submit an approval through the real decision endpoint.
   const result = await request(`/checks/${events.eligible}`, token(ids.safety, 'safety_officer'), {
     method: 'PATCH', body: JSON.stringify({ decision: 'approved', comments: 'All arrangements are safe.' })
@@ -135,9 +135,13 @@ test('AC-039-003/005/006: approval records the decision, audit row, and Coordina
   assert.equal(result.status, 200); // AC-039-003: the decision succeeds for an eligible event.
   const safety = (await pool.query('SELECT status, comments FROM operational_safety_checks WHERE event_id = $1', [events.eligible])).rows[0];
   assert.deepEqual(safety, { status: 'approved', comments: 'All arrangements are safe.' }); // AC-039-003: decision and comments persist.
-  const notification = (await pool.query('SELECT user_id, message FROM notifications WHERE event_id = $1', [events.eligible])).rows[0];
-  assert.equal(notification.user_id, ids.coordinator); // AC-039-005: assigned Coordinator is notified.
-  assert.match(notification.message, /approved/); // AC-039-005: notification identifies the outcome.
+  const notifications = (await pool.query('SELECT user_id, message FROM notifications WHERE event_id = $1', [events.eligible])).rows;
+  const coordinatorNotification = notifications.find(notification => notification.user_id === ids.coordinator);
+  assert.ok(coordinatorNotification); // AC-039-005: assigned Coordinator is notified.
+  assert.match(coordinatorNotification.message, /approved/); // AC-039-005: notification identifies the outcome.
+  const organiserNotification = notifications.find(notification => notification.user_id === ids.organiser);
+  assert.ok(organiserNotification, 'the Organiser receives a confirmation notification');
+  assert.equal(organiserNotification.message, 'Your event "Eligible Event" has been confirmed following the Safety Officer\'s approval.');
   const audit = (await pool.query('SELECT change_summary FROM event_changes WHERE event_id = $1', [events.eligible])).rows[0];
   assert.match(audit.change_summary, /Operational Safety Check: approved/); // AC-039-006: decision is recorded for audit.
 });
@@ -161,4 +165,9 @@ test('AC-039-004/007: Request Changes requires scope, returns the event to plann
   const notification = (await pool.query('SELECT user_id, message FROM notifications WHERE event_id = $1', [events.changes])).rows[0];
   assert.equal(notification.user_id, ids.coordinator); // AC-039-007: Coordinator is prompted to act.
   assert.match(notification.message, /venue changes/); // AC-039-007: notification identifies the affected arrangement.
+  const organiserNotifications = (await pool.query(
+    'SELECT id FROM notifications WHERE event_id = $1 AND user_id = $2',
+    [events.changes, ids.organiser]
+  )).rows;
+  assert.equal(organiserNotifications.length, 0, 'a request for changes is not an event confirmation');
 });

@@ -82,7 +82,7 @@ router.patch('/checks/:eventId', async (req, res) => {
   try {
     await client.query('BEGIN');
     const event = (await client.query(
-      `SELECT e.id, e.title, e.assigned_coordinator_id, e.status, osc.status AS safety_status,
+      `SELECT e.id, e.title, e.organiser_id, e.assigned_coordinator_id, e.status, osc.status AS safety_status,
               count(b.id)::int AS booking_count,
               bool_and(b.status IN ('approved', 'confirmed')) AS arrangements_confirmed
       FROM events e
@@ -116,6 +116,16 @@ router.patch('/checks/:eventId', async (req, res) => {
        SELECT assigned_coordinator_id, id, $1 FROM events WHERE id = $2 AND assigned_coordinator_id IS NOT NULL`,
       [`Operational Safety Check ${decision.replace('_', ' ')} for ${event.title}${scopes.length ? ` (${scopes.join(' and ')} changes)` : ''}${comments.trim() ? `: ${comments.trim()}` : ''}`, event.id]
     );
+    if (decision === 'approved') {
+      await client.query(
+        `INSERT INTO notifications (user_id, event_id, message)
+         SELECT recipient_id, id, $1
+         FROM events
+         CROSS JOIN LATERAL (VALUES (organiser_id), (assigned_coordinator_id)) AS recipients(recipient_id)
+         WHERE id = $2 AND recipient_id IS NOT NULL`,
+        [`Your event "${event.title}" has been confirmed following the Safety Officer's approval.`, event.id]
+      );
+    }
     await client.query(
       `INSERT INTO event_changes (event_id, changed_by, change_summary) VALUES ($1, $2, $3)`,
       [event.id, req.auth.sub, `Operational Safety Check: ${decision}${comments.trim() ? ` — ${comments.trim()}` : ''}`]
